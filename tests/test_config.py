@@ -1,8 +1,8 @@
 """Configuration isolation, production refusal, and safe diagnostics."""
 
+import os
 from decimal import Decimal
 from pathlib import Path
-import os
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -130,6 +130,7 @@ def test_config_representations_hide_private_values():
 @pytest.mark.parametrize("complete", [False, True])
 def test_production_app_stays_closed_before_loading_any_rows(monkeypatch, complete):
     import socket
+
     import portfolio_dashboard.demo
 
     values = production_settings() if complete else {"PORTFOLIO_MODE": "production"}

@@ -24,6 +24,7 @@ uv run --locked streamlit run app.py
 Der Demo-Einstieg benötigt weder Netzwerkzugriff noch Secrets, Login oder eine persönliche Tickerliste. `PORTFOLIO_MODE=demo` ist der Standard; reale Quellen- und Login-Einstellungen werden in diesem Modus verworfen. Der Start des lokalen Servers ist keine Veröffentlichung und richtet keinen geschützten Produktivbetrieb ein.
 
 ```bash
+uv run --locked ruff check .
 uv run --locked pytest
 uv run --locked python -c "from portfolio_dashboard.demo import demo_rows; print(demo_rows())"
 ```
@@ -45,6 +46,22 @@ Die kleinen UI-Helfer stehen in [`ui.py`](src/portfolio_dashboard/ui.py). `dashb
 - `PORTFOLIO_LOGIN_PROVIDER=google` sowie die `PORTFOLIO_OWNER_*`, `PORTFOLIO_OIDC_*` und `PORTFOLIO_COOKIE_SECRET`-Felder: getrennte OIDC-/Besitzerkonfiguration. Vollständige Konfiguration ist keine Anmeldung und keine Besitzerfreigabe. Login und serverseitige Autorisierung folgen in M6-03.
 
 Fehlende Platzhalter, ungültige Werte und fehlende Besitzerkonfiguration sperren den Produktiveinstieg. Fehlermeldungen nennen nur Feldnamen; Konfigurationsrepräsentationen geben keine vertraulichen Inhalte aus. `synthetic_import_cases()` in [`fixtures.py`](src/portfolio_dashboard/fixtures.py) stellt ausschließlich erfundene Aktien-/ETF-/Derivatefälle mit EUR/USD/GBP, fehlenden, Null- und negativen Werten bereit. Parser und Bewertung folgen separat. Die Bedeutung tatsächlicher Einstandswerte nach Teilverkäufen ist noch ungeklärt; daraus dürfen bis zur Bestätigung keine persönlichen Seit-Kauf-Renditen entstehen.
+
+### Automatische Prüfung und PR-Ablauf
+
+Der Workflow [CI](.github/workflows/ci.yml) prüft Pull Requests nach `agents/integration` und `main` sowie Pushes auf diese beiden Branches. Er verwendet Python 3.12, uv 0.12.23 und die gesperrten Entwicklungsabhängigkeiten. Lokal dieselben drei Schritte ausführen:
+
+```bash
+uv sync --locked
+uv run --locked ruff check .
+uv run --locked pytest
+```
+
+Ruff prüft Python-Fehler, ungenutzte/undefinierte Namen und Importreihenfolge im gesamten Quellbaum einschließlich Legacy-Prototyp. Pytest führt die gezielten Tests unter `tests/` aus; ein fehlgeschlagener Test beendet den CI-Job mit Fehler. `pytest-socket` sperrt IP-Sockets standardmäßig über die Pytest-Konfiguration. Lokale Unix-Sockets bleiben für Streamlits asyncio-Ereignisschleife erlaubt; der separate Fachmodul-Importtest sperrt auch diese. Fixtures bleiben synthetisch. CI erhält keine Produktions-Secrets und benötigt weder echtes Sheet noch Kursanbieterzugang. Nur Checkout, Werkzeug- und Dependency-Installation benötigen Netzwerkzugriff.
+
+Für jede Aufgabe von `agents/integration` einen kurzen Issue-Branch anlegen und einen PR zurück nach `agents/integration` öffnen. Abhängige, noch offene PRs und deren Basis-Commit ausdrücklich im PR nennen. Vor dem Zusammenführen müssen der Check **Locked install, lint, tests (Python 3.12)** und die unabhängige fachliche Prüfung erfolgreich sein. Exakte Befehle, Commit-SHA und den tatsächlichen Actions-Lauf im PR dokumentieren; ein lokaler Erfolg ist kein CI-Nachweis. Diese Vorgabe konfiguriert keinen Branch-Schutz und erteilt keine Merge-Freigabe.
+
+Live-Prüfungen gehören in einen getrennten, ausdrücklich autorisierten Ablauf nach Auswahl der Hosting-Umgebung und ihrer Secret-Verwaltung: echte Sheet-/Kursabrufe, Login/Besitzerzugriff und geschützte HTTPS-URL gemäß [ADR 0009](docs/adr/0009-betrieb-und-qualitaet.md). Sie laufen nicht in diesem CI-Workflow; synthetische Tests belegen keine Provider-Verfügbarkeit. Private Antworten und Credentials dürfen weder Test-Fixtures noch Logs oder PR-Anhänge werden.
 
 ## Vorhandener Prototyp (Legacy)
 

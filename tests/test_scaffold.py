@@ -1,8 +1,8 @@
 """Verify the offline domain boundary and the actual Streamlit entry point."""
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
