@@ -1,43 +1,21 @@
-# Git- und GitHub-Einrichtung
+# Git, GitHub und private Dateien
 
-Stand: 23. Oktober 2026. **Noch nicht initialisiert oder veröffentlicht.**
+Git ist lokal auf `main` eingerichtet; `origin` verweist auf `FelixSchramm/stock_treemap_open_ai`. Die [GitHub-Issues](https://github.com/FelixSchramm/stock_treemap_open_ai/issues) enthalten sieben Epics und 31 Aufgaben. Der [Backlog](backlog/README.md) dokumentiert deren Zuordnung und Reihenfolge.
 
-Die aktuelle Sitzung darf `.git` im Projektordner nicht schreiben (`Operation not permitted`). Die lokale GitHub-CLI erreicht `api.github.com` nicht. Die verbundene GitHub-Integration meldet das Konto `FelixSchramm`, bietet aber keine Repository-Erstellung. Ein vorhandenes Repository mit dem Projektnamen konnte darüber nicht gefunden werden. Browser-Automation ist derzeit nicht verfügbar.
+## Versionierungsgrenze
 
-## Vorbereitet
+Quellcode, Architektur, allgemeines Importschema und synthetische Beispieldaten gehören ins Repository. Persönliche Dokumentlinks, Sheet-IDs, konkrete Depotbefunde, Tickerlisten, Exporte, Caches und Credentials bleiben in ignorierten lokalen Dateien bzw. der Secret-Verwaltung.
 
-- `.gitignore` und `.dockerignore` schließen Secrets, Exporte, Caches und lokale Artefakte aus.
-- [Backlog](backlog/README.md): sieben Epics und 31 zugehörige Aufgaben mit Abhängigkeiten und Abnahmekriterien.
-- `scripts/github_backlog.py` prüft das Backlog lokal und legt später Milestones, Labels, Epic-Issues und Aufgaben-Issues in einem privaten GitHub-Repository an. Ein erneuter Lauf erkennt vorhandene Einträge anhand stabiler IDs.
+- `docs/private/`: persönliche Quellen und konkrete Datenprüfungen.
+- `tickers.txt`: lokale Liste; `tickers.example.txt` ist die öffentliche Vorlage.
+- `.env`, `.env.*`, `.streamlit/secrets.toml`, Credentials-Dateien und Schlüssel: lokale Secrets.
+- `data/`, `exports/`, `cache/`, `.cache/`, `logs/`: Laufzeitdaten.
+- `*.local.*`: zusätzliche lokale Konfigurationsdateien.
 
-## Einrichtung außerhalb der eingeschränkten Sitzung
+`.gitignore` verhindert nur das erstmalige Hinzufügen passender Dateien. Bereits verfolgte Dateien müssen zusätzlich aus dem Git-Index entfernt werden. Eine Bereinigung des aktuellen Dateibaums entfernt keine alten Commits. Der ursprüngliche Commit enthält frühere private Dokumentbezüge; die Historie wurde auf Nutzerwunsch nicht ersetzt. Die Sichtbarkeit des Repositorys wird dadurch nicht automatisch geändert.
 
-Im Terminal im Projektordner ausführen. Das Ziel ist ein **privates** Repository `FelixSchramm/stock_treemap_open_ai`. Keine Zugangsdaten in Projektdateien oder Issues eintragen.
+## Arbeitsablauf
 
-```bash
-gh auth status
-# Nur falls nötig:
-gh auth login --hostname github.com
+Vor Änderungen den lokalen Stand mit dem Remote abgleichen. Für Aufgaben einen Branch erstellen, die jeweilige Issue-ID im Commit/PR verwenden und die festgelegten Abnahmekriterien prüfen. Secrets und echte Depotdaten dürfen weder in Diffs noch in Testausgaben oder Issue-Anhängen stehen. Ein Epic wird erst nach seinen Aufgaben und seinem Abschlusskriterium geschlossen.
 
-git init -b main
-git add .gitignore .dockerignore README.md PROJECT_PLAN.md heatmap.py requirements.txt tickers.txt docs scripts
-git diff --cached --stat
-git commit -m "chore: preserve prototype and plan dashboard epics"
-
-gh repo create FelixSchramm/stock_treemap_open_ai --private --source=. --remote=origin --push
-python3 scripts/github_backlog.py --repo FelixSchramm/stock_treemap_open_ai --apply
-```
-
-Falls das Repository inzwischen existiert, nicht erneut erstellen: Sichtbarkeit und Eigentümer prüfen und das bestehende Repository regulär anbinden. Keine fremde Historie überschreiben und keinen Force-Push verwenden. Die Anleitung oben ist für den aktuell noch nicht initialisierten Ordner und ein neues Repository gedacht.
-
-## Lokale Prüfung ohne GitHub-Zugriff
-
-```bash
-python3 scripts/github_backlog.py
-```
-
-Der Standardlauf validiert IDs, Zuordnung, Referenzen und den Abhängigkeitsgraphen und schreibt nichts nach GitHub. `--apply` benötigt eine funktionierende, angemeldete `gh`-CLI. Die Ziel-Repository-Metadaten werden vor Schreibzugriff geprüft; öffentliche Repositories werden abgelehnt.
-
-## Abschlussnachweis
-
-Die Einrichtung ist erst abgeschlossen, wenn `git status` funktioniert, `origin` auf das gewünschte private Repository zeigt, der erste Commit auf GitHub vorhanden ist und der Import sieben Epic-Issues sowie 31 Aufgaben-Issues ausweist. Der Import schreibt die tatsächlichen GitHub-Links nach `docs/backlog/GITHUB_LINKS.md`; diese Datei anschließend regulär committen und pushen. M1-01 danach mit diesen Nachweisen schließen. Eine vorbereitete Datei ist noch kein veröffentlichtes GitHub-Issue.
+Wenn Änderungen über den GitHub-Connector erfolgen, ist der lokale Git-Index nicht automatisch aktualisiert. In einer Sitzung mit eingeschränktem `.git`-Schreibzugriff muss der lokale Abgleich anschließend im normalen Terminal erfolgen; lokale Änderungen vorher sichern und nicht blind überschreiben. Die persönliche Tickerliste ist vorsorglich auch unter `docs/private/tickers.txt` gesichert.

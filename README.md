@@ -5,8 +5,10 @@
 Der vorhandene Code ist ein früher Heatmap-Prototyp. Das geplante Dashboard wird direkt online mit Login bereitgestellt, gewichtet Kacheln nach eigenen Positionswerten und bietet Kursentwicklung sowie Gewinn/Verlust seit Kauf in Prozent. Die Anwendung ist noch nicht umgesetzt.
 
 - [Umsetzungsplan](PROJECT_PLAN.md)
+- [Epics, Issues und Reihenfolge](docs/backlog/README.md)
+- [GitHub-Issues](https://github.com/FelixSchramm/stock_treemap_open_ai/issues)
 - [Architekturentscheidungen / ADRs](docs/adr/README.md)
-- [Geprüfte Google-Sheet-Struktur und Datenmapping](docs/DATA_SOURCE.md)
+- [Allgemeines Importschema](docs/DATA_SOURCE.md)
 
 ## Vorhandener Prototyp
 
@@ -18,6 +20,7 @@ Eigene Aktien-Heatmap (Treemap) wie bei TradingView: Kachelgroesse = Boersenwert
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp tickers.example.txt tickers.txt   # anschließend eigene Ticker eintragen
 python heatmap.py
 ```
 

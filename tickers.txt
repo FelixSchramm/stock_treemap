@@ -1,9 +1,0 @@
-# Ein Ticker pro Zeile. Zeilen mit # werden ignoriert.
-AMZN
-VST
-VIST
-AEP
-DTE
-FE
-CMS
-XE

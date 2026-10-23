@@ -32,9 +32,9 @@ Das iPhone wird als Zielgerät für die Weboberfläche berücksichtigt. Eine Hom
 
 ## 3. Geprüfte Ausgangslage
 
-Im Projekt liegen `heatmap.py`, `tickers.txt`, `requirements.txt` und `README.md`. Das Skript erzeugt eine HTML-Treemap aus einer Tickerliste, gewichtet nach Börsenkapitalisierung und kennt weder Stückzahlen noch Einstandswerte oder Login. uv ist installiert; uv-Projekt und Git-Repository sind noch nicht eingerichtet.
+Im Projekt liegen `heatmap.py`, `requirements.txt`, `README.md` und eine lokale, nicht zu versionierende Tickerliste; `tickers.example.txt` enthält öffentliche Beispiele. Das Skript erzeugt eine HTML-Treemap aus einer Tickerliste, gewichtet nach Börsenkapitalisierung und kennt weder Stückzahlen noch Einstandswerte oder Login. uv ist installiert; das uv-Projekt ist noch nicht eingerichtet. Git und der GitHub-Remote sind inzwischen eingerichtet; sieben Epics und 31 Aufgaben sind im [Backlog](docs/backlog/README.md) verknüpft.
 
-Der Google-Sheets-Zugriff über den verbundenen Connector wurde am 23. Oktober 2026 erfolgreich geprüft. Das Hauptblatt enthält Anzahl, Instrumenttyp, Handelsplatzsymbol, Kurswährung, EUR-Bewertung und EUR-Einstand. Die exakten Spalten, geprüften Bereiche und Datenlücken stehen in [Datenquelle und Mapping](docs/DATA_SOURCE.md).
+Der Google-Sheets-Zugriff über den verbundenen Connector wurde am 23. Oktober 2026 erfolgreich geprüft. Das allgemeine [Importschema](docs/DATA_SOURCE.md) beschreibt Anzahl, Instrumenttyp, Handelsplatzsymbol, Kurswährung, EUR-Bewertung und EUR-Einstand. Private Dokumentlinks, geprüfte Bereiche und konkrete Depotbefunde liegen ausschließlich in der ignorierten lokalen Dokumentation unter `docs/private/`.
 
 Die Chat-Verbindung ist vom Laufzeitzugang des späteren Dashboards getrennt. Der Online-Dienst erhält einen eigenen lesenden Sheet-Zugang. Das Dashboard verändert das Blatt nicht.
 
@@ -75,6 +75,8 @@ flowchart LR
 - Historische Vergleiche berücksichtigen Handelssitzungen, Börsenzeitzonen, Kalendergrenzen und Splits. Details: [ADR 0006](docs/adr/0006-kursentwicklung.md).
 
 ## 6. Arbeitspakete und Abhängigkeiten
+
+Die folgenden Arbeitspakete sind als [sieben GitHub-Epics mit 31 Aufgaben](docs/backlog/README.md) angelegt. Dort stehen Prioritäten, relative Größen, konkrete Voraussetzungen und Abnahmekriterien. M6 beginnt früh mit Demo-Daten; die Nummerierung ist keine strikt serielle Reihenfolge.
 
 | Schritt | Arbeiten und Ergebnis | Abschlusskriterium |
 | --- | --- | --- |
