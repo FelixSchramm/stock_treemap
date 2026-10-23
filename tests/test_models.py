@@ -1,10 +1,10 @@
 """Synthetic domain contracts, without live sources or financial assumptions."""
 
+import subprocess
+import sys
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-import subprocess
-import sys
 
 import pytest
 
@@ -25,7 +25,6 @@ from portfolio_dashboard.models import (
     ValuationSource,
     ValueStatus,
 )
-
 
 RETRIEVED = datetime(2026, 1, 5, 15, 30, tzinfo=timezone.utc)
 OBSERVED = RETRIEVED - timedelta(minutes=15)
