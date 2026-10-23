@@ -25,7 +25,7 @@ Das Skript erzeugt `heatmap.html` und oeffnet sie im Browser.
 
 ## Eigene Aktien
 
-Ticker in `tickers.txt` eintragen, ein Ticker pro Zeile.
+`tickers.example.txt` nach `tickers.txt` kopieren und eigene Ticker eintragen, ein Ticker pro Zeile. Die persönliche Liste bleibt lokal und wird nicht versioniert.
 
 ## Hinweise
 
@@ -33,6 +33,4 @@ Ticker in `tickers.txt` eintragen, ein Ticker pro Zeile.
 - Keine Anlageberatung.
 
 
-Sheet 1aI5XmeKpOsgdFskItToPVNR-X8AWy9XNYh1Ggt49ZJw
-
-gerne auch den Skill ascuhhean 
+Sheet-ID und Dokumentlinks gehören in lokale Konfiguration oder `docs/private/`, nicht in das Repository. `docs/DATA_SOURCE.md` beschreibt ausschließlich das allgemeine Importschema.

@@ -32,6 +32,9 @@ cache/
 logs/
 *.log
 heatmap.html
+tickers.txt
+docs/private/
+*.local.*
 
 # Local publication state
 .github-import-state.json

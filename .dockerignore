@@ -23,4 +23,7 @@ cache
 logs
 *.log
 heatmap.html
+tickers.txt
+docs/private
+*.local.*
 .github-import-state.json

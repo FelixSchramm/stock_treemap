@@ -1,0 +1,3 @@
+# Öffentliche Beispielticker; kein Depotbestand
+AAPL
+MSFT

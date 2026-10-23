@@ -1,0 +1,815 @@
+{
+  "version": 1,
+  "created": "2026-10-23",
+  "repository": "FelixSchramm/stock_treemap_open_ai",
+  "epics": [
+    {
+      "id": "M1",
+      "title": "Projektgrundlage und Entwicklungsablauf",
+      "goal": "Reproduzierbares uv-Projekt mit sicherer Konfiguration und automatischen Prüfungen.",
+      "done": "Installation aus Lockfile, Start mit synthetischen Daten und CI funktionieren; Git enthält keine privaten Laufzeitdaten.",
+      "refs": [
+        "PROJECT_PLAN.md",
+        "docs/adr/0002-python-uv-streamlit.md",
+        "docs/adr/0009-betrieb-und-qualitaet.md"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "Bestandsimport aus Google Sheets",
+      "goal": "Bestände und Einstand werden ausschließlich lesend eingelesen, validiert und mit verständlichen Zeilenstatus versehen.",
+      "done": "Positionsmodell, synthetische Importfälle und lesender Laufzeitzugang sind geprüft; Summenzeilen, Nullbestände und Fehler sind korrekt behandelt.",
+      "refs": [
+        "docs/DATA_SOURCE.md",
+        "docs/adr/0004-google-sheets.md"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Instrumentidentität, Kursdaten und Cache",
+      "goal": "Jede automatische Bewertung verwendet ein geprüftes Instrument; fehlende und alte Daten bleiben sichtbar.",
+      "done": "Provider, FX, Historien, Aktualisierung und Ersatzwerte sind implementiert; nicht versorgbare Produkte werden ausdrücklich gekennzeichnet.",
+      "refs": [
+        "docs/adr/0005-instrumente-und-kursdaten.md"
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "EUR-Bewertung und Renditeberechnung",
+      "goal": "Vier Kursperioden und persönlicher Gewinn/Verlust werden nach den festgelegten Regeln korrekt berechnet.",
+      "done": "Fachliche Tests für Kalender, Splits, Währungseinheiten, Einstand und Teilabdeckung bestehen; Summen nutzen passende Positionsmengen.",
+      "refs": [
+        "docs/adr/0006-kursentwicklung.md",
+        "docs/adr/0007-bewertung-und-einstand.md"
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "Dashboard für Mac und iPhone",
+      "goal": "Eine deutsche Oberfläche macht Positionsgrößen, Entwicklung und Datenqualität verständlich sichtbar.",
+      "done": "Treemap, Kennzahlen, Tabelle, Filter und Aktualisieren sind konsistent und auf schmalen Bildschirmen bedienbar.",
+      "refs": [
+        "docs/adr/0008-treemap-und-bedienung.md",
+        "PROJECT_PLAN.md"
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "Login und geschützter Serverbetrieb",
+      "goal": "Die App läuft unabhängig vom Mac über HTTPS und lädt Depotdaten erst nach Anmeldung und Besitzerprüfung.",
+      "done": "OIDC, serverseitige Freigabe, Container und Host-Konfiguration funktionieren; anonyme und fremde Konten bleiben ausgeschlossen.",
+      "refs": [
+        "docs/adr/0003-login-und-zugriff.md",
+        "docs/adr/0009-betrieb-und-qualitaet.md"
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "Abnahme, Betriebsanleitung und Veröffentlichung",
+      "goal": "Die geschützte Online-Version wird fachlich, technisch und mobil geprüft und nachvollziehbar ausgeliefert.",
+      "done": "Live-Abgleich, Zugriffstests, mobile Abnahme und Rollback-Nachweis liegen vor; geschützte URL funktioniert ohne lokalen Rechner.",
+      "refs": [
+        "PROJECT_PLAN.md",
+        "docs/adr/0009-betrieb-und-qualitaet.md"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "M1-01",
+      "epic": "M1",
+      "title": "Git-Repository und vertrauliche Konfiguration sauber trennen",
+      "priority": "P0",
+      "size": "S",
+      "dependencies": [],
+      "goal": "Quellcode und Planung versionieren, private Dokumentbezüge und Depotdaten lokal halten.",
+      "work": [
+        "Remote und Sichtbarkeit prüfen; aktuelle Quelldateien bereinigen.",
+        "Ignore-Regeln für Secrets, lokale Dokumentation, persönliche Ticker, Exporte und Caches pflegen; nur Beispieldaten versionieren.",
+        "Bereits verfolgte private Dateien aus dem Index entfernen, lokale Kopien erhalten; Historie separat beurteilen."
+      ],
+      "acceptance": [
+        "Git-Status und Remote sind nachvollziehbar dokumentiert.",
+        "Aktueller Repository-Baum enthält weder private Sheet-Links/-IDs noch echte Depotlisten oder Secrets.",
+        "Ignore-Prüfung erfasst sensible Beispielpfade; bereits vorhandene Historie wird nicht als durch .gitignore bereinigt bezeichnet."
+      ],
+      "input": "Repo-Sichtbarkeit und Umgang mit bereits veröffentlichter Historie durch Besitzer festlegen.",
+      "kind": "Einrichtung"
+    },
+    {
+      "id": "M1-02",
+      "epic": "M1",
+      "title": "uv-Projekt, Python-Version und Modulstruktur einrichten",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [],
+      "goal": "Die geplante Anwendung reproduzierbar installieren und ihre Fachlogik getrennt von der UI entwickeln.",
+      "work": [
+        "pyproject.toml, .python-version und uv.lock nach Kompatibilitätsprüfung anlegen.",
+        "src/portfolio_dashboard und App-Einstieg vorbereiten; bestehenden Prototyp klar kennzeichnen.",
+        "Entwicklungs- und Testbefehle dokumentieren."
+      ],
+      "acceptance": [
+        "uv sync --locked funktioniert in einer frischen Umgebung.",
+        "App-Einstieg startet mit synthetischen Daten; Import der Fachmodule benötigt weder UI noch Netzwerk.",
+        "Lockfile und Python-Version sind versioniert; requirements.txt hat eine eindeutige Rolle."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M1-03",
+      "epic": "M1",
+      "title": "Konfiguration, Secret-Beispiele und synthetische Fixtures vorbereiten",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [
+        "M1-02"
+      ],
+      "goal": "Entwicklung ohne reale Depotdaten ermöglichen und unvollständige Produktivkonfiguration sicher erkennen.",
+      "work": [
+        "Typisierte Konfiguration für Quelle, Provider, TTLs, Login und Betriebsmodus erstellen.",
+        "Platzhalter für Secrets und synthetische Fälle für mehrere Währungen, fehlende Werte und Produktarten hinzufügen.",
+        "Fehlermeldungen und Logs ohne vertrauliche Konfigurationswerte gestalten."
+      ],
+      "acceptance": [
+        "Beispielkonfiguration enthält ausschließlich Platzhalter.",
+        "Demo-Betrieb verwendet nur synthetische Daten; Produktivmodus mit fehlender Besitzerfreigabe bleibt geschlossen.",
+        "Fixtures decken gültige, fehlende, null und negative Werte ab; Secrets erscheinen nicht in Fehlermeldungen."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M1-04",
+      "epic": "M1",
+      "title": "CI und nachvollziehbare Entwicklungsprüfungen einrichten",
+      "priority": "P1",
+      "size": "S",
+      "dependencies": [
+        "M1-01",
+        "M1-02",
+        "M1-03"
+      ],
+      "goal": "Änderungen werden aus dem gesperrten Dependency-Set automatisch geprüft.",
+      "work": [
+        "CI für Lockfile-Installation, Lint und gezielte Tests konfigurieren.",
+        "Fixtures und Netzwerkzugriffe trennen; Live-Prüfungen separat dokumentieren.",
+        "Branch-/PR-Ablauf und erforderliche Checks in README festhalten."
+      ],
+      "acceptance": [
+        "CI läuft ohne Produktions-Credentials und ohne echtes Sheet.",
+        "Fehlgeschlagene fachliche Tests führen zu einem fehlgeschlagenen Lauf.",
+        "Ein erfolgreicher Lauf samt Befehlen ist dokumentiert."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M2-01",
+      "epic": "M2",
+      "title": "Positions-, Bewertungs- und Datenstatusmodelle definieren",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [
+        "M1-02"
+      ],
+      "goal": "Import, Berechnungen und Oberfläche verwenden denselben Datenvertrag.",
+      "work": [
+        "Position mit Menge, Typ, Kategorie, EUR-Einstand, Symbolen und Quellenzeile modellieren.",
+        "Instrument-ID, Handelsplatz, Währungseinheit und Herkunft/Zeitpunkte von Bewertungen abbilden.",
+        "Fehlende Werte, belegte Nullwerte, Warnungen und nicht aktive Bestände unterscheiden."
+      ],
+      "acceptance": [
+        "Fehlender Preis unterscheidet sich von belegtem Preis null.",
+        "Anzeige-Ticker sind keine eindeutigen Instrument-IDs; gleiche Namen erzwingen keine Zusammenführung.",
+        "Verträge lassen sich ohne Netzwerk anhand synthetischer Beispiele validieren."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M2-02",
+      "epic": "M2",
+      "title": "Sheet-Zeilen anhand des Schemas parsen und validieren",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [
+        "M2-01",
+        "M1-03"
+      ],
+      "goal": "Nur gültige Positionszeilen fließen in aktive Bestände ein; fehlerhafte Zeilen bleiben nachvollziehbar.",
+      "work": [
+        "A–M über Überschriften abbilden; Schemaänderungen verständlich melden.",
+        "Zahlen, Bruchstücke, Leerwerte und k. A. normalisieren; zusammenfassende Zeilen und Aggregate ausschließen.",
+        "Nullbestände ausschließen und negative Bestände gesondert kennzeichnen; Ergebniszellen nur plausibilisieren."
+      ],
+      "acceptance": [
+        "Tests erfassen deutsche Zahlen, leere Werte, fehlende Spalten, Summenzeilen und Bruchstücke.",
+        "Null-/Negativbestände werden nicht als positive aktive Positionen summiert.",
+        "Zeilenfehler nennen Feld und Zeilenbezug; J-Prozentpunkte werden nicht nochmals mit 100 multipliziert."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M2-03",
+      "epic": "M2",
+      "title": "Eigenen lesenden Sheet-Laufzeitzugang einrichten",
+      "priority": "P0",
+      "size": "S",
+      "dependencies": [],
+      "goal": "Der Server erhält einen unabhängig vom Chat funktionierenden, gezielten Lesezugang.",
+      "work": [
+        "Service-Account und API-Zugang im vorgesehenen Konto einrichten.",
+        "Nur die erforderliche Datei lesend freigeben; spreadsheets.readonly verwenden.",
+        "Zugangsdaten und Dateiidentität in der Secret-Verwaltung hinterlegen, getrennt vom OIDC-Login."
+      ],
+      "acceptance": [
+        "Lesetest mit Laufzeitidentität gelingt; die App implementiert keinen Schreibpfad.",
+        "Credentials, Dokumentlink und Datei-ID werden weder im Repository noch im Issue dokumentiert.",
+        "Eine kurze Einrichtung beschreibt sichere Ablage und Erneuerung des Zugangs."
+      ],
+      "input": "Cloud-Konto, Service-Account und gezielte Lesefreigabe vom Besitzer benötigt.",
+      "kind": "Einrichtung"
+    },
+    {
+      "id": "M2-04",
+      "epic": "M2",
+      "title": "Sheets-Adapter mit Fehlerstatus und Aktualisierung implementieren",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M2-02",
+        "M1-03"
+      ],
+      "goal": "Die Anwendung liest begrenzte, konfigurierte Bereiche und liefert einen konsistenten Importstand.",
+      "work": [
+        "Adapter für API-Abruf, Bereichskonfiguration und Importzeitpunkt implementieren.",
+        "Timeout, fehlende Berechtigung und Schemafehler behandeln; keine sensiblen Rohdaten loggen.",
+        "Adapter mit synthetischen Antworten prüfen; Live-Abgleich nach M2-03/M6 durchführen."
+      ],
+      "acceptance": [
+        "Adaptertests benötigen keinen echten Google-Zugang.",
+        "Leere Quelle und fehlgeschlagener Abruf sind unterscheidbar; ein Teilausfall erzeugt keinen erfundenen vollständigen Bestand.",
+        "Abruf verändert weder Werte noch Formeln oder Formatierung des Sheets."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M3-01",
+      "epic": "M3",
+      "title": "Geprüfte Instrument- und Provider-Zuordnung implementieren",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [
+        "M2-01"
+      ],
+      "goal": "Automatische Kurse gehören eindeutig zur gehaltenen Anteilsklasse und zum richtigen Listing.",
+      "work": [
+        "Zuordnungsvertrag für Instrument-ID, Typ, Listing, Provider-Symbol und Einheit erstellen.",
+        "Aktien und ADRs explizit unterscheiden; gleiche Ticker über Handelsplätze hinweg prüfen.",
+        "Nur belegte identische Instrumente aggregieren; reale Zuordnungen in geschützter Konfiguration halten."
+      ],
+      "acceptance": [
+        "Tests verhindern Namens-/Tickerkollisionen und falschen ADR-Ersatz.",
+        "Unbestätigte Zuordnungen bleiben offen und lösen keinen geratenen Kursabruf aus.",
+        "Zusammenführung dokumentiert die beteiligten Teilpositionen."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M3-02",
+      "epic": "M3",
+      "title": "ETF- und Derivatekennungen sowie Bewertungsquellen klären",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [],
+      "goal": "Offene Produktidentitäten und manuelle Kurse erhalten eine nachvollziehbare Behandlung.",
+      "work": [
+        "ISIN/WKN, Anteilsklasse und Listing der betroffenen Produkte privat erfassen.",
+        "Anbieterabdeckung je konkretem Derivat/ETF prüfen; Kurszeitpunkte fester Werte klären.",
+        "Ungeklärte Produkte mit begründetem Status für manuelle Bewertung oder fehlende Versorgung führen."
+      ],
+      "acceptance": [
+        "Jedes betroffene Produkt ist verifiziert oder ausdrücklich als ungeklärt dokumentiert.",
+        "Kein Underlying-Kurs wird für ein Derivat eingesetzt.",
+        "Ein akzeptierter Teilumfang bleibt möglich; manuelle Kurse ohne Zeitnachweis werden als unbekannt datiert ausgewiesen."
+      ],
+      "input": "Produktkennungen und gegebenenfalls Quellen/Zeitpunkte manueller Bewertungen vom Besitzer benötigt.",
+      "kind": "Klärung"
+    },
+    {
+      "id": "M3-03",
+      "epic": "M3",
+      "title": "Kurs-, Historien- und FX-Provider anbinden",
+      "priority": "P1",
+      "size": "L",
+      "dependencies": [
+        "M3-01",
+        "M1-03"
+      ],
+      "goal": "Ein austauschbarer Adapter liefert konsistente Preise und Historien einschließlich Herkunft und Zeitpunkten.",
+      "work": [
+        "yfinance-Adapter für verifizierte Symbole, reguläre Sitzung, Historien und FX implementieren.",
+        "Preisadjustierung und Provider-Defaults explizit prüfen; Splits ohne Dividendenrendite unterstützen.",
+        "Ausfälle, unzureichende Historie und Währungseinheiten als Status zurückgeben."
+      ],
+      "acceptance": [
+        "Providervertrag umfasst Kurszeit, Abrufzeit, Quelle, Einheit und Adjustierungsbasis.",
+        "Synthetische Vertragstests decken fehlende Daten, Splits und FX ab.",
+        "Nicht verifizierte oder nicht verfügbare Produkte erhalten keinen Ersatz durch ein anderes Instrument."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M3-04",
+      "epic": "M3",
+      "title": "Cache, Backoff und nachvollziehbare Ersatzwerte integrieren",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M3-03",
+        "M2-04"
+      ],
+      "goal": "Die Oberfläche erhält einen konsistenten Datenstand ohne unnötige Abrufe.",
+      "work": [
+        "Konfigurierbare Ziele umsetzen: Kurse/FX 60 s, Bestände 5 min, abgeschlossene Historien 6 h bei Nutzung.",
+        "Gebündelte Abrufe, Begrenzung/Backoff und manuelle Aktualisierung unter denselben Regeln implementieren.",
+        "Priorität geprüfter Providerpreis, letzter Providerpreis mit Alter, gekennzeichneter EUR-Sheet-Wert umsetzen."
+      ],
+      "acceptance": [
+        "Tests prüfen Cacheablauf, Aktualisieren und Fehler nach vorherigem Erfolg.",
+        "Nach Neustart ohne Daten steht Daten nicht verfügbar; kein fiktiver letzter Stand.",
+        "Ersatzwert/Alter bleiben sichtbar; ein manueller Preis erzeugt keine historische Rendite."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M4-01",
+      "epic": "M4",
+      "title": "Einstandssemantik nach Teilverkäufen klären",
+      "priority": "P0",
+      "size": "S",
+      "dependencies": [],
+      "goal": "Seit-Kauf-Werte beziehen sich auf den verbleibenden Einstand der gehaltenen Stücke.",
+      "work": [
+        "Bedeutung von Investiert (EUR) und Gebührenbehandlung mit Besitzer prüfen.",
+        "Teilverkäufe und fehlende Einstände an anonymisierten Beispielen abgleichen.",
+        "Ungeklärte Kostenbasen als nicht berechenbar festlegen und Ergebnis dokumentieren."
+      ],
+      "acceptance": [
+        "Es ist dokumentiert, ob und wie Teilverkäufe den verbleibenden Einstand verändern.",
+        "Ungeklärter Einstand wird nicht aus Marktwerten abgeleitet.",
+        "Konkrete Depotbeträge und Dokumentlinks bleiben außerhalb von Issues/Repository."
+      ],
+      "input": "Bestätigung zur Einstandsberechnung und anonymisierte Beispiele vom Besitzer benötigt.",
+      "kind": "Klärung"
+    },
+    {
+      "id": "M4-02",
+      "epic": "M4",
+      "title": "EUR-Bewertung, Währungseinheiten und Aggregation berechnen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M2-01",
+        "M3-01"
+      ],
+      "goal": "Positionswerte und Gewichte werden aus konsistenten EUR-Bewertungen berechnet.",
+      "work": [
+        "Menge × Instrumentpreis × FX nach EUR ohne vorzeitige Rundung berechnen.",
+        "Pence/Pfund, FX-Richtung und bereits in EUR vorliegende Sheet-Werte behandeln.",
+        "Aktive gültige Positionen aggregieren; Teilabdeckung und Quellenstatus erhalten."
+      ],
+      "acceptance": [
+        "Tests decken EUR, Fremdwährungen, falsche FX-Richtung und Untereinheiten ab.",
+        "EUR-Sheet-Werte werden nicht erneut umgerechnet; unbelegter Preis fehlt, belegter Preis null bleibt null.",
+        "Null-/Negativbestände werden nicht in Long-Summen eingeschleust; Gewichte verwenden dieselbe Bewertungsmenge."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M4-03",
+      "epic": "M4",
+      "title": "Vier Kursperioden mit Kalender- und Splitregeln berechnen",
+      "priority": "P1",
+      "size": "L",
+      "dependencies": [
+        "M2-01",
+        "M3-03"
+      ],
+      "goal": "Heute, Woche, Monat und Jahr liefern reine vergleichbare Kursänderungen in Handelswährung.",
+      "work": [
+        "Heutige Rendite nach regulärer Sitzung und Börsenzeitzone bestimmen.",
+        "Woche als sieben Kalendertage, Monat/Jahr kalendarisch mit Monatsend-/Schaltjahrregel behandeln.",
+        "Letzten gültigen Schlusskurs am/vor Zieltag anhand erwarteter Handelssitzungen wählen; Lücken begrenzen."
+      ],
+      "acceptance": [
+        "Tests prüfen laufenden/geschlossenen Markt, Wochenende, Feiertag, Zeitzone, Monatsende und Schaltjahr.",
+        "Splitbereinigung erzeugt keinen Renditesprung; Dividenden/FX fließen nicht als Kursrendite ein.",
+        "Unzureichende Historie und unerwartete Handelslücken ergeben n. v. mit Grund und Referenzdatum."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M4-04",
+      "epic": "M4",
+      "title": "Persönliche Rendite und gemeinsame Kostenbasis aggregieren",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M4-02"
+      ],
+      "goal": "Seit-Kauf-Prozente und Gesamtwerte verwenden dieselben gültigen aktiven Positionen.",
+      "work": [
+        "Einzelrendite aus EUR-Wert/verbleibendem EUR-Einstand berechnen.",
+        "Gesamtprozent aus Summen derselben gültigen Teilmenge berechnen; Abdeckung separat ausgeben.",
+        "Bei aggregierten Instrumenten den Einstand aller aktiven Teilpositionen verlangen."
+      ],
+      "acceptance": [
+        "120/100 und 330/300 ergeben einzeln 20 %/10 % und zusammen 12,5 %.",
+        "Eine zusätzliche Position ohne Einstand verändert diese Gesamtkennzahl nicht und reduziert sichtbar die Abdeckung.",
+        "Fehlender/nicht positiver Einstand ergibt n. v.; Dividenden, Verkäufe und Steuern werden nicht hinzugefügt."
+      ],
+      "input": "Implementierung mit synthetischen Daten sofort möglich; reale Kostenbasis erst nach M4-01 fachlich freigeben.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M4-05",
+      "epic": "M4",
+      "title": "Fachliche Regressionen über Import und Berechnung absichern",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M2-02",
+        "M4-02",
+        "M4-03",
+        "M4-04"
+      ],
+      "goal": "Die wichtigsten fachlichen Randfälle werden gemeinsam durch den Datenfluss geprüft.",
+      "work": [
+        "Anonymisierte Sollfälle für Mischwährungen, Splits, Datenlücken, Teilpositionen und Nullbestände aufbauen.",
+        "Import, Bewertung und Kennzahlen als integrierten Ablauf testen.",
+        "Abnahmewerte und zulässige numerische Toleranzen dokumentieren."
+      ],
+      "acceptance": [
+        "Deterministische Tests laufen ohne Provider und ohne Systemzeitabhängigkeit.",
+        "Treemap-Wertmodell, Tabellenwerte und Summen sind für denselben Snapshot konsistent.",
+        "Fehlende Werte führen weder zu 0-%-Renditen noch zu falscher Vollabdeckung."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M5-01",
+      "epic": "M5",
+      "title": "Deutsche App-Struktur und Ansichtswechsel bauen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M1-03",
+        "M2-01"
+      ],
+      "goal": "Die Oberfläche startet nachvollziehbar und bietet die zwei vereinbarten Ansichten.",
+      "work": [
+        "Dunkles Streamlit-Grundlayout mit Depotkopf, Datenstand und Ansichtssteuerung erstellen.",
+        "Heute/Woche/Monat/Jahr und Meine Entwicklung mit Seit Kauf integrieren.",
+        "Demo-Daten verwenden; geschützten Datenpfad später mit M6-03 anschließen."
+      ],
+      "acceptance": [
+        "Ein neuer Aufruf startet mit Kursentwicklung / Heute.",
+        "Meine Entwicklung blendet Perioden aus; Rückwechsel erhält die zuletzt gewählte Kursperiode.",
+        "App-Aufbau ist mit synthetischen Daten überprüfbar; reale Daten benötigen M6-03."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M5-02",
+      "epic": "M5",
+      "title": "Treemap nach eigenen Positionswerten rendern",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M5-01",
+        "M4-02",
+        "M4-03",
+        "M4-04"
+      ],
+      "goal": "Kachelfläche zeigt den EUR-Positionswert; die Farbe folgt der gewählten Rendite.",
+      "work": [
+        "Instrumentweise Flächen, Namen/Ticker und Prozentlabels darstellen.",
+        "Symmetrische sichtbare Farblegende sowie neutrale/graue Zustände integrieren.",
+        "Tooltip mit Stückzahl, Typ, Währung, Wert, Anteil, Datenstand und Referenzdatum ergänzen."
+      ],
+      "acceptance": [
+        "Flächen bleiben beim Ansichts-/Periodenwechsel bis zur nächsten Bewertung unverändert.",
+        "Fehlende Rendite ist grau mit n. v.; unbekannter Wert erzeugt keine Kachel.",
+        "Farbliche Begrenzung verändert keine Zahlen; verschiedene Derivate werden nicht über den Basiswert zusammengeführt."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M5-03",
+      "epic": "M5",
+      "title": "Kennzahlen, Tabelle und gemeinsame Filter integrieren",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M5-01",
+        "M4-02",
+        "M4-04"
+      ],
+      "goal": "Alle Positionen einschließlich Datenlücken sind über eine Tabelle zugänglich.",
+      "work": [
+        "Depotwert, aktive Positionen, Abdeckung und Gewinner/Verlierer mit klarer Bezugsmenge anzeigen.",
+        "Such-/sortierbare Tabelle und Typ-/Kategoriefilter erstellen.",
+        "Filter gemeinsam auf Karte und Tabelle anwenden; Kopfkennzahlen als Depotkennzahlen erhalten."
+      ],
+      "acceptance": [
+        "Unbewertbare Positionen bleiben mit Status in der Tabelle sichtbar.",
+        "Depotanteil bezieht sich auch bei Filtern auf den gesamten bewerteten Bestand und ist so beschriftet.",
+        "Kennzahlen, Tabelle und Karte verwenden denselben Bewertungs-Snapshot."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M5-04",
+      "epic": "M5",
+      "title": "Aktualisieren, Lade- und Fehlerzustände anschließen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M5-01",
+        "M2-04",
+        "M3-04"
+      ],
+      "goal": "Der Nutzer erkennt Aktualität, Teilausfälle und den Effekt manueller Aktualisierung.",
+      "work": [
+        "Aktualisieren-Button mit Bestands- und Kursabruf verbinden.",
+        "Status für veraltete/fehlende Historie, fehlende Kennung/Einstand und manuelle Bewertungen anzeigen.",
+        "Snapshot atomar austauschen und Teilabdeckung in Gesamtsummen kenntlich machen."
+      ],
+      "acceptance": [
+        "Sheet-Änderungen erscheinen nach erfolgreicher Aktualisierung ohne Schreibzugriff.",
+        "Manuelle Werte ohne Zeitpunkt heißen Sheet-Wert, Kursstand unbekannt.",
+        "Fehler belassen einen vorhandenen Stand mit Alter oder zeigen Daten nicht verfügbar; gemischte halbfertige Snapshots werden vermieden."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M5-05",
+      "epic": "M5",
+      "title": "Mobile Bedienung und zugängliche Darstellung prüfen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M5-02",
+        "M5-03",
+        "M5-04"
+      ],
+      "goal": "Das Dashboard lässt sich auf dem iPhone und mit Tastatur sinnvoll nutzen.",
+      "work": [
+        "Schmale Ansicht, Touch-Ziele, Tabellenzugang und Umbruch prüfen.",
+        "Vorzeichen/Text zusätzlich zu Farbe, Kontraste und Tastaturbedienung verbessern.",
+        "Bedienablauf ohne Hover und mit kleinen Positionen testen."
+      ],
+      "acceptance": [
+        "Ansichtswechsel, Filter und Aktualisieren funktionieren auf schmalem Bildschirm.",
+        "Alle wesentlichen Tooltip-Informationen sind auch ohne Hover erreichbar.",
+        "Getestete Größen/Browser und verbleibende Einschränkungen sind dokumentiert."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M6-01",
+      "epic": "M6",
+      "title": "Hosting-Anbieter, Budget und Ziel-URL entscheiden",
+      "priority": "P0",
+      "size": "S",
+      "dependencies": [],
+      "goal": "Der spätere Dienst hat eine geeignete und vom Besitzer akzeptierte Betriebsumgebung.",
+      "work": [
+        "Geeignete Optionen für Python-Container, HTTPS, WebSockets, Secrets und ausgehende Abrufe vergleichen.",
+        "Kosten, Laufzeit-/Sleep-Verhalten, Region und Wartungsaufwand festhalten.",
+        "Konto, Budgetrahmen und Ziel-URL vor Einrichtung bestätigen."
+      ],
+      "acceptance": [
+        "Die Wahl erfüllt die Anforderungen aus ADR 0009 und ist mit Kostenrahmen dokumentiert.",
+        "Es wird kein kostenpflichtiger Vertrag ohne Zustimmung abgeschlossen.",
+        "Erreichbarkeit von Sheet-/Kursquellen wird als Live-Prüfung eingeplant."
+      ],
+      "input": "Hosting-Konto, akzeptierter Kostenrahmen und Ziel-URL vom Besitzer benötigt.",
+      "kind": "Entscheidung"
+    },
+    {
+      "id": "M6-02",
+      "epic": "M6",
+      "title": "OIDC-Client und Besitzeridentität konfigurieren",
+      "priority": "P0",
+      "size": "S",
+      "dependencies": [],
+      "goal": "Eine konkret freigegebene Identität kann sich am Dashboard anmelden.",
+      "work": [
+        "Google-OIDC-Client für Entwicklungs-/Zielumgebung mit erlaubten Callback-URLs konfigurieren.",
+        "Validierte Issuer-/Subject-Identität des Besitzers kontrolliert festlegen.",
+        "Client-/Cookie-Secrets serverseitig hinterlegen und von Sheet-Zugang trennen."
+      ],
+      "acceptance": [
+        "Kein beliebiges erstes Konto wird automatisch Besitzer.",
+        "Freigabe verwendet validierte iss/sub; verifizierte E-Mail dient höchstens kontrolliertem Erstabgleich.",
+        "Anmeldeinformationen und persönliche Kennungen stehen nicht in Issues/Repository."
+      ],
+      "input": "Besitzerkonto und OIDC-Konfiguration vom Besitzer benötigt; finale Callback-URL hängt von M6-01 ab.",
+      "kind": "Einrichtung"
+    },
+    {
+      "id": "M6-03",
+      "epic": "M6",
+      "title": "Login und serverseitige Besitzerprüfung vor Datenzugriff erzwingen",
+      "priority": "P0",
+      "size": "M",
+      "dependencies": [
+        "M1-03",
+        "M5-01"
+      ],
+      "goal": "Anonyme oder fremde Nutzer erhalten keine Depotdaten oder Zugriffe auf deren Quellen.",
+      "work": [
+        "OIDC-Anmeldung, Besitzerfreigabe pro App-Lauf und Abmelden implementieren.",
+        "Alle Bestands-/Kurs-Ladepfade und mögliche Exporte erst hinter die Freigabe setzen.",
+        "Nicht konfigurierte, abgelaufene und nicht erlaubte Sitzungen geschlossen behandeln."
+      ],
+      "acceptance": [
+        "Tests zeigen: anonym/fremdes Konto lösen weder Datenabruf noch Datenanzeige aus.",
+        "Erlaubter Besitzer kann auf Demo-Daten zugreifen; fehlende Freigabe bleibt gesperrt.",
+        "Abmelden, erneutes Öffnen und mehrere Tabs sind geprüft; App-Logout wird nicht als globaler Google-Logout bezeichnet."
+      ],
+      "input": "Logik mit synthetischen Claims testbar; echter Login folgt nach M6-02.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M6-04",
+      "epic": "M6",
+      "title": "Reproduzierbaren Container und Betriebsparameter vorbereiten",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M1-02",
+        "M1-03",
+        "M6-03"
+      ],
+      "goal": "Die App startet als dauerhaft laufender Python-Dienst aus demselben Lockfile.",
+      "work": [
+        "Dockerfile mit uv sync --locked, Startbefehl und Healthcheck erstellen.",
+        "Port, Host, Reverse-Proxy-/WebSocket-Anforderungen und Secret-Injektion dokumentieren.",
+        "Build-Kontext frei von Git-Historie, privaten Daten und Credentials halten."
+      ],
+      "acceptance": [
+        "Container-Build und Start mit Demo-Konfiguration gelingen.",
+        "Healthcheck zeigt Prozessverfügbarkeit, ohne Depotdaten offenzulegen.",
+        "Image enthält keine privaten Dokumente, lokalen Secrets, Exporte oder Caches."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M6-05",
+      "epic": "M6",
+      "title": "Geschützte Zielumgebung mit HTTPS bereitstellen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M6-01",
+        "M6-02",
+        "M6-03",
+        "M6-04"
+      ],
+      "goal": "Der Dienst ist erreichbar und bereit für die kontrollierte Live-Abnahme.",
+      "work": [
+        "Container, HTTPS, WebSockets und getrennte Laufzeit-Secrets beim ausgewählten Host konfigurieren.",
+        "Zunächst Zugriffssperre mit Demo-Daten im echten Zielbetrieb testen.",
+        "Danach berechtigten Laufzeitzugang ergänzen; neutrale Logs und Restart-Verhalten prüfen."
+      ],
+      "acceptance": [
+        "HTTPS und Login-Callback funktionieren am Zielhost; WebSocket-Verbindung bleibt nutzbar.",
+        "Anonym/fremd bleiben vor Anschluss realer Daten gesperrt.",
+        "Neustart, fehlende Secrets und ausgehende Verbindungen sind nachvollziehbar geprüft."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M7-01",
+      "epic": "M7",
+      "title": "Live-Daten, Instrumentabdeckung und Einstand abgleichen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M2-03",
+        "M2-04",
+        "M3-02",
+        "M3-04",
+        "M4-01",
+        "M4-05",
+        "M6-05"
+      ],
+      "goal": "Die echte Laufzeit liefert fachlich nachvollziehbare Werte aus den autorisierten Quellen.",
+      "work": [
+        "Sheet-Lesezugriff und Providerabrufe aus der Hosting-Umgebung prüfen.",
+        "Identitäten, Preise/FX, Seit-Kauf-Werte und Summen mit Quellen vergleichen.",
+        "Abdeckung je Datenart und akzeptierte Ersatzwerte dokumentieren, sensible Nachweise privat halten."
+      ],
+      "acceptance": [
+        "Abweichungen sind erklärt oder als Fehler behoben; offene Produktidentitäten bleiben sichtbar.",
+        "Zeitpunkte und Quellen belegen Aktualität soweit verfügbar.",
+        "Live-Prüfung verändert das Sheet nicht; die öffentliche Dokumentation enthält keine Depotwerte."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M7-02",
+      "epic": "M7",
+      "title": "End-to-End-Abnahme für Zugriff, Ansichten und Mobilgeräte durchführen",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M7-01",
+        "M5-05",
+        "M6-05"
+      ],
+      "goal": "Die vereinbarten Benutzerabläufe funktionieren in der echten Zielumgebung.",
+      "work": [
+        "Anonym, fremdes Konto, Besitzer, Abmelden und erneutes Öffnen prüfen.",
+        "Vier Perioden, Seit Kauf, Filter, Tabelle, Aktualisieren und Fehlerzustände am Mac/iPhone testen.",
+        "Treemap/Tabelle/Kennzahlen auf gleiche Snapshot-Werte und verständliche Teilabdeckung vergleichen."
+      ],
+      "acceptance": [
+        "Anonyme und fremde Nutzer sehen weder Daten noch ungeschützte alternative Pfade.",
+        "Alle Abnahmepunkte aus PROJECT_PLAN.md sind mit Ergebnis/Nachweis versehen.",
+        "Offene Abweichungen sind priorisiert; kritische Zugriffs- oder Rechenfehler verhindern Veröffentlichung."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M7-03",
+      "epic": "M7",
+      "title": "Betriebsanleitung und Rollback praktisch verifizieren",
+      "priority": "P1",
+      "size": "M",
+      "dependencies": [
+        "M6-05"
+      ],
+      "goal": "Start, Konfiguration, Aktualisierung und Wiederherstellung sind nachvollziehbar.",
+      "work": [
+        "docs/OPERATIONS.md für Installation, Secret-Ablage, Updates, Störungen und Kostenkontrolle schreiben.",
+        "Vorheriges funktionierendes Image/Version als Rollback-Ziel vorhalten.",
+        "Rollback in einer passenden Testumgebung durchführen und Wiederanlauf prüfen."
+      ],
+      "acceptance": [
+        "Die Anleitung enthält keine Secrets, persönlichen Dokumentlinks oder echten Depotdaten.",
+        "Ein neuer Dienst kann anhand der Anleitung konfiguriert werden.",
+        "Rollback-Nachweis nennt Version und Ergebnis; Zugriffsschutz bleibt aktiv."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    },
+    {
+      "id": "M7-04",
+      "epic": "M7",
+      "title": "Geschützte Version veröffentlichen und Abschluss dokumentieren",
+      "priority": "P1",
+      "size": "S",
+      "dependencies": [
+        "M1-04",
+        "M7-02",
+        "M7-03"
+      ],
+      "goal": "Der Besitzer kann das geprüfte Dashboard unabhängig vom lokalen Rechner verwenden.",
+      "work": [
+        "Freigegebene Version und Betriebsstand dokumentieren; geschützte Ziel-URL bereitstellen.",
+        "Abnahmeergebnisse und bekannte Grenzen in README/Plan aktualisieren.",
+        "Epics/Issues anhand tatsächlicher Ergebnisse abschließen, Folgeideen gesondert erfassen."
+      ],
+      "acceptance": [
+        "Geschützte HTTPS-URL funktioniert am Mac und iPhone ohne laufenden lokalen Rechner.",
+        "Version, Abnahme, Datenlücken und Rollback sind dokumentiert.",
+        "Kein kritischer Zugriffs- oder Berechnungsfehler bleibt offen; eine öffentlich erreichbare URL bedeutet keine öffentlich sichtbaren Depotdaten."
+      ],
+      "input": "Keine zusätzliche Eingabe erforderlich.",
+      "kind": "Umsetzung"
+    }
+  ]
+}
