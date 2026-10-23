@@ -11,6 +11,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Architekturentscheidungen / ADRs](docs/adr/README.md)
 - [Allgemeines Importschema](docs/DATA_SOURCE.md)
 - [Fachlicher Datenvertrag](docs/DOMAIN_MODELS.md)
+- [Geprüfte Instrument- und Provider-Zuordnung](docs/INSTRUMENT_MAPPING.md)
 
 ## Dashboard entwickeln und prüfen
 
