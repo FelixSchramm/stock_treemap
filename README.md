@@ -10,6 +10,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Codex-Cloud-Worker/Reviewer-Vorlagen](agent_architecture/README.md)
 - [Architekturentscheidungen / ADRs](docs/adr/README.md)
 - [Allgemeines Importschema](docs/DATA_SOURCE.md)
+- [Fachlicher Datenvertrag](docs/DOMAIN_MODELS.md)
 
 ## Dashboard entwickeln und prüfen
 
