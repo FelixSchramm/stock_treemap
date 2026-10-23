@@ -1,76 +1,37 @@
-# Agent Architecture (dormant)
+# Codex Cloud worker and reviewer workflow
 
-> **STATUS: DORMANT.** Nothing in this folder does anything by itself. No agent
-> session, no scheduled routine, and no GitHub issue is created by merely having
-> these files in the repository. This is a template kit; it becomes active only
-> when the activation checklist below is completed deliberately.
+This folder contains **dormant templates** for using separate Codex Cloud tasks as a worker and a fresh reviewer. No task, agent chain, schedule, or branch is started by these files. Publishing a Codex Cloud environment prepares reusable dependencies and access; each task then gets its own isolated workspace. The GitHub issue and PR carry state between tasks. See [Codex Cloud environments](https://learn.chatgpt.com/docs/environments/cloud-environments).
 
-## What this is
-
-A battle-tested setup for letting an autonomous relay of Claude Code cloud
-sessions work through a repository improvement plan, one GitHub issue at a
-time. It was developed and fully executed on
-[`credit-risk-modelling`](https://github.com/FelixSchramm/credit-risk-modelling),
-where a chain of single-purpose sessions implemented and reviewed 12 issues
-without human intervention.
-
-The core ideas:
-
-- **One session, one job.** A *worker* session implements exactly one issue on
-  a feature branch and opens a PR; a *reviewer* session reviews that PR with
-  fresh eyes, fixes only clear-cut findings, merges, and spawns the next
-  worker. No session does two jobs.
-- **An integration branch** collects all reviewed merges. `main` is only
-  touched at the very end, by a single PR that the human reviews.
-- **`HANDOVER.md` is the only memory.** Git history plus this file are the only
-  channel between sessions; snapshots go to `docs/handovers/`.
-- **A fallback routine** (twice daily) restarts the relay if it stalls, and
-  stands down silently while the relay is healthy or finished.
-- **A budget rule** makes every session hand over cleanly before it runs out of
-  context.
-
-## Files in this folder
+## Files
 
 | File | Purpose |
-|---|---|
-| `CLAUDE.template.md` | The relay protocol. Fill the placeholders and copy to the repo root as `CLAUDE.md`. |
-| `CLAUDE_CODING_RULES.md` | Coding standards the relay enforces. Copy to the repo root as-is (adjust to taste). |
-| `HANDOVER.template.md` | Initial handover state. Fill placeholders, copy to the repo root as `HANDOVER.md`. |
-| `handovers_README.md` | Copy to `docs/handovers/README.md` (the snapshot archive). |
-| `prompts/kickoff_worker.md` | Prompt that starts the first worker session. |
-| `prompts/fallback_routine.md` | Prompt + settings for the twice-daily fallback routine. |
-| `prompts/review_phase.md` | *Optional:* prompt for a review agent that generates the work-plan issues in the first place. |
+| --- | --- |
+| `AGENTS.template.md` | Copy to repository root as `AGENTS.md` only when activating repository instructions. |
+| `CODEX_HANDOVER.template.md` | Checklist for the issue/PR comment shared between tasks. |
+| `CODEX_CODING_RULES.md` | Focused review and implementation rules referenced from `AGENTS.md`. |
+| `prompts/codex_worker.md` | Starts one issue implementation task and opens a PR. |
+| `prompts/codex_reviewer.md` | Starts a new task to review an exact PR commit. |
+| `prompts/codex_reviewer_followup.md` | Starts a worker task to address accepted review comments. |
+| `prompts/codex_automation_design.md` | Scope for a future dispatcher; does not itself run or install one. |
+
+## How handoff works
+
+1. The owner starts a cloud task with the worker prompt and one ready issue.
+2. The worker commits its issue branch, opens a PR into `agents/integration`, and writes the PR URL, commit SHA, and checks to the issue.
+3. The owner starts a **separate fresh cloud task** with the reviewer prompt and exact PR URL/SHA.
+4. The reviewer reports findings on the PR. If fixes are needed, the owner starts a new worker follow-up task. If review passes, the owner reviews and merges.
+5. Only after the merge does the owner start the next issue's worker task.
+
+Codex Cloud tasks do not share their working directories or automatically start one another. A committed PR and its issue discussion are the handoff channel. The first version of this workflow is therefore deliberately owner-started. A true unattended relay needs a separate dispatcher that checks PR and issue state, starts the next Cloud task, handles retries/idempotency, and records outcomes; the design prompt outlines that later work. Codex Cloud supports starting tasks from the CLI, but a prompt template by itself does not chain independent tasks. [Developer commands](https://learn.chatgpt.com/docs/developer-commands)
 
 ## Activation checklist
 
-Work through these steps in order. Until step 6, nothing runs on its own.
+1. Reconcile `main` with `origin/main`; confirm the current repository visibility and decide whether its earlier history is acceptable for cloud use.
+2. In Codex, create a Cloud environment with this GitHub repository, inspect its setup, then publish it. Start with no financial data or long-lived credentials. Repository instructions and synthetic tests should be enough for initial implementation tasks.
+3. Review the existing [issue plan](../backlog/README.md). Begin with a ready issue such as M1-02 only after repository setup issues and dependencies are clear.
+4. Create and push `agents/integration` from the agreed `main` base.
+5. Copy `AGENTS.template.md` to the repository root as `AGENTS.md`, and `CODEX_CODING_RULES.md` to the root. Review the instructions as code before committing them.
+6. Start one worker task manually. Inspect its PR and handoff, then start the reviewer task using the exact PR head SHA.
+7. Refine the prompts only from observed behavior. Keep merge, issue closure, branch protection and sensitive access under owner control. Consider automatic dispatch only after the manual cycle is reliable.
 
-1. **Create the work plan as GitHub issues.** Either write the issues yourself,
-   or run the optional `prompts/review_phase.md` agent, which reviews the repo
-   and creates prioritized, self-contained issues (P0-P3 labels). Each issue
-   must be implementable without any context beyond its own text.
-2. **Decide the parameters** and fill every `<PLACEHOLDER>` in
-   `CLAUDE.template.md` and `HANDOVER.template.md`:
-   `<OWNER/REPO>`, `<INTEGRATION_BRANCH>` (e.g. `agents/integration`),
-   `<ISSUE_RANGE>` (e.g. `#2-#13`), `<ISSUE_ORDER>`, and the short project
-   description.
-3. **Install the files at the repo root** — this is what arms the protocol for
-   Claude Code sessions (a `CLAUDE.md` is only auto-loaded from the repo root,
-   never from a subfolder):
-   - `CLAUDE.template.md` -> `/CLAUDE.md`
-   - `CLAUDE_CODING_RULES.md` -> `/CLAUDE_CODING_RULES.md`
-   - `HANDOVER.template.md` -> `/HANDOVER.md`
-   - `handovers_README.md` -> `/docs/handovers/README.md`
-4. **Create the integration branch** off the default branch and push it:
-   `git checkout -b <INTEGRATION_BRANCH> && git push -u origin <INTEGRATION_BRANCH>`.
-5. **Create the fallback routine** following `prompts/fallback_routine.md`
-   (cron `0 6,18 * * *`, fresh session per firing). This is the safety net, not
-   the starter — its prompt stands down unless the relay has stalled.
-6. **Start the relay:** open a new Claude Code cloud session on this repository
-   and paste `prompts/kickoff_worker.md` (placeholders filled). From here on
-   the relay runs itself.
-
-To pause the relay: disable the fallback routine and let the current session
-finish (or interrupt it). To retire the setup after completion: merge the final
-integration PR, disable the routine, and optionally remove the protocol files
-from the root again.
+Do not add Google Sheet access or portfolio secrets to a general-purpose shared environment. If a later task needs a credential, use the narrowest supported Cloud secret mechanism and authorized destination. Cloud environments support per-task workspaces and configurable variables/network secrets; they do not receive this Mac's files or sign-ins automatically. [Environment configuration](https://learn.chatgpt.com/docs/environments/cloud-environments)

@@ -7,6 +7,7 @@ Der vorhandene Code ist ein früher Heatmap-Prototyp. Das geplante Dashboard wir
 - [Umsetzungsplan](PROJECT_PLAN.md)
 - [Epics, Issues und Reihenfolge](docs/backlog/README.md)
 - [GitHub-Issues](https://github.com/FelixSchramm/stock_treemap_open_ai/issues)
+- [Codex-Cloud-Worker/Reviewer-Vorlagen](agent_architecture/README.md)
 - [Architekturentscheidungen / ADRs](docs/adr/README.md)
 - [Allgemeines Importschema](docs/DATA_SOURCE.md)
 
