@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from portfolio_dashboard.models import (
-    Instrument, InstrumentType, Position, ProviderMapping,
+    Instrument,
+    InstrumentType,
+    Position,
+    ProviderMapping,
 )
 
 

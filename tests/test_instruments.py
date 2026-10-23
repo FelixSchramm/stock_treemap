@@ -1,10 +1,10 @@
 """Synthetic verified associations only; no real identifiers or provider data."""
 
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
-import subprocess
-import sys
 
 import pytest
 
@@ -26,7 +26,6 @@ from portfolio_dashboard.models import (
     ValuationSource,
     ValueStatus,
 )
-
 
 IMPORTED = datetime(2026, 1, 5, 15, 30, tzinfo=timezone.utc)
 EUR = QuoteUnit("EUR", Decimal("1"))
