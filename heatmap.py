@@ -17,7 +17,7 @@ OUTPUT_FILE = Path(__file__).with_name("heatmap.html")
 
 def read_tickers(path: Path) -> list[str]:
     lines = path.read_text(encoding="utf-8").splitlines()
-    return [l.strip().upper() for l in lines if l.strip() and not l.startswith("#")]
+    return [line.strip().upper() for line in lines if line.strip() and not line.startswith("#")]
 
 
 def fetch(ticker: str) -> dict | None:
