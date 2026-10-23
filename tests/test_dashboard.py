@@ -1,8 +1,8 @@
 """Exercise the actual dashboard's session lifecycle and offline boundary."""
 
-from pathlib import Path
 import os
 import socket
+from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -16,7 +16,6 @@ from portfolio_dashboard.ui import (
     PERSONAL_VIEW,
     VIEW_KEY,
 )
-
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
 

@@ -11,7 +11,6 @@ from portfolio_dashboard.models import (
     SnapshotStatus,
 )
 
-
 # A fixed fixture timestamp is never presented as the current clock or live data.
 DEMO_TIMESTAMP = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
 

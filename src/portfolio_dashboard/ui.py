@@ -4,7 +4,6 @@ import streamlit as st
 
 from portfolio_dashboard.models import PortfolioSnapshot
 
-
 COURSE_VIEW = "Kursentwicklung"
 PERSONAL_VIEW = "Meine Entwicklung"
 COURSE_PERIODS = ("Heute", "Woche", "Monat", "Jahr")
