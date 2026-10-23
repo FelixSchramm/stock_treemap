@@ -28,7 +28,11 @@ uv run --locked pytest
 uv run --locked python -c "from portfolio_dashboard.demo import demo_rows; print(demo_rows())"
 ```
 
-Die Tests führen den Streamlit-Einstieg aus und prüfen die sichtbaren synthetischen Zeilen. Zusätzlich importiert ein frischer Python-Prozess die Fachmodule mit gesperrten UI-/Provider-Imports und Netzwerkverbindungen. In der Cloud können schreibgeschützte Home-Verzeichnisse einen abweichenden Cache benötigen: `export UV_CACHE_DIR=/workspace/.cache/uv XDG_CACHE_HOME=/workspace/.cache`.
+Die Tests führen den Streamlit-Einstieg aus und prüfen die sichtbaren synthetischen Zeilen und Ansichtswechsel. Zusätzlich importiert ein frischer Python-Prozess die Fachmodule mit gesperrten UI-/Provider-Imports und Netzwerkverbindungen. In der Cloud können schreibgeschützte Home-Verzeichnisse einen abweichenden Cache benötigen: `export UV_CACHE_DIR=/workspace/.cache/uv XDG_CACHE_HOME=/workspace/.cache`.
+
+Der deutsche Demo-Aufbau verwendet das native dunkle Streamlit-Theme, einen Depotkopf und einen ausdrücklich synthetischen, festen Datenstand. Jede neue Sitzung startet mit **Kursentwicklung / Heute**. Die Kursperioden **Heute, Woche, Monat, Jahr** bleiben beim Wechsel zu **Meine Entwicklung / Seit Kauf** und zurück erhalten; in der persönlichen Ansicht ist die Kursperiodenauswahl ausgeblendet. Die Demo zeigt in beiden Ansichten dieselben vorgegebenen Beispielwerte. Sie berechnet weder Kurs- noch persönliche Renditen und setzt keinen bestätigten tatsächlichen Einstand voraus. Die Treemap und fachlichen Berechnungen folgen separat; der reale Datenpfad bleibt bis M6-03 (#32) geschlossen.
+
+Die kleinen UI-Helfer stehen in [`ui.py`](src/portfolio_dashboard/ui.py). `dashboard.view` und `dashboard.course_period` speichern die Auswahl für die aktuelle Sitzung; der temporäre Perioden-Widgetzustand wird getrennt gehalten, damit Streamlit ihn beim Ausblenden entfernen kann. [`demo.py`](src/portfolio_dashboard/demo.py) liefert dafür einen ausschließlich synthetischen `PortfolioSnapshot` ohne Kurse und ohne bestätigten Einstand sowie separate, vorgegebene Tabellenwerte.
 
 ### Laufzeitkonfiguration und Testdaten
 
