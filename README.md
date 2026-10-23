@@ -20,7 +20,7 @@ uv sync --locked
 uv run --locked streamlit run app.py
 ```
 
-Der Demo-Einstieg benötigt weder Netzwerkzugriff noch Secrets, Login oder eine persönliche Tickerliste. Er liest keine echte Depotkonfiguration. Der Start des lokalen Servers ist keine Veröffentlichung und richtet keinen geschützten Produktivbetrieb ein.
+Der Demo-Einstieg benötigt weder Netzwerkzugriff noch Secrets, Login oder eine persönliche Tickerliste. `PORTFOLIO_MODE=demo` ist der Standard; reale Quellen- und Login-Einstellungen werden in diesem Modus verworfen. Der Start des lokalen Servers ist keine Veröffentlichung und richtet keinen geschützten Produktivbetrieb ein.
 
 ```bash
 uv run --locked pytest
@@ -28,6 +28,18 @@ uv run --locked python -c "from portfolio_dashboard.demo import demo_rows; print
 ```
 
 Die Tests führen den Streamlit-Einstieg aus und prüfen die sichtbaren synthetischen Zeilen. Zusätzlich importiert ein frischer Python-Prozess die Fachmodule mit gesperrten UI-/Provider-Imports und Netzwerkverbindungen. In der Cloud können schreibgeschützte Home-Verzeichnisse einen abweichenden Cache benötigen: `export UV_CACHE_DIR=/workspace/.cache/uv XDG_CACHE_HOME=/workspace/.cache`.
+
+### Laufzeitkonfiguration und Testdaten
+
+[`config.py`](src/portfolio_dashboard/config.py) lädt typisierte Einstellungen aus exportierten Umgebungsvariablen. [`.env.example`](.env.example) dokumentiert ausschließlich Standardwerte und Platzhalter; die Anwendung lädt `.env`-Dateien nicht automatisch. Secret-Werte gehören in die serverseitige Secret-Verwaltung des gewählten Hosts. Sie dürfen weder in Git noch in Kommandozeilen oder Logs erscheinen. Quelldatei, Tabellenbereich und Besitzerkennungen werden ebenfalls vertraulich behandelt.
+
+- `PORTFOLIO_MODE`: `demo` oder `production`. Demo verwendet nur synthetische Daten; im aktuellen Stand bleibt der Produktiveinstieg auch bei vollständiger Konfiguration geschlossen, bis die Besitzerprüfung implementiert ist.
+- `PORTFOLIO_SOURCE=google_sheets`, `PORTFOLIO_SHEET_ID`, `PORTFOLIO_SHEET_RANGE`, `PORTFOLIO_SHEETS_CREDENTIALS_FILE`: explizite Quellkonfiguration. Der Konfigurationslader liest keine Credential-Dateien und übernimmt keine möglicherweise geerbte Plattformidentität automatisch. Laufzeit-Lesezugang folgt in M2-03/M2-04.
+- `PORTFOLIO_PROVIDER=yfinance`: vorgesehener Anbieter im Produktivmodus. Demo erzwingt stattdessen den synthetischen Anbieter; Providerabrufe folgen in M3-03.
+- `PORTFOLIO_QUOTES_TTL_SECONDS=60`, `PORTFOLIO_HOLDINGS_TTL_SECONDS=300`, `PORTFOLIO_HISTORY_TTL_SECONDS=21600`: positive ganze Sekunden entsprechend ADR 0005.
+- `PORTFOLIO_LOGIN_PROVIDER=google` sowie die `PORTFOLIO_OWNER_*`, `PORTFOLIO_OIDC_*` und `PORTFOLIO_COOKIE_SECRET`-Felder: getrennte OIDC-/Besitzerkonfiguration. Vollständige Konfiguration ist keine Anmeldung und keine Besitzerfreigabe. Login und serverseitige Autorisierung folgen in M6-03.
+
+Fehlende Platzhalter, ungültige Werte und fehlende Besitzerkonfiguration sperren den Produktiveinstieg. Fehlermeldungen nennen nur Feldnamen; Konfigurationsrepräsentationen geben keine vertraulichen Inhalte aus. `synthetic_import_cases()` in [`fixtures.py`](src/portfolio_dashboard/fixtures.py) stellt ausschließlich erfundene Aktien-/ETF-/Derivatefälle mit EUR/USD/GBP, fehlenden, Null- und negativen Werten bereit. Parser und Bewertung folgen separat. Die Bedeutung tatsächlicher Einstandswerte nach Teilverkäufen ist noch ungeklärt; daraus dürfen bis zur Bestätigung keine persönlichen Seit-Kauf-Renditen entstehen.
 
 ## Vorhandener Prototyp (Legacy)
 
