@@ -38,24 +38,36 @@ class SessionCalendar:
     """Expected regular sessions in exchange-local dates plus regular hours.
 
     Early closes are not modelled; supply the actual close_time if needed.
-    The set must cover the dates the periods reach back to.
+    ``first_day``..``last_day`` is the span the set is complete for. It must
+    reach from the oldest period target to the local exchange date; outside it
+    the result is "calendar_incomplete" instead of bridging backwards.
     """
 
     sessions: frozenset[date]
     open_time: time
     close_time: time
+    first_day: date
+    last_day: date
 
     def __post_init__(self) -> None:
         if not all(type(day) is date for day in self.sessions):
             raise TypeError("sessions must be dates")
         if not self.open_time < self.close_time:
             raise ValueError("open_time must be before close_time")
+        if not self.first_day <= self.last_day:
+            raise ValueError("first_day must not be after last_day")
 
 
 def session_calendar(
-    sessions: Iterable[date], open_time: time, close_time: time
+    sessions: Iterable[date],
+    open_time: time,
+    close_time: time,
+    first_day: date,
+    last_day: date,
 ) -> SessionCalendar:
-    return SessionCalendar(frozenset(sessions), open_time, close_time)
+    return SessionCalendar(
+        frozenset(sessions), open_time, close_time, first_day, last_day
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +113,7 @@ def price_period_returns(
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     problem = _history_problem(history)
+    running = current_date = today = None
     if problem is None:
         local = now.astimezone(ZoneInfo(history.exchange_timezone))
         today, clock = local.date(), local.time()
@@ -113,7 +126,10 @@ def price_period_returns(
             for point in history.points
             if point.session_date in sessions.sessions
         }
-        if running:
+        current_date = current = None
+        if not sessions.first_day <= today <= sessions.last_day:
+            problem = "calendar_incomplete"
+        elif running:
             current_date, current, problem = _live_quote(
                 history, quote, sessions, local
             )
@@ -130,9 +146,25 @@ def price_period_returns(
                 problem = "calendar_incomplete"
             elif current is None:
                 problem = "missing_current_close"
+        # Newer bars on days the calendar does not carry contradict it.
+        if problem is None and any(
+            point.session_date > current_date
+            and point.session_date not in sessions.sessions
+            for point in history.points
+        ):
+            problem = "calendar_incomplete"
     if problem is not None:
+        # Keep the dates that are known: the expected session and its state.
+        known = problem != "calendar_incomplete"
+        shown = current_date or (today if running and known else None)
         return {
-            period: PeriodReturn(period, reason=problem, unit=history.unit)
+            period: PeriodReturn(
+                period,
+                reason=problem,
+                market_open=running if known else None,
+                current_date=shown if known else None,
+                unit=history.unit,
+            )
             for period in PricePeriod
         }
     return {
@@ -201,6 +233,8 @@ def _period(period, unit, running, current_date, current, closes, sessions):
         candidates = [] if target is None else [target]
     else:
         target = _target(period, current_date)
+        if target < sessions.first_day:
+            return result("calendar_incomplete", target=target)
         candidates = sorted(
             (d for d in sessions.sessions if d <= target), reverse=True
         )[: MAX_MISSING_SESSIONS + 1]

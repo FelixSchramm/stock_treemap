@@ -1,5 +1,6 @@
 """Synthetic sessions and prices only; injected clock, no network."""
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -36,7 +37,11 @@ OPEN, CLOSE = time(9, 30), time(16)
 def sessions(holidays=(), start=date(2024, 1, 1), end=date(2029, 12, 31)):
     days = (start + timedelta(days=n) for n in range((end - start).days + 1))
     return session_calendar(
-        (d for d in days if d.weekday() < 5 and d not in holidays), OPEN, CLOSE
+        (d for d in days if d.weekday() < 5 and d not in holidays),
+        OPEN,
+        CLOSE,
+        start,
+        end,
     )
 
 
@@ -112,7 +117,17 @@ def test_running_market_without_usable_quote_is_not_available(kind):
         "basis": quote(100, ny(2026, 10, 23, 10), basis=None),
     }
     out = price_period_returns(history(cal), quotes[kind], cal, ny(2026, 10, 23, 11))
-    assert all(not r.available and r.reason for r in out.values())
+    reason = {
+        "none": "missing_quote",
+        "old": "stale_quote",
+        "unit": "unit_mismatch",
+        "basis": "unknown_adjustment_basis",
+    }[kind]
+    assert {r.reason for r in out.values()} == {reason}
+    assert all(
+        r.market_open is True and r.current_date == date(2026, 10, 23)
+        for r in out.values()
+    )
 
 
 @pytest.mark.parametrize(
@@ -148,7 +163,7 @@ def test_holiday_session_is_skipped_for_today_and_week():
 
 
 def test_exchange_timezone_decides_the_local_session_date():
-    cal = session_calendar(sessions().sessions, time(9), time(15))
+    cal = replace(sessions(), open_time=time(9), close_time=time(15))
     h = history(cal, tz="Asia/Tokyo")
     # 23:00 UTC on the 22nd is 08:00 JST on the 23rd: before open.
     before = price_period_returns(h, None, cal, datetime(2026, 10, 22, 23, tzinfo=UTC))
@@ -269,3 +284,68 @@ def test_unavailable_history_and_zero_reference():
     zero = history(cal, overrides={date(2026, 10, 22): 0})
     today = price_period_returns(zero, None, cal, now)[PricePeriod.TODAY]
     assert today.reason == "zero_reference"
+
+
+def test_calendar_ending_before_today_is_incomplete_not_bridged():
+    cal = sessions(end=date(2026, 9, 30))
+    h = history(sessions(end=date(2026, 10, 23)))  # newer bars exist
+    out = price_period_returns(h, None, cal, ny(2026, 10, 23, 17))
+    assert {r.reason for r in out.values()} == {"calendar_incomplete"}
+    assert all(r.current_date is None and not r.available for r in out.values())
+
+
+def test_calendar_starting_after_a_target_is_incomplete():
+    cal = sessions(start=date(2026, 6, 1))
+    out = price_period_returns(history(cal), None, cal, ny(2026, 10, 23, 17))
+    assert out[PricePeriod.TODAY].available and out[PricePeriod.MONTH].available
+    assert out[PricePeriod.YEAR].reason == "calendar_incomplete"
+
+
+def test_history_bar_on_a_day_the_calendar_lacks_is_incomplete():
+    cal = sessions(holidays={date(2026, 10, 23)})
+    h = history(sessions())  # has a bar on the listed holiday
+    out = price_period_returns(h, None, cal, ny(2026, 10, 23, 17))
+    assert {r.reason for r in out.values()} == {"calendar_incomplete"}
+
+
+def test_missing_current_close_keeps_session_date_and_state():
+    cal = sessions()
+    h = history(cal, skip={date(2026, 10, 23)})
+    r = price_period_returns(h, None, cal, ny(2026, 10, 23, 17))[PricePeriod.TODAY]
+    assert r.reason == "missing_current_close"
+    assert (r.current_date, r.market_open) == (date(2026, 10, 23), False)
+
+
+@pytest.mark.parametrize(
+    ("now", "market_open", "day"),
+    [
+        (ny(2026, 10, 23, 9, 29), False, date(2026, 10, 22)),
+        (ny(2026, 10, 23, 9, 30), True, date(2026, 10, 23)),
+        (ny(2026, 10, 23, 15, 59), True, date(2026, 10, 23)),
+        (ny(2026, 10, 23, 16), False, date(2026, 10, 23)),
+    ],
+)
+def test_open_and_close_boundaries(now, market_open, day):
+    cal = sessions()
+    q = quote(100, ny(2026, 10, 23, 9, 30))
+    r = price_period_returns(history(cal), q, cal, now)[PricePeriod.TODAY]
+    assert r.market_open is market_open and r.current_date == day
+
+
+def test_quote_without_time_or_from_the_future_is_rejected():
+    cal = sessions()
+    now = ny(2026, 10, 23, 11)
+    undated = quote(100, now)
+    undated = replace(
+        undated,
+        valuation=replace(
+            undated.valuation,
+            provenance=replace(undated.valuation.provenance, observed_at=None),
+        ),
+    )
+    for q, reason in [
+        (undated, "missing_quote_time"),
+        (quote(100, ny(2026, 10, 23, 11, 1)), "stale_quote"),
+    ]:
+        out = price_period_returns(history(cal), q, cal, now)
+        assert {r.reason for r in out.values()} == {reason}

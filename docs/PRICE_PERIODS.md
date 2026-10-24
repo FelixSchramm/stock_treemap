@@ -5,7 +5,9 @@ als reine Fachlogik um: kein Provider-, Streamlit- oder Systemzeitzugriff.
 `price_period_returns(history, quote, sessions, now)` liefert für alle vier
 `PricePeriod`-Werte ein `PeriodReturn` mit Prozent `(P_aktuell / P_Referenz − 1) × 100`
 in Handelswährung oder „n. v.“ (`percent is None`) mit stabilem `reason`.
-Kurs-, Referenz- und Zieldatum sowie die Einheit bleiben im Ergebnis sichtbar.
+Kurs-, Referenz- und Zieldatum sowie die Einheit bleiben im Ergebnis sichtbar;
+bei Fehlern, die die erwartete Sitzung kennen (z. B. `missing_current_close`,
+Quote-Gründe), bleiben `current_date` und `market_open` erhalten.
 
 ## Eingaben
 
@@ -17,6 +19,11 @@ Kurs-, Referenz- und Zieldatum sowie die Einheit bleiben im Ergebnis sichtbar.
 - `sessions`: `SessionCalendar` mit erwarteten regulären Handelstagen
   (lokale Börsendaten, explizit vom Aufrufer, keine Kalenderbibliothek) sowie
   Öffnungs-/Schlusszeit. Vorzeitige Schlüsse werden nicht modelliert.
+  `first_day`/`last_day` geben die Abdeckung des Kalenders an. Liegt das lokale
+  Börsendatum außerhalb, reicht ein Zieltag vor `first_day`, oder enthält die
+  Historie neuere Balken an Tagen, die der Kalender nicht führt, ergibt sich
+  `calendar_incomplete` (kein Rückwärtsüberbrücken über einen abgelaufenen
+  Kalender).
 - `now`: zeitzonenbewusster Zeitpunkt (injiziert); die Börsenzeitzone stammt
   aus der Historie.
 
@@ -24,7 +31,9 @@ Kurs-, Referenz- und Zieldatum sowie die Einheit bleiben im Ergebnis sichtbar.
 
 - Läuft die Sitzung (Handelstag, Öffnung <= lokale Zeit < Schluss), zählt der
   Kurs der Quote (muss vom heutigen Tag und innerhalb der Sitzung sein, gleiche
-  Einheit/Basis), der unvollständige heutige Historienbalken wird ignoriert.
+  Einheit/Basis; sonst `stale_quote` für alle vier Perioden, auch Woche, Monat
+  und Jahr, z. B. bei verzögerten Kursen kurz nach Öffnung oder Instrumenten
+  ohne Handel am Tag), der unvollständige heutige Historienbalken wird ignoriert.
   Sonst gilt die letzte abgeschlossene Sitzung (Wochenende, Feiertag, vor
   Öffnung, nach Schluss) mit ihrem Schlusskurs.
 - Heute: Referenz ist der Schluss der vorherigen erwarteten Sitzung.
