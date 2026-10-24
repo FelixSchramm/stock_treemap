@@ -5,6 +5,7 @@ description = "Portfolio dashboard scaffold with an offline synthetic demo"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "google-auth>=2.62.0",
     "pandas>=2.0",
     "plotly>=5.20",
     "requests>=2.32.4",

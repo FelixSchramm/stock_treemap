@@ -306,7 +306,7 @@ def test_invalid_json_is_not_a_successful_empty_import(raw):
                 "Synthetic!A7:M",
                 "Synthetic!A7:M6",
                 "Synthetic!B7:M20",
-                "Synthetic!A7:N20",
+                "Synthetic!A7:U20",
                 "Synthetic!A0:M20",
                 PRIVATE,
             )
@@ -430,3 +430,21 @@ def test_requests_session_uses_only_one_synthetic_get(status, caplog):
     assert request.headers["Authorization"] == "Bearer synthetic-access-token"
     assert request.url.startswith("https://sheets.googleapis.com/v4/spreadsheets/")
     assert not caplog.records
+
+
+def test_range_up_to_column_t_reads_optional_hint_columns():
+    source = replace(SOURCE, worksheet_range="'Synthetic private tab'!A1:T30")
+    hint_headers = list(SHEET_HEADERS) + [""] * 4 + ["ISIN", "Handelsplatz", "Kursdatum"]
+    data = row() + [""] * 4 + ["DE0000000001", "Synthetic venue", 46318]
+    reader = SheetsAdapter(source, METADATA, SyntheticSession(response([hint_headers, data])))
+    result = reader.read(attempted_at=ATTEMPT)
+    (position,) = result.snapshot.positions
+    assert position.instrument.source_isin == "DE0000000001"
+    assert position.valuation.provenance.observed_at.date().isoformat() == "2026-10-23"
+
+
+def test_rows_wider_than_the_configured_end_column_fail_atomically():
+    wide = row() + ["x"]
+    reader, _ = adapter(response([list(SHEET_HEADERS), wide]))
+    result = reader.read(attempted_at=ATTEMPT)
+    assert not result.snapshot.positions
