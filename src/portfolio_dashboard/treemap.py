@@ -86,6 +86,17 @@ _RETURN_STATUS_LABELS = {
     PersonalReturnStatus.NONPOSITIVE_COST: "Einstand ≤ 0",
 }
 
+_PERIOD_REASON_LABELS = {
+    "stale_quote": "Kurs/Historie veraltet",
+    "insufficient_history": "Historie unvollständig",
+    "missing_reference_close": "Historie unvollständig",
+    "unexpected_gap": "Historie unvollständig",
+    "missing_current_close": "Aktueller Schlusskurs fehlt",
+    "calendar_incomplete": "Handelskalender unvollständig",
+    "unverified_instrument": "Kennung/Zuordnung fehlt",
+    "history_unavailable": "Historie fehlt",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class Performance:
@@ -156,6 +167,8 @@ class PortfolioKpis:
     personal_gain_label: str | None = None
     personal_return_label: str | None = None
     personal_coverage_label: str | None = None
+    is_partial_total: bool = False
+    total_status_note: str = "Vollständig bewertet"
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +419,7 @@ def group_status_label(
     *,
     is_personal_view: bool = False,
     group_return: ReturnAggregate | None = None,
+    period_reason: str | None = None,
 ) -> str:
     """Build a human-readable German status string for an active instrument group.
 
@@ -413,6 +427,7 @@ def group_status_label(
     :param performance: Selected performance for the group.
     :param is_personal_view: Whether the personal since-purchase view is active.
     :param group_return: Optional personal return aggregate for the group.
+    :param period_reason: Optional reason code from ``PeriodReturn`` when course return is missing.
     :return: German status description for table and status views.
     """
     active = _active_members(group)
@@ -461,7 +476,16 @@ def group_status_label(
         for m in valued
         for w in m.warnings
     )
+    has_unmapped_fallback = any(
+        m.position.valuation is not None
+        and m.position.valuation.provenance.source is ValuationSource.SHEET
+        and m.position.instrument.instrument_id is None
+        and any(w.code == "price_source_fallback" for w in m.warnings)
+        for m in valued
+    )
 
+    if has_unmapped_fallback:
+        notes.append("Kennung/Zuordnung fehlt")
     if has_sheet_unknown:
         notes.append(SHEET_UNKNOWN_QUOTE_STATUS)
     elif has_sheet_timed:
@@ -486,6 +510,12 @@ def group_status_label(
                 notes.append("Rendite seit Kauf n. v.")
         elif is_personal_view:
             notes.append("Einstand fehlt")
+        elif period_reason == "sheet_fallback" and (has_sheet_unknown or has_sheet_timed):
+            notes.append("Keine Kurshistorie bei Sheet-Bewertung")
+        elif period_reason in _PERIOD_REASON_LABELS:
+            mapped_reason = _PERIOD_REASON_LABELS[period_reason]
+            if mapped_reason not in notes:
+                notes.append(mapped_reason)
         else:
             notes.append("Historie fehlt")
 
@@ -650,7 +680,7 @@ def build_kpis(
             positive,
             key=lambda item: (
                 item[1].percent,
-                item[0]. amount_eur if item[0].amount_eur is not None else Decimal(-1),
+                item[0].amount_eur if item[0].amount_eur is not None else Decimal(-1),
                 -item[0].members[0].position.source_row,
             ),
         )
@@ -698,6 +728,53 @@ def build_kpis(
     else:
         loser_label = NOT_AVAILABLE
 
+    valued_active_members = [
+        member
+        for group, _ in active_pairs
+        for member in _active_members(group)
+        if member.amount_eur is not None
+    ]
+    has_sheet_unknown = any(
+        m.position.valuation is not None
+        and m.position.valuation.provenance.source is ValuationSource.SHEET
+        and m.position.valuation.provenance.observed_at is None
+        for m in valued_active_members
+    )
+    has_sheet_timed = any(
+        m.position.valuation is not None
+        and m.position.valuation.provenance.source is ValuationSource.SHEET
+        and m.position.valuation.provenance.observed_at is not None
+        for m in valued_active_members
+    )
+    has_cached = any(
+        m.position.valuation is not None
+        and m.position.valuation.provenance.source is ValuationSource.CACHED_PROVIDER
+        for m in valued_active_members
+    )
+    is_partial_total = bool(
+        valued_group_count < active_group_count or partially_valued_group_count > 0
+    )
+
+    qualifiers: list[str] = []
+    if valuation.total_eur is None:
+        total_status_note = "Daten nicht verfügbar"
+    else:
+        if is_partial_total:
+            qualifiers.append(
+                f"Teilabdeckung ({valued_group_count} von {active_group_count} Positionen)"
+            )
+        if has_sheet_unknown:
+            qualifiers.append(f"enthält {SHEET_UNKNOWN_QUOTE_STATUS}")
+        elif has_sheet_timed:
+            qualifiers.append("enthält Sheet-Werte")
+        if has_cached:
+            qualifiers.append("enthält gecachte Kurse")
+        total_status_note = (
+            " · ".join(qualifiers)
+            if qualifiers
+            else "Vollständig aus verifizierten Kursen bewertet"
+        )
+
     if not is_personal_view:
         return PortfolioKpis(
             total_eur=valuation.total_eur,
@@ -715,6 +792,8 @@ def build_kpis(
             loser=loser,
             winner_label=winner_label,
             loser_label=loser_label,
+            is_partial_total=is_partial_total,
+            total_status_note=total_status_note,
         )
 
     resolved_returns = returns if returns is not None else portfolio_returns(valuation)
@@ -777,6 +856,8 @@ def build_kpis(
         personal_gain_label=gain_label,
         personal_return_label=return_label,
         personal_coverage_label=personal_cov,
+        is_partial_total=is_partial_total,
+        total_status_note=total_status_note,
     )
 
 
@@ -888,6 +969,7 @@ def build_table_rows(
     criteria: FilterCriteria | None = None,
     is_personal_view: bool = False,
     returns: PortfolioReturns | None = None,
+    period_reasons: Sequence[str | None] | None = None,
 ) -> tuple[PositionTableRow, ...]:
     """Build table rows for all matching active instrument groups, including unvalued ones.
 
@@ -899,11 +981,14 @@ def build_table_rows(
     :param criteria: Optional filter criteria.
     :param is_personal_view: Whether the personal since-purchase view is active.
     :param returns: Optional PortfolioReturns for detailed cost-basis status labels.
+    :param period_reasons: Optional period reason codes aligned with ``valuation.groups``.
     :return: Tuple of PositionTableRow objects in snapshot order.
     :raises ValueError: If ``len(performances)`` does not match ``len(valuation.groups)``.
     """
     if len(performances) != len(valuation.groups):
         raise ValueError("one performance per valuation group is required")
+    if period_reasons is not None and len(period_reasons) != len(valuation.groups):
+        raise ValueError("one period_reason per valuation group is required")
     active_criteria = criteria if criteria is not None else FilterCriteria()
     resolved_returns = (
         returns
@@ -915,9 +1000,16 @@ def build_table_rows(
         if resolved_returns is not None
         else (None,) * len(valuation.groups)
     )
+    reasons_seq = (
+        tuple(period_reasons)
+        if period_reasons is not None
+        else (None,) * len(valuation.groups)
+    )
 
     rows: list[PositionTableRow] = []
-    for group, perf, group_ret in zip(valuation.groups, performances, return_groups):
+    for group, perf, group_ret, reason in zip(
+        valuation.groups, performances, return_groups, reasons_seq
+    ):
         if not _matches_filter(group, active_criteria):
             continue
         active = _active_members(group)
@@ -945,6 +1037,7 @@ def build_table_rows(
             perf,
             is_personal_view=is_personal_view,
             group_return=group_ret,
+            period_reason=reason,
         )
         rows.append(
             PositionTableRow(
@@ -1017,3 +1110,46 @@ def sort_table_rows(
     ordered = sorted(rows, key=lambda r: (r.name.lower(), r.source_row))
     ordered.sort(key=text_key, reverse=descending)
     return tuple(ordered)
+
+
+def build_status_notes(
+    valuation: PortfolioValuation,
+    performances: Sequence[Performance],
+    *,
+    is_personal_view: bool = False,
+    returns: PortfolioReturns | None = None,
+    period_reasons: Sequence[str | None] | None = None,
+) -> tuple[str, ...]:
+    """Build position-referenced German status notices for data gaps and fallbacks.
+
+    :param valuation: Complete portfolio valuation snapshot.
+    :param performances: Performances aligned with ``valuation.groups``.
+    :param is_personal_view: Whether the personal since-purchase view is active.
+    :param returns: Optional precomputed PortfolioReturns.
+    :param period_reasons: Optional period reason codes aligned with ``valuation.groups``.
+    :return: Tuple of human-readable German status messages.
+    """
+    notes: list[str] = []
+    for warning in valuation.snapshot.warnings:
+        row_prefix = (
+            f"Zeile {warning.source_row}: "
+            if warning.source_row is not None
+            else ""
+        )
+        entry = f"Import-Hinweis ({warning.code}): {row_prefix}{warning.message}"
+        if entry not in notes:
+            notes.append(entry)
+
+    rows = build_table_rows(
+        valuation,
+        performances,
+        is_personal_view=is_personal_view,
+        returns=returns,
+        period_reasons=period_reasons,
+    )
+    for row in rows:
+        if row.status != "OK":
+            ticker_part = f" ({row.ticker})" if row.ticker else ""
+            notes.append(f"{row.name}{ticker_part}: {row.status}")
+    return tuple(notes)
+

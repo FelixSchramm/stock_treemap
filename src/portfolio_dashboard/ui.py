@@ -7,7 +7,12 @@ from html import escape
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard.models import PortfolioSnapshot
+from portfolio_dashboard.models import PortfolioSnapshot, SnapshotStatus
+from portfolio_dashboard.refresh import (
+    DATA_UNAVAILABLE_TEXT,
+    DashboardBundle,
+    PortfolioRefreshCoordinator,
+)
 from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
 from portfolio_dashboard.treemap import (
     ALL_FILTER,
@@ -23,6 +28,7 @@ from portfolio_dashboard.treemap import (
     TreemapModel,
     available_categories,
     build_kpis,
+    build_status_notes,
     build_table_rows,
     build_treemap,
     color_for,
@@ -51,6 +57,8 @@ FILTER_TYPE_KEY = "dashboard.filter_type"
 FILTER_CATEGORY_KEY = "dashboard.filter_category"
 SORT_FIELD_KEY = "dashboard.sort_field"
 SORT_ORDER_KEY = "dashboard.sort_order"
+REFRESH_BUTTON_KEY = "dashboard.refresh"
+BUNDLE_STATE_KEY = "dashboard.bundle"
 
 
 def _remember_course_period() -> None:
@@ -91,7 +99,12 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
     """
     cols = st.columns(4)
     with cols[0]:
-        st.metric("Bewerteter Depotwert", kpis.total_eur_label)
+        st.metric(
+            "Bewerteter Depotwert",
+            kpis.total_eur_label,
+            delta=kpis.total_status_note,
+            delta_color="off",
+        )
     with cols[1]:
         st.metric(
             "Aktive Positionen",
@@ -104,7 +117,8 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
     with cols[3]:
         st.metric("Größter Verlierer", kpis.loser_label)
     st.caption(
-        f"Depotkennzahlen (ungefilterter Gesamtbestand) · {kpis.performance_reference_label}."
+        f"Depotkennzahlen (ungefilterter Gesamtbestand) · {kpis.total_status_note} · "
+        f"{kpis.performance_reference_label}."
     )
 
     if is_personal_view:
@@ -275,6 +289,19 @@ def render_positions_table(
     st.dataframe(display_dicts, hide_index=True, width="stretch")
 
 
+def render_data_status(notes: Sequence[str]) -> None:
+    """Render position-referenced data status notes for fallbacks and gaps.
+
+    :param notes: Sequence of German status strings from ``build_status_notes``.
+    """
+    with st.expander(f"Datenstatus & Hinweise ({len(notes)})", expanded=False):
+        if not notes:
+            st.caption("Alle aktiven Positionen sind vollständig mit aktuellen Kursen bewertet.")
+        else:
+            for note in notes:
+                st.caption(f"• {note}")
+
+
 def render_dashboard(
     snapshot: PortfolioSnapshot,
     rows: list[dict[str, str | float]] | None,
@@ -282,28 +309,81 @@ def render_dashboard(
     performances: Callable[[str, str], Sequence[Performance]],
     *,
     returns: PortfolioReturns | None = None,
+    coordinator: PortfolioRefreshCoordinator | None = None,
+    period_reasons: Callable[[str, str], Sequence[str | None]] | None = None,
 ) -> None:
-    """Render the shell, KPIs, shared filters, treemap and positions table.
+    """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
 
-    KPIs, treemap and positions table always use the same ``valuation`` snapshot.
+    KPIs, treemap and positions table always use the same atomic ``valuation``
+    snapshot. When ``coordinator`` is provided, clicking "Aktualisieren"
+    performs an atomic holdings and market-data refresh, keeping the prior
+    consistent snapshot with age on failure or reporting "Daten nicht verfügbar".
 
     :param snapshot: Portfolio snapshot being displayed.
     :param rows: Deprecated static row list (retained for call compatibility).
     :param valuation: Portfolio valuation derived from ``snapshot``.
     :param performances: Callback returning one Performance per group in ``valuation.groups``.
     :param returns: Optional precomputed PortfolioReturns for the personal view.
+    :param coordinator: Optional PortfolioRefreshCoordinator for live/cached refreshes.
+    :param period_reasons: Optional callback returning period reason codes per group.
     """
     _ = rows
-    st.title("Depot-Dashboard – Demo")
+    header_cols = st.columns((4, 1))
+    with header_cols[0]:
+        st.title("Depot-Dashboard – Demo")
+    with header_cols[1]:
+        refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
+
+    active_bundle: DashboardBundle | None = None
+    if coordinator is not None:
+        if refresh_clicked or BUNDLE_STATE_KEY not in st.session_state:
+            with st.spinner("Bestands- und Kursdaten werden aktualisiert …"):
+                active_bundle = coordinator.load(refresh=refresh_clicked)
+                st.session_state[BUNDLE_STATE_KEY] = active_bundle
+        else:
+            active_bundle = st.session_state[BUNDLE_STATE_KEY]
+
+        snapshot = active_bundle.snapshot
+        valuation = active_bundle.valuation
+        returns = active_bundle.returns
+        performances = active_bundle.performances_for
+        period_reasons = active_bundle.reasons_for
+
     st.caption(f"Demo-Depot · {len(snapshot.positions)} Beispielpositionen")
     timestamp = snapshot.attempted_at.strftime("%d.%m.%Y, %H:%M %Z")
-    st.caption(f"Datenstand (synthetisch): {timestamp}")
+    if active_bundle is not None:
+        st.caption(f"Datenstand: {active_bundle.age_label()}")
+    else:
+        st.caption(f"Datenstand (synthetisch): {timestamp}")
+
     st.info("Nur synthetische Beispieldaten. Kein Zugriff auf echte Depot- oder Kursdaten.")
+
+    if active_bundle is not None:
+        if not active_bundle.available or snapshot.status is SnapshotStatus.FAILED:
+            st.error(
+                active_bundle.status_message
+                or f"{DATA_UNAVAILABLE_TEXT}: Keine gültigen Depotdaten vorhanden."
+            )
+            return
+        if active_bundle.using_cached_stand and active_bundle.status_message:
+            st.warning(active_bundle.status_message)
+        elif refresh_clicked and active_bundle.status_message:
+            st.caption(active_bundle.status_message)
+    elif snapshot.status is SnapshotStatus.FAILED:
+        st.error(f"{DATA_UNAVAILABLE_TEXT}: Bestandsabruf fehlgeschlagen.")
+        return
+    elif refresh_clicked:
+        st.caption(f"Synthetischer Demo-Stand geprüft ({timestamp}).")
 
     st.divider()
     view, period = render_view_controls()
     is_personal = view == PERSONAL_VIEW
     current_performances = tuple(performances(view, period))
+    current_reasons = (
+        tuple(period_reasons(view, period))
+        if period_reasons is not None
+        else (None,) * len(valuation.groups)
+    )
     resolved_returns = (
         returns
         if returns is not None
@@ -338,6 +418,7 @@ def render_dashboard(
         criteria=criteria,
         is_personal_view=is_personal,
         returns=resolved_returns,
+        period_reasons=current_reasons,
     )
     sorted_rows = sort_table_rows(table_rows, sort_by=sort_by, descending=descending)
     is_filtered = bool(
@@ -350,3 +431,12 @@ def render_dashboard(
         total_active_count=kpis.active_group_count,
         filtered=is_filtered,
     )
+
+    status_notes = build_status_notes(
+        valuation,
+        current_performances,
+        is_personal_view=is_personal,
+        returns=resolved_returns,
+        period_reasons=current_reasons,
+    )
+    render_data_status(status_notes)
