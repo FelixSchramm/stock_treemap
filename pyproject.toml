@@ -8,11 +8,12 @@ dependencies = [
     "pandas>=2.0",
     "plotly>=5.20",
     "requests>=2.32.4",
-    "streamlit>=1.40",
+    "streamlit>=1.49",
+    "yfinance==1.7.0",
 ]
 
 [project.optional-dependencies]
-prototype = ["yfinance>=0.2.40"]
+prototype = []
 
 [dependency-groups]
 dev = [

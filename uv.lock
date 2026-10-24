@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -435,10 +435,6 @@ dependencies = [
     { name = "plotly" },
     { name = "requests" },
     { name = "streamlit" },
-]
-
-[package.optional-dependencies]
-prototype = [
     { name = "yfinance" },
 ]
 
@@ -454,8 +450,8 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=5.20" },
     { name = "requests", specifier = ">=2.32.4" },
-    { name = "streamlit", specifier = ">=1.40" },
-    { name = "yfinance", marker = "extra == 'prototype'", specifier = ">=0.2.40" },
+    { name = "streamlit", specifier = ">=1.49" },
+    { name = "yfinance", specifier = "==1.7.0" },
 ]
 provides-extras = ["prototype"]
 
