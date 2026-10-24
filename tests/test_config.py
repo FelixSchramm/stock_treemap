@@ -140,6 +140,7 @@ def test_production_app_stays_closed_before_loading_any_rows(monkeypatch, comple
         raise AssertionError("Production must not load data or contact a provider")
 
     monkeypatch.setattr(portfolio_dashboard.demo, "demo_rows", unexpected)
+    monkeypatch.setattr(portfolio_dashboard.demo, "demo_snapshot", unexpected)
     monkeypatch.setattr(socket, "create_connection", unexpected)
     app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py")).run()
     assert not app.exception

@@ -449,9 +449,14 @@ dev = [
 requires-dist = [
     { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=5.20" },
+<<<<<<< HEAD
     { name = "requests", specifier = ">=2.32.4" },
     { name = "streamlit", specifier = ">=1.49" },
     { name = "yfinance", specifier = "==1.7.0" },
+=======
+    { name = "streamlit", specifier = ">=1.49" },
+    { name = "yfinance", marker = "extra == 'prototype'", specifier = ">=0.2.40" },
+>>>>>>> origin/issue-25-dashboard-views
 ]
 provides-extras = ["prototype"]
 
