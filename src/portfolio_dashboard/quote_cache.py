@@ -5,9 +5,12 @@ failure without a prior success stays unavailable and never invents a last
 state. After a prior success, a failure returns that value relabeled
 CACHED_PROVIDER with its original retrieval/observation times (the visible age).
 A manual refresh (refresh=True) skips only the TTL; it obeys the same backoff.
+quotes() bundles a cycle: only due keys are fetched, and after
+provider_failure_threshold consecutive provider failures a provider-wide
+backoff stops further fetches (quotes, FX, history; not holdings).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Generic, TypeVar
@@ -24,6 +27,7 @@ from portfolio_dashboard.models import (
     DataWarning,
     Instrument,
     PortfolioSnapshot,
+    Provenance,
     SnapshotStatus,
     Valuation,
     ValuationSource,
@@ -35,6 +39,15 @@ T = TypeVar("T")
 _CACHED = DataWarning(
     "cached_provider_value",
     "Provider refresh failed; showing the last successful provider value",
+)
+
+
+_BACKOFF = DataWarning(
+    "provider_backoff", "Provider backoff active; no fetch attempted"
+)
+_CACHED_HOLDINGS = DataWarning(
+    "cached_holdings_snapshot",
+    "Holdings refresh failed; showing the last successful snapshot",
 )
 
 
@@ -54,9 +67,22 @@ class QuoteCache:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     backoff_base_seconds: int = 15
     backoff_max_seconds: int = 300
+    provider_failure_threshold: int = 3
     _entries: dict = field(default_factory=dict, init=False, repr=False)
+    _provider_failures: int = field(default=0, init=False, repr=False)
+    _provider_retry_after: datetime | None = field(default=None, init=False, repr=False)
 
-    def _get(self, key, ttl_seconds, fetch, is_ok, as_cached, refresh):
+    def _get(
+        self,
+        key,
+        ttl_seconds,
+        fetch,
+        is_ok,
+        as_cached,
+        refresh,
+        unavailable,
+        provider_wide=True,
+    ):
         now = self.clock()
         entry = self._entries.setdefault(key, _Entry())
         if (
@@ -64,12 +90,32 @@ class QuoteCache:
             and not refresh
             and now - entry.fetched_at < timedelta(seconds=ttl_seconds)
         ):
-            return entry.success
-        if entry.retry_after is None or now >= entry.retry_after:
+            return as_cached(entry.success) if entry.failures else entry.success
+        provider_blocked = (
+            provider_wide
+            and self._provider_retry_after is not None
+            and now < self._provider_retry_after
+        )
+        if not provider_blocked and (
+            entry.retry_after is None or now >= entry.retry_after
+        ):
             fetched = fetch()
             if is_ok(fetched):
                 self._entries[key] = _Entry(fetched, now)
+                if provider_wide:
+                    self._provider_failures = 0
+                    self._provider_retry_after = None
                 return fetched
+            if provider_wide:
+                self._provider_failures += 1
+                excess = self._provider_failures - self.provider_failure_threshold
+                if excess >= 0:
+                    self._provider_retry_after = now + timedelta(
+                        seconds=min(
+                            self.backoff_base_seconds * 2**excess,
+                            self.backoff_max_seconds,
+                        )
+                    )
             entry.last_failure = fetched
             entry.failures += 1
             delay = min(
@@ -79,9 +125,13 @@ class QuoteCache:
             entry.retry_after = now + timedelta(seconds=delay)
         if entry.success is not None:
             return as_cached(entry.success)
+        if entry.last_failure is None:
+            return unavailable(now)
         return entry.last_failure
 
-    def quote(self, instrument: Instrument, *, refresh: bool = False) -> PriceObservation:
+    def quote(
+        self, instrument: Instrument, *, refresh: bool = False
+    ) -> PriceObservation:
         return self._get(
             ("quote", instrument),
             self.ttls.quotes_seconds,
@@ -89,7 +139,21 @@ class QuoteCache:
             lambda obs: obs.valuation.status is ValueStatus.AVAILABLE,
             lambda obs: replace(obs, valuation=_cached_valuation(obs.valuation)),
             refresh,
+            lambda now: PriceObservation(
+                Valuation(
+                    None,
+                    ValueStatus.MISSING,
+                    _missing_provenance(instrument.provider_mapping, now),
+                    warnings=(_BACKOFF,),
+                )
+            ),
         )
+
+    def quotes(
+        self, instruments: Iterable[Instrument], *, refresh: bool = False
+    ) -> dict[Instrument, PriceObservation]:
+        """One bundled cycle: only due keys are fetched, bounded by provider backoff."""
+        return {item: self.quote(item, refresh=refresh) for item in instruments}
 
     def fx(self, pair: VerifiedFxPair, *, refresh: bool = False) -> FxObservation:
         return self._get(
@@ -103,6 +167,13 @@ class QuoteCache:
                 warnings=obs.warnings + (_CACHED,),
             ),
             refresh,
+            lambda now: FxObservation(
+                pair,
+                None,
+                ValueStatus.MISSING,
+                _missing_provenance(pair.mapping, now),
+                (_BACKOFF,),
+            ),
         )
 
     def history(
@@ -114,6 +185,7 @@ class QuoteCache:
         minimum_points: int = 2,
         refresh: bool = False,
     ) -> PriceHistory:
+        """Cached for the history TTL; callers pass only closed periods (current day: #22)."""
         return self._get(
             ("history", instrument, start, end, minimum_points),
             self.ttls.history_seconds,
@@ -127,20 +199,37 @@ class QuoteCache:
                 warnings=history.warnings + (_CACHED,),
             ),
             refresh,
+            lambda now: PriceHistory(
+                ValueStatus.MISSING,
+                _missing_provenance(instrument.provider_mapping, now),
+                warnings=(_BACKOFF,),
+            ),
         )
 
     def holdings(
         self, load: Callable[[], PortfolioSnapshot], *, refresh: bool = False
     ) -> PortfolioSnapshot:
-        """Keep the last non-FAILED snapshot; its attempted_at shows the age."""
+        """Keep the last non-FAILED snapshot; its attempted_at shows the age.
+
+        After a failed refresh it is returned with the cached_holdings_snapshot warning.
+        """
         return self._get(
             ("holdings",),
             self.ttls.holdings_seconds,
             load,
             lambda snapshot: snapshot.status is not SnapshotStatus.FAILED,
-            lambda snapshot: snapshot,
+            lambda snapshot: replace(
+                snapshot, warnings=snapshot.warnings + (_CACHED_HOLDINGS,)
+            ),
             refresh,
+            None,
+            provider_wide=False,
         )
+
+
+def _missing_provenance(mapping, now: datetime) -> Provenance:
+    provider = mapping.provider if mapping is not None else "unknown"
+    return Provenance(ValuationSource.PROVIDER, now, provider=provider)
 
 
 def _cached_provenance(provenance):
@@ -172,14 +261,23 @@ def choose_valuation(market: Valuation, sheet: Valuation | None) -> Valuation:
         or (sheet.unit.currency, sheet.unit.scale_to_currency) != ("EUR", 1)
     ):
         return market
-    notes = [DataWarning("price_source_fallback", "Provider price unavailable; using Sheet value")]
+    notes = [
+        DataWarning(
+            "price_source_fallback", "Provider price unavailable; using Sheet value"
+        )
+    ]
     if sheet.provenance.observed_at is None:
         notes.append(
-            DataWarning("sheet_value_quote_time_unknown", "Sheet-Wert, Kursstand unbekannt")
+            DataWarning(
+                "sheet_value_quote_time_unknown", "Sheet-Wert, Kursstand unbekannt"
+            )
         )
     return replace(sheet, warnings=sheet.warnings + market.warnings + tuple(notes))
 
 
 def supports_period_return(valuation: Valuation) -> bool:
     """A Sheet/manual price has no consistent history, so it yields no period return."""
-    return valuation.provenance.source is not ValuationSource.SHEET
+    return (
+        valuation.status is ValueStatus.AVAILABLE
+        and valuation.provenance.source is not ValuationSource.SHEET
+    )
