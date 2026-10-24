@@ -38,6 +38,7 @@ Fundamental-Skalierung. Keine Währung wird als EUR angenommen.
 | Metadatum | Definition / Einheit / Zeitraum | Herkunft und Pflichtregel |
 | --- | --- | --- |
 | Identitätskette | geprüfte Instrument-ID → Anteilsklasse → Emittent → Quelle; inkl. Konsolidierungskreis | Explizit geprüfte Registry; alle Glieder Pflicht. Gleiche Namen/Ticker reichen nicht. Unterschiedliche Listings dürfen nur für dieselbe bestätigte Aktie teilen; ADR/andere Klasse nie automatisch. |
+| Anzahl Stammaktienklassen | vollständige Anzahl beim Emittenten, einschließlich nicht gelisteter Klassen; dimensionslose ganze Zahl ≥ 1 am aktuellen Kapitalstand | Belegte Kapitalstruktur mit Quelle/Stichtag, P; genau 1 erforderlich. >1 → «Modell nicht unterstützt», auch bei bestätigtem Mapping/gleichen wirtschaftlichen Rechten. Fehlend → «Daten/Annahmen unvollständig»; Listings zählen reicht nicht. |
 | Berichtssatz-ID / Fassung | zusammengehörige GuV, Cashflow, Bilanz und vergleichbare Vorjahre | Bericht/Restatement, Pflicht; keine automatische Kombination alter und neuer Felder. |
 | Feldherkunft | Providerfeld oder manuelle Belegreferenz, Rohdefinition, explizite Vorzeichen-/Skalennormalisierung | Je vorhandenem Feld Pflicht; private Belege/Identitäten nur in geschützter Laufzeit, nie in Code/Logs/GitHub. |
 | Flussperiode | Beginn/Ende inklusive, Typ Geschäftsjahr; bekanntes Geschäftsjahreslabel | Je EBIT/Steuer/D&A/Capex/ΔNWC Pflicht; Beginn ≤ Ende; drei vollständige aufeinanderfolgende Jahre. Quartal, YTD, TTM getrennt kennzeichnen, nicht summierend mischen. |
@@ -72,9 +73,9 @@ die zugehörige Provenienz und Perioden-/Einheitenpflicht aus obiger Matrix.
 | nichtoperative Vermögenswerte | nicht im operativen Wert enthaltene, der betrachteten Gruppe zurechenbare Anlagen | Geld ≥ 0, addieren | Brückenstichtag | belegte Bewertung, P auch bei 0; Doppelzählung mit Cash/operativem Ergebnis sperrt |
 | Finanzschulden | verzinsliche Ansprüche inkl. konsistent behandelter Leases | Geld ≥ 0, abziehen | Brückenstichtag | Bilanz/Anhang, P auch bei 0; Nettoschuld nicht zusätzlich abziehen |
 | Vorzugs-/Minderheitsansprüche | dem betrachteten Stammkapital vor-/nachgelagerte fremde Ansprüche am selben Unternehmenswert | Geld ≥ 0, je einmal abziehen | Brückenstichtag | Bilanz/Anhang und bestätigte Bewertungsmethode, beide P auch bei 0 |
-| aktuelle ausstehende Aktien | aktuelle Stammaktien dieser Klasse ohne eigene Aktien, splitbereinigt | Stück > 0 | Aktienzahl-Stichtag | belegte aktuelle Anzahl, P; kein historischer gewichteter EPS-Ersatz |
-| inkrementelle Verwässerung | konsistent bewertete zusätzliche Ansprüche aus bestehenden Instrumenten; keine doppelte Schuldlast | Stück ≥ 0 | derselbe aktuelle Kapitalstand | bestätigte Methode/Beleg, P auch bei 0; ungeklärte Rechte sperren |
-| aktuelle verwässerte Stückzahl | ausstehende Aktien plus inkrementelle Verwässerung | Stück > 0 | gemeinsame Splitbasis | abgeleitet, P; nicht auf unzuordenbare Anteilsklassen verteilen |
+| aktuelle ausstehende Aktien | aktuelle Stammaktien der belegten einzigen Stammaktienklasse des Emittenten ohne eigene Aktien, splitbereinigt | Stück > 0 | Aktienzahl-Stichtag | belegte aktuelle Anzahl und Einzelklassen-Nachweis, P; mehrere Klassen → «Modell nicht unterstützt»; kein historischer gewichteter EPS-Ersatz |
+| inkrementelle Verwässerung | konsistent bewertete zusätzliche Ansprüche aus bestehenden Instrumenten in dieselbe einzige Stammaktienklasse; keine doppelte Schuldlast | Stück ≥ 0 | derselbe aktuelle Kapitalstand | bestätigte Methode/Beleg, P auch bei 0; ungeklärte Rechte sperren; keine Klassenallokation |
+| aktuelle verwässerte Stückzahl | ausstehende Aktien plus inkrementelle Verwässerung der einzigen Stammaktienklasse | Stück > 0 | gemeinsame Splitbasis | abgeleitet, P; nur bei belegter Klassenanzahl 1; mehrere Klassen bleiben auch bei bestätigtem Mapping gesperrt |
 
 Jüngster vollständiger Jahresabschluss/Brückenstichtag maximal 550 Tage alt,
 Aktienzahl maximal 120 Tage alt, wie in ADR 0010 festgelegt. Bekannte spätere
@@ -94,7 +95,7 @@ Prozentsatz für «unwesentlich», der fehlende Ansprüche auf null setzt.
 | Sicherheitsabschlag s | persönlicher Abschlag als Bruchteil `0 ≤ s < 1` | O; fehlt → Zielpreis fehlt, DCF unverändert |
 | PV_1..5 / TV_5 / PV(TV_5) | abgezinste Komponenten und Restwert in Geld | abgeleitet, mit vollständiger Eingabeversion; keine Zwischenrundung |
 | operativer Wert / Stammaktionärswert | Geld in Berichtswährung, letzterer nach expliziter Kapitalbrücke | abgeleitet; nichtpositiver Stammaktionärswert → kein positiver Pro-Aktie-Modellwert |
-| Wert je Aktie / optionaler Zielpreis | Berichtswährungs-Haupteinheiten je aktueller verwässerter Aktie | abgeleitet; keine Menge/Einstand/ADR-Konversion |
+| Wert je Aktie / optionaler Zielpreis | Berichtswährungs-Haupteinheiten je aktueller verwässerter Aktie der einzigen Stammaktienklasse | abgeleitet; ohne belegte Einzelklasse kein Ergebnis; keine Menge/Einstand/ADR-Konversion |
 | Terminalwertanteil | PV(TV_5)/operativer Unternehmenswert als Bruchteil | abgeleitet, anzeigen; ab 0,75 zusätzlicher Dominanzhinweis |
 | Status / Quellen / Alter | alle Eingabehinweise, Sperrgründe, Modell- und Annahmenversionen | P am Resultat und späteren Kursvergleich; ein neuer Abruf entfernt fachliche Alterswarnungen nicht |
 
@@ -108,8 +109,9 @@ verfügbar; Rundungsdifferenzen dürfen nicht in Folgegrößen zurückfließen.
 ## Vollständig erfundenes Zahlenbeispiel
 
 Alle folgenden Zahlen, Identitäten und Annahmen sind synthetisch, keine
-Vorgabewerte für echte Aktien. Eine erfundene geeignete einzige Stammaktienklasse
-in EUR, keine ADR, keine unbekannten Ansprüche. Geldtabellen in **Millionen EUR**,
+Vorgabewerte für echte Aktien. Ein erfundener geeigneter Emittent mit nachweislich
+genau einer Stammaktienklasse in EUR, keine ADR, keine unbekannten Ansprüche.
+Geldtabellen in **Millionen EUR**,
 Aktienzahl in **Millionen Stück**, weshalb der Quotient EUR je Aktie ergibt.
 Bewertungsstichtag 01.01.2026, aktuelle Aktienzahl/Brücke 31.12.2025, keine
 zwischenzeitlichen Kapitalmaßnahmen. Drei konsistente, vollständig veröffentlichte
@@ -167,6 +169,30 @@ senkt FCFF_6; trotzdem steigt wegen anderer WACC/g der Modellwert. Die
 optimistische Spalte trägt den Terminaldominanzhinweis. Bei ausdrücklich gewähltem
 synthetischem s=20 % beträgt der Basis-Zielpreis 102,120076249138 EUR, angezeigt
 102,12 EUR. Der DCF-Modellwert bleibt 127,650095311423 EUR.
+
+### Synthetisches Gegenbeispiel und verbindliche Sperrfälle
+
+Ein zweiter erfundener Emittent hat 100 Mio. EUR gesamten Stammaktionärswert,
+6 Mio. A-Aktien und 4 Mio. B-Aktien mit identischen wirtschaftlichen Rechten,
+ohne zusätzliche Verwässerung. Beide Klassen und ihr Mapping seien vollständig
+bestätigt. Division durch nur A ergäbe fälschlich 100/6 = 16,666667 EUR je Aktie,
+durch nur B fälschlich 100/4 = 25 EUR. Bei den ausdrücklich gleichen Rechten wären
+mathematisch 100/(6+4) = 10 EUR je Aktie konsistent. Das ist ein Fehlerbeleg,
+kein weiterer Berechnungspfad dieses MVP: Der Emittent erhält für beide Klassen
+«Modell nicht unterstützt», Wert je Aktie und Zielpreis fehlen. Es gibt weder
+eine automatische Zusammenfassung der Aktienzahlen noch eine Rechteallokation.
+
+Die spätere Implementierung muss mindestens diese synthetischen Fälle prüfen;
+alle übrigen Pflichtdaten/Annahmen seien jeweils gültig:
+
+| Stammaktienklassen des Emittenten | Identitätskette | Erwarteter Status / Ergebnis |
+| --- | --- | --- |
+| genau 1, vollständig belegt | bestätigt | Einzelklassen-Referenzrechnung unten zulässig |
+| 2, identische wirtschaftliche Rechte | beide bestätigt | «Modell nicht unterstützt»; kein Wert je Aktie/Zielpreis für A oder B |
+| 2, unterschiedliche wirtschaftliche Rechte | beide bestätigt | «Modell nicht unterstützt»; keine Rechteallokation |
+| 2, davon eine nicht gelistet | gelistete Klasse bestätigt | «Modell nicht unterstützt»; Listinganzahl hebt Sperre nicht auf |
+| 2, Mapping unvollständig | unbestätigt | «Modell nicht unterstützt» bleibt sichtbar; zusätzlicher Identitätssperrgrund |
+| unbekannt | ausgewählte Klasse bestätigt | «Daten/Annahmen unvollständig»; kein Wert je Aktie/Zielpreis |
 
 ### Reproduzierbare Referenzrechnung ohne App-/Provider-Abhängigkeit
 

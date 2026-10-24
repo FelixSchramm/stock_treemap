@@ -26,6 +26,12 @@ Cashflows zum Unternehmen werden mit nominalen, zur Währung passenden WACC
 abgezinst. Zinssätze sind Bruchteile, nicht Prozentzahlen. Reale Eingaben benötigen
 explizite Besitzerbestätigung; es gibt keine Standardsätze aus der Demo.
 
+Die Pro-Aktie-Rechnung ist ausschließlich für Emittenten mit genau einer belegten
+Stammaktienklasse definiert. Der gesamte Stammaktionärswert gehört damit derselben
+einzigen Klasse wie die aktuelle verwässerte Stückzahl. Mehrere Stammaktienklassen
+sind unabhängig von bestätigtem Mapping oder gleichen wirtschaftlichen Rechten
+«Modell nicht unterstützt»; das MVP verteilt keinen Wert zwischen Klassen.
+
 ```text
 NOPAT_t = EBIT_t × (1 − operativer_Steuersatz_t)
 FCFF_t = NOPAT_t + D&A_t − Capex_t − Δoperatives_NWC_t
@@ -98,9 +104,18 @@ Marktwerte werden je Feld ausdrücklich bestätigt und am Ergebnis sichtbar
 markiert. Unaufklärbare wesentliche Ansprüche sperren die Rechnung. Keine pauschale
 Nettoschuld wird zusätzlich zu bereits enthaltenem Cash/Schulden abgezogen.
 
-Der Nenner ist eine aktuelle, auf dieselbe Anteilsklasse bezogene Stückzahl der
-zum Stichtag ausstehenden Stammaktien zuzüglich belegter inkrementeller
-Verwässerung. Eigene Aktien sind aus ausstehenden Aktien ausgeschlossen.
+Vor der Division muss die vollständige Kapitalstruktur des Emittenten am aktuellen
+Kapitalstand genau eine Stammaktienklasse belegen, einschließlich nicht gelisteter
+Klassen. Bestätigte Instrument-/Klassen-Zuordnung allein belegt das nicht; die
+Anzahl der Listings ist kein Ersatz. Mehr als eine Stammaktienklasse sperrt die
+gesamte Bewertung als «Modell nicht unterstützt», auch bei identischen
+wirtschaftlichen Rechten. Eine unbekannte Klassenanzahl sperrt als «Daten/Annahmen
+unvollständig». Weder Summieren von Klassenstückzahlen noch eine geratene
+Kapitalrechteallokation ist ein zulässiger Ausweg im MVP.
+
+Der Nenner ist die aktuelle Stückzahl der zum Stichtag ausstehenden Stammaktien
+dieser einzigen Klasse zuzüglich belegter inkrementeller Verwässerung in dieselbe
+Klasse. Eigene Aktien sind aus ausstehenden Aktien ausgeschlossen.
 Options-/Wandlungsrechte werden nur mit nachvollziehbarer, konsistenter Methode
 berücksichtigt; andernfalls «Verwässerung ungeklärt». Ein konvertierter Anspruch
 wird nicht zugleich als Schuld abgezogen. Historische gewichtete EPS-Aktienzahlen
@@ -143,8 +158,10 @@ Veröffentlichung nach Bewertungsstichtag sperrt die Verwendung für diesen Stic
 Preis-/FX-Alter wird separat in M8-09 behandelt und kann den Kursvergleich sperren,
 ohne einen gültigen DCF-Wert in Berichtswährung zu löschen.
 
-Banken, Versicherer, REITs, ETFs, Derivate, ADRs und nicht eindeutig zuordenbare
-Anteilsklassen erhalten «Modell nicht unterstützt». Ungeprüfte Instrument-/Emittenten-
+Banken, Versicherer, REITs, ETFs, Derivate, ADRs, Emittenten mit mehreren
+Stammaktienklassen und nicht eindeutig zuordenbare Anteilsklassen erhalten
+«Modell nicht unterstützt». Ein bestätigtes Mapping hebt diese Modellgrenzen nicht
+auf. Ungeprüfte Instrument-/Emittenten-
 Zuordnung, unbekannte Währung/Skala, unvereinbare Perioden, unbestätigte reale
 Annahmen, NaN/Infinity, nichtpositive nachhaltige Cashflows oder Stückzahl sowie
 nichtpositiver Stammaktionärswert liefern keine scheinbar attraktive Pro-Aktie-Zahl.
