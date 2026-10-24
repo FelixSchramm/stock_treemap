@@ -20,12 +20,14 @@ Das Image installiert mit `uv sync --locked --no-dev --no-editable` exakt die Ve
 | Startbefehl | `streamlit run app.py` |
 | Healthcheck | `GET /_stcore/health` auf `127.0.0.1:8501`; Streamlits eigener Liveness-Endpunkt, antwortet `ok` ohne Depotdaten und ohne Login |
 | Modus | `PORTFOLIO_MODE=demo` (Standard) oder `production` |
+| Startmeldung | `STREAMLIT_LOGGER_HIDE_WELCOME_MESSAGE=true`: Streamlit ermittelt sonst im Headless-Modus beim Start die externe IP über `checkip.amazonaws.com` und schreibt sie als "External URL" ins Log |
 | Weitere Einstellungen | Variablen aus [`.env.example`](../.env.example); der Container liest keine `.env`-Datei |
 
 ## Reverse-Proxy und WebSockets
 
 - HTTPS-Terminierung durch den Host; der OIDC-Callback `/oauth2callback` muss über dieselbe HTTPS-URL erreichbar sein.
 - Streamlit benötigt WebSocket-Weiterleitung (`Upgrade`/`Connection`-Header) für `/_stcore/stream` und lange Leerlauf-Timeouts.
+- Der Proxy muss den originalen `Host`-Header durchreichen (nicht auf die Upstream-Adresse umschreiben, nginx: `proxy_set_header Host $host;`); sonst lehnt Streamlit die WebSocket-Verbindung ab. Alternativ `STREAMLIT_BROWSER_SERVER_ADDRESS` auf den öffentlichen Hostnamen setzen.
 - XSRF-Schutz bleibt aktiv; ihn zur Fehlerbehebung abzuschalten oder den Login zu umgehen ist nicht zulässig (ADR 0009).
 - Ausgehend sind HTTPS-Aufrufe zu Google (Sheets, OIDC) und zum Kursanbieter erforderlich.
 
@@ -41,7 +43,7 @@ Der Container hat keine Datenbank und kein persistentes Volume; der Cache ist re
 
 ## Build-Kontext
 
-`.dockerignore` schließt Git-Historie, `.env*`, Schlüssel-/Credential-Dateien, `secrets`, `data`, `exports`, Caches, Logs, `docs/private`, `tickers.txt` und Tests aus. Zusätzlich kopiert das Dockerfile nur eine ausdrückliche Dateiliste, nie `COPY . .`.
+`.dockerignore` schließt Git-Historie, `.env*`, Schlüssel-/Credential-Dateien, `secrets`, `data`, `exports`, Caches, Logs, `docs/private`, `tickers.txt`, `heatmap.html` und `secrets.toml` (jeweils in jedem Verzeichnis, auch unter `src/`) sowie Tests aus. Zusätzlich kopiert das Dockerfile nur eine ausdrückliche Dateiliste, nie `COPY . .`.
 
 ## Prüfung des Images
 

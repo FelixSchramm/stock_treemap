@@ -27,7 +27,7 @@ def test_dockerignore_excludes_private_material():
     required = {
         "**/.git",
         "**/.env",
-        ".streamlit/secrets.toml",
+        "**/secrets.toml",
         "**/*credentials*.json",
         "**/*.pem",
         "**/*.key",
@@ -35,6 +35,12 @@ def test_dockerignore_excludes_private_material():
         "**/exports",
         "**/.cache",
         "docs/private",
-        "tickers.txt",
+        "**/tickers.txt",
+        "**/heatmap.html",
     }
     assert required <= set(DOCKERIGNORE)
+
+
+def test_dockerfile_hides_streamlit_welcome_message():
+    # Otherwise headless Streamlit looks up the external IP at startup (third-party call, IP in log).
+    assert "STREAMLIT_LOGGER_HIDE_WELCOME_MESSAGE=true" in DOCKERFILE

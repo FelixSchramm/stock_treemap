@@ -11,7 +11,7 @@
 **/.env
 **/.env.*
 !**/.env.example
-.streamlit/secrets.toml
+**/secrets.toml
 **/*credentials*.json
 **/*service-account*.json
 **/*service_account*.json
@@ -24,8 +24,8 @@
 **/.cache
 **/logs
 **/*.log
-heatmap.html
-tickers.txt
+**/heatmap.html
+**/tickers.txt
 docs/private
 **/*.local.*
 .github-import-state.json

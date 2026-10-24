@@ -18,7 +18,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
     STREAMLIT_SERVER_PORT=8501 \
     STREAMLIT_SERVER_HEADLESS=true \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    STREAMLIT_LOGGER_HIDE_WELCOME_MESSAGE=true
 RUN useradd --system --uid 10001 --no-create-home --home-dir /nonexistent app
 WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
