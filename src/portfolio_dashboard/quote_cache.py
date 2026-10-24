@@ -11,6 +11,8 @@ provider_failure, including provider-rejected symbols) a provider-wide backoff
 stops further fetches (quotes, FX, history; not holdings). Missing mappings and
 validation failures do not count. Bundled quotes try keys with fewer failures
 first, so permanently rejected symbols cannot keep taking the recovery probe.
+A key already in its own failure streak counts only while a provider-wide
+outage is active, so rejected symbols cannot block FX, history or other keys.
 """
 
 from collections.abc import Callable, Iterable
@@ -109,7 +111,14 @@ class QuoteCache:
                     self._provider_failures = 0
                     self._provider_retry_after = None
                 return fetched
-            if provider_wide and _is_provider_outage(fetched):
+            if (
+                provider_wide
+                and _is_provider_outage(fetched)
+                and (
+                    entry.failures == 0
+                    or self._provider_failures >= self.provider_failure_threshold
+                )
+            ):
                 self._provider_failures += 1
                 excess = self._provider_failures - self.provider_failure_threshold
                 if excess >= 0:

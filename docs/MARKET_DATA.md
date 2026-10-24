@@ -143,6 +143,11 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
   für Kurse, FX und Historie; übrige Abrufe entfallen (`provider_backoff`,
   `MISSING`), auch bei `refresh=True`. Bestände sind davon ausgenommen.
   Die Schwelle ist ein Standardwert, keine Besitzervorgabe.
+  Ein Schlüssel, der schon in einer eigenen Fehlerserie steckt (etwa ein
+  dauerhaft abgelehntes Symbol), zählt nur, solange bereits ein anbieterweites
+  Backoff läuft. Abgelehnte Symbole sperren daher nach einem gesunden Durchgang
+  weder FX- und Historienabrufe noch andere Schlüssel. Beim ersten Laden nach
+  einem Neustart lassen sie sich von einem Ausfall nicht unterscheiden.
 - Fehler nach einem früheren Erfolg liefern den letzten Wert mit
   `source=CACHED_PROVIDER`, unverändertem Abruf-/Kurszeitpunkt (sichtbares Alter)
   und der Warnung `cached_provider_value`; das gilt auch innerhalb der TTL nach
