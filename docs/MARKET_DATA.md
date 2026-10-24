@@ -120,3 +120,43 @@ TLS-Konfigurationen werden nicht verändert oder deaktiviert.
 Yahoo-Konnektivität aus der Zielumgebung ist weiterhin **ungeprüft**. Reale
 Zuordnungen und Abdeckung bleiben in #17 offen. Cache, Bündelung und Backoff
 folgen in #19; UI, Authentifizierung, Lader und Bewertung sind nicht Teil von #18.
+
+## Cache, Backoff und Ersatzwerte (#19)
+
+`portfolio_dashboard.quote_cache.QuoteCache` umschließt einen
+`MarketDataProvider` mit einem Speicher-Cache ohne Hintergrund-Scheduler. Uhr und
+`CacheTTLs` (Standard: Kurse/FX 60 s, Bestände 5 min, Historien 6 h) werden
+injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
+
+- Innerhalb der TTL wird der gespeicherte Wert unverändert ohne Abruf geliefert.
+- `refresh=True` (manuelles Aktualisieren) überspringt nur die TTL, nicht das Backoff.
+- Fehler erzeugen ein Backoff je Schlüssel (15 s, verdoppelt, höchstens 300 s;
+  Konstruktorparameter). Solange es läuft, erfolgt kein Providerabruf. Ein Erfolg setzt es zurück.
+- `quotes(instruments)` bündelt einen Durchgang: nur fällige Schlüssel werden
+  abgerufen, Schlüssel mit weniger bisherigen Fehlern zuerst (bei Gleichstand
+  in Eingabereihenfolge). Die Rückgabe bleibt in Eingabereihenfolge. Dadurch
+  belegen dauerhaft abgelehnte Symbole nicht immer die erste Erholungsprobe.
+  Nach `provider_failure_threshold` (3) aufeinanderfolgenden Providerfehlern
+  (Warncode `provider_failure`, auch bei vom Provider abgelehnten Symbolen;
+  fehlende Zuordnungen und Validierungsfehler zählen nicht) gilt ein
+  anbieterweites Backoff (gleiche Folge, 15 s bis 300 s)
+  für Kurse, FX und Historie; übrige Abrufe entfallen (`provider_backoff`,
+  `MISSING`), auch bei `refresh=True`. Bestände sind davon ausgenommen.
+  Die Schwelle ist ein Standardwert, keine Besitzervorgabe.
+- Fehler nach einem früheren Erfolg liefern den letzten Wert mit
+  `source=CACHED_PROVIDER`, unverändertem Abruf-/Kurszeitpunkt (sichtbares Alter)
+  und der Warnung `cached_provider_value`; das gilt auch innerhalb der TTL nach
+  einem fehlgeschlagenen Abruf. Bestände behalten den letzten nicht
+  fehlgeschlagenen Snapshot (`attempted_at` zeigt das Alter) mit der Warnung
+  `cached_holdings_snapshot`.
+- Die Historien-TTL (6 h) setzt abgeschlossene Zeiträume voraus; der Aufrufer
+  übergibt keinen laufenden Handelstag (Aufgabe von #22).
+- Der Cache ist nur im Speicher: nach einem Neustart ohne Daten bleibt das
+  Ergebnis des Providers (`MISSING`, „Daten nicht verfügbar“); es gibt keinen
+  fiktiven letzten Stand.
+- `choose_valuation(markt, sheet)`: geprüfter Providerpreis, sonst letzter
+  Providerpreis mit Alter, sonst ausdrücklich gekennzeichneter EUR-Sheet-Wert
+  (`price_source_fallback`, ohne Kurszeit zusätzlich `sheet_value_quote_time_unknown`).
+  Nicht-EUR- oder fehlende Sheet-Werte ersetzen nichts.
+- `supports_period_return(valuation)` ist für nicht verfügbare Preise und für Sheet-/manuelle Preise `False`: sie
+  bestimmen höchstens die Fläche, erzeugen aber keine Periodenrendite.

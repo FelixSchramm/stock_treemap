@@ -78,3 +78,10 @@ behauptet keine Aktualität. Einstand wird weder umgedeutet noch ergänzt.
 
 Prüfung mit ausschließlich synthetischen Eingaben und gesperrtem IP-Netzwerk:
 `uv run --locked pytest tests/test_valuations.py`.
+
+## Preisquelle und Ersatzwerte
+
+Die Auswahl des anzuhängenden Preises (Providerpreis, gecachter Providerpreis mit
+Alter, gekennzeichneter EUR-Sheet-Wert) erfolgt vor dieser Bewertung in
+`portfolio_dashboard.quote_cache.choose_valuation`, siehe [Marktdaten](MARKET_DATA.md).
+`value_position` bewertet `CACHED_PROVIDER` wie `PROVIDER` nach denselben Prüfungen.
