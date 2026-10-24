@@ -57,7 +57,21 @@ Die kleinen UI-Helfer stehen in [`ui.py`](src/portfolio_dashboard/ui.py). `dashb
 - `PORTFOLIO_LOGIN_PROVIDER=google` und `PORTFOLIO_OWNER_ISSUER` / `PORTFOLIO_OWNER_SUBJECT`: explizit freigegebene, vertrauliche Besitzeridentität. Sie wird kontrolliert aus validierten Claims festgelegt (#31), niemals aus dem ersten Login oder einer E-Mail abgeleitet. Der Issuer muss exakt dem konfigurierten Wert entsprechen.
 - OIDC-Client, Cookie-Secret, HTTPS-Callback mit Pfad `/oauth2callback` und der feste Google-Metadatenendpunkt stehen ausschließlich im serverseitigen Streamlit-Abschnitt `[auth]`, siehe [Platzhalter](.streamlit/secrets.example.toml). `load_config(auth_settings=...)` erhält denselben Abschnitt wie Streamlits Login-/Callback-Implementierung. Frühere `PORTFOLIO_OIDC_*` / `PORTFOLIO_COOKIE_SECRET`-Umgebungsvariablen ersetzen ihn nicht. Zusätzliche Provider-/Validierungs-Overrides und Token-Freigaben werden abgelehnt. Keine Auth-Credentials werden für Sheets verwendet.
 
-Fehlende Platzhalter, ungültige Werte und fehlende Besitzerkonfiguration sperren den Produktiveinstieg. Fehlermeldungen nennen nur Feldnamen; Konfigurationsrepräsentationen geben keine vertraulichen Inhalte aus. `synthetic_import_cases()` in [`fixtures.py`](src/portfolio_dashboard/fixtures.py) stellt ausschließlich erfundene Aktien-/ETF-/Derivatefälle mit EUR/USD/GBP, fehlenden, Null- und negativen Werten bereit. Der [Sheet-Parser](docs/SHEET_PARSER.md) validiert übergebene Zeilen offline; der getrennte [Sheets-Adapter](docs/SHEETS_ADAPTER.md) nutzt denselben Importvertrag. Echte App-Abrufe bleiben bis zur Besitzerfreigabe geschlossen; Bewertung folgt separat. Die Bedeutung tatsächlicher Einstandswerte nach Teilverkäufen ist noch ungeklärt; daraus dürfen bis zur Bestätigung keine persönlichen Seit-Kauf-Renditen entstehen.
+Fehlende Platzhalter, ungültige Werte und fehlende Besitzerkonfiguration sperren den Produktiveinstieg. Fehlermeldungen nennen nur Feldnamen; Konfigurationsrepräsentationen geben keine vertraulichen Inhalte aus. `synthetic_import_cases()` in [`fixtures.py`](src/portfolio_dashboard/fixtures.py) stellt ausschließlich erfundene Aktien-/ETF-/Derivatefälle mit EUR/USD/GBP, fehlenden, Null- und negativen Werten bereit. Der [Sheet-Parser](docs/SHEET_PARSER.md) validiert übergebene Zeilen offline; der getrennte [Sheets-Adapter](docs/SHEETS_ADAPTER.md) nutzt denselben Importvertrag. Echte App-Abrufe bleiben bis zur Besitzerfreigabe geschlossen; Bewertung folgt separat. „Investiert (EUR)“ enthält laut Besitzerentscheidung (#20) den Einstand der verbleibenden Stücke ohne Gebühren.
+
+### Lokal mit eigenen Daten (nur Sheet-Werte)
+
+`PORTFOLIO_MODE=local` liest das eigene Sheet über den lesenden Service-Account, ohne Login. Deshalb startet der Modus nur, wenn Streamlit ausschließlich auf einer Loopback-Adresse lauscht; jede andere Adresse sperrt vor dem ersten Sheet-Abruf (Nachtrag in [ADR 0003](docs/adr/0003-login-und-zugriff.md)). Werte und Einstand stammen aus dem Sheet (deutsches Zahlenformat, Einstand als Restbestand gemäß #20). Ohne geprüfte Provider-Zuordnungen werden keine Kurse abgerufen; die Kursperioden zeigen „n. v.“, die Ansicht **Meine Entwicklung / Seit Kauf** rechnet mit den Sheet-Werten.
+
+```bash
+export PORTFOLIO_MODE=local
+export PORTFOLIO_SHEET_ID='<private Sheet-ID>'
+export PORTFOLIO_SHEET_RANGE='<Tabellenblatt>!A1:T200'   # einfache Anführungszeichen, sonst deutet zsh "!" als Verlaufsbefehl; Kopfzeile in der ersten Zeile, Endspalte M–T
+export PORTFOLIO_SHEETS_CREDENTIALS_FILE="$HOME/<Pfad außerhalb des Repos>/service-account.json"
+uv run --locked streamlit run app.py --server.address 127.0.0.1
+```
+
+Die Werte nur in der eigenen Shell setzen, nicht in Dateien im Repository. Der Modus ist nicht für Container oder Hosting gedacht; dort gilt der Produktivmodus mit Login.
 
 ### Besitzerprüfung und Sitzungen
 
