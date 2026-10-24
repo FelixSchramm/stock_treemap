@@ -9,11 +9,18 @@ from streamlit.testing.v1 import AppTest
 
 from portfolio_dashboard.demo import DEMO_TIMESTAMP, demo_snapshot
 from portfolio_dashboard.models import CostBasisStatus, ValuationSource
+from portfolio_dashboard.treemap import WEIGHT_COLUMN_LABEL
 from portfolio_dashboard.ui import (
     COURSE_PERIOD_KEY,
     COURSE_PERIODS,
     COURSE_VIEW,
+    FILTER_CATEGORY_KEY,
+    FILTER_QUERY_KEY,
+    FILTER_TYPE_KEY,
     PERSONAL_VIEW,
+    SORT_DIRECTION_ASC,
+    SORT_FIELD_KEY,
+    SORT_ORDER_KEY,
     VIEW_KEY,
 )
 
@@ -76,7 +83,10 @@ def test_personal_view_hides_periods_and_retains_last_course_choice(offline_demo
     assert app.subheader[0].value == "Meine Entwicklung · Seit Kauf"
     assert "Zeitraum: Seit Kauf" in [item.value for item in app.caption]
     assert "n. v." in app.info[1].value
-    assert app.dataframe[0].value.equals(course_rows)
+    personal_df = app.dataframe[0].value
+    invariant_cols = ["Instrument", "Wert (EUR)", WEIGHT_COLUMN_LABEL]
+    assert personal_df[invariant_cols].equals(course_rows[invariant_cols])
+    assert personal_df["Entwicklung (%)"].tolist() == ["n. v.", "n. v."]
 
     app.radio(key=VIEW_KEY).set_value(COURSE_VIEW).run()
     assert not app.exception
@@ -113,3 +123,56 @@ def test_demo_snapshot_cannot_claim_verified_cost_or_provider_quotes():
         and not position.cost_basis.usable_for_since_purchase
         for position in snapshot.positions
     )
+
+
+def test_shared_filters_apply_to_treemap_and_table_while_kpis_remain_portfolio_wide(
+    offline_demo,
+):
+    app = AppTest.from_file(str(APP_PATH)).run()
+    assert not app.exception
+    assert app.metric[0].label == "Bewerteter Depotwert"
+    assert app.metric[0].value == "2.000,00 EUR"
+    assert app.metric[1].value == "2"
+
+    # Filter by instrument type "ETF" -> only Demo-Fonds B (800 EUR, 40% of 2000 EUR).
+    app.selectbox(key=FILTER_TYPE_KEY).set_value("ETF").run()
+    assert not app.exception
+    # Header KPIs remain portfolio-wide.
+    assert app.metric[0].value == "2.000,00 EUR"
+    assert app.metric[1].value == "2"
+
+    df = app.dataframe[0].value
+    assert df["Instrument"].tolist() == ["Demo-Fonds B"]
+    assert df["Wert (EUR)"].tolist() == [800.0]
+    # Weight remains 40% of the total valued portfolio (2000 EUR), not 100% of filtered!
+    assert df[WEIGHT_COLUMN_LABEL].tolist() == [40.0]
+
+    # Search filter narrows by query across name/ticker/category.
+    app.selectbox(key=FILTER_TYPE_KEY).set_value("Alle").run()
+    app.text_input(key=FILTER_QUERY_KEY).set_value("demo-a").run()
+    assert not app.exception
+    df_search = app.dataframe[0].value
+    assert df_search["Instrument"].tolist() == ["Demo-Aktie A"]
+    assert df_search[WEIGHT_COLUMN_LABEL].tolist() == [60.0]
+
+
+def test_table_sorting_controls_reorder_rows_deterministically(offline_demo):
+    app = AppTest.from_file(str(APP_PATH)).run()
+    assert not app.exception
+    assert app.dataframe[0].value["Instrument"].tolist() == [
+        "Demo-Aktie A",
+        "Demo-Fonds B",
+    ]
+
+    app.selectbox(key=SORT_FIELD_KEY).set_value("Wert (EUR)").run()
+    app.selectbox(key=SORT_ORDER_KEY).set_value(SORT_DIRECTION_ASC).run()
+    assert not app.exception
+    assert app.dataframe[0].value["Instrument"].tolist() == [
+        "Demo-Fonds B",
+        "Demo-Aktie A",
+    ]
+
+    app.selectbox(key=FILTER_CATEGORY_KEY).set_value("Demo").run()
+    assert not app.exception
+    assert len(app.dataframe[0].value) == 2
+

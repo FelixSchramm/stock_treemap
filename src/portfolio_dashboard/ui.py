@@ -8,34 +8,61 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from portfolio_dashboard.models import PortfolioSnapshot
+from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
 from portfolio_dashboard.treemap import (
+    ALL_FILTER,
     MISSING_COLOR,
     NOT_AVAILABLE,
+    SORT_BY_VALUE,
+    SORT_FIELDS,
+    WEIGHT_COLUMN_LABEL,
+    FilterCriteria,
     Performance,
+    PortfolioKpis,
+    PositionTableRow,
     TreemapModel,
+    available_categories,
+    build_kpis,
+    build_table_rows,
     build_treemap,
     color_for,
+    filter_groups,
+    format_eur,
     format_percent,
+    sort_table_rows,
 )
 from portfolio_dashboard.valuations import PortfolioValuation
 
 COURSE_VIEW = "Kursentwicklung"
 PERSONAL_VIEW = "Meine Entwicklung"
 COURSE_PERIODS = ("Heute", "Woche", "Monat", "Jahr")
+TYPE_FILTER_OPTIONS = (ALL_FILTER, "Aktie", "ETF", "Derivat")
+SORT_DIRECTION_DESC = "Absteigend"
+SORT_DIRECTION_ASC = "Aufsteigend"
+SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
 
 # Public keys are the retained session state; the hidden widget may be removed
 # by Streamlit when switching views, so it has its own temporary key.
 VIEW_KEY = "dashboard.view"
 COURSE_PERIOD_KEY = "dashboard.course_period"
 _PERIOD_WIDGET_KEY = "_dashboard.course_period"
+FILTER_QUERY_KEY = "dashboard.filter_query"
+FILTER_TYPE_KEY = "dashboard.filter_type"
+FILTER_CATEGORY_KEY = "dashboard.filter_category"
+SORT_FIELD_KEY = "dashboard.sort_field"
+SORT_ORDER_KEY = "dashboard.sort_order"
 
 
 def _remember_course_period() -> None:
+    """Persist the selected course period across view switches."""
     st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
 
 
 def render_view_controls() -> tuple[str, str]:
-    """Return the view and period, preserving course periods across hidden runs."""
+    """Return the view and period, preserving course periods across hidden runs.
+
+    :return: Tuple of (selected view, selected period or ``"Seit Kauf"``).
+    """
     st.session_state.setdefault(VIEW_KEY, COURSE_VIEW)
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
     view = st.radio(
@@ -56,8 +83,109 @@ def render_view_controls() -> tuple[str, str]:
     return view, period
 
 
+def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
+    """Render portfolio-wide header KPIs from the unfiltered valuation snapshot.
+
+    :param kpis: Calculated PortfolioKpis object.
+    :param is_personal_view: Whether to include the personal cost-basis comparison.
+    """
+    cols = st.columns(4)
+    with cols[0]:
+        st.metric("Bewerteter Depotwert", kpis.total_eur_label)
+    with cols[1]:
+        st.metric(
+            "Aktive Positionen",
+            kpis.active_positions_label,
+            delta=kpis.coverage_label,
+            delta_color="off",
+        )
+    with cols[2]:
+        st.metric("Größter Gewinner", kpis.winner_label)
+    with cols[3]:
+        st.metric("Größter Verlierer", kpis.loser_label)
+    st.caption(
+        f"Depotkennzahlen (ungefilterter Gesamtbestand) · {kpis.performance_reference_label}."
+    )
+
+    if is_personal_view:
+        pcols = st.columns(3)
+        with pcols[0]:
+            st.metric("G/V seit Kauf (EUR)", kpis.personal_gain_label or NOT_AVAILABLE)
+        with pcols[1]:
+            st.metric("Rendite seit Kauf (%)", kpis.personal_return_label or NOT_AVAILABLE)
+        with pcols[2]:
+            st.metric(
+                "Bewerteter Einstand",
+                format_eur(kpis.personal_cost_basis_eur),
+            )
+        if kpis.personal_coverage_label:
+            st.caption(f"Einstandsvergleich: {kpis.personal_coverage_label}.")
+
+
+def render_filter_controls(
+    valuation: PortfolioValuation,
+) -> tuple[FilterCriteria, str, bool]:
+    """Render shared search, type/category filters and table sort controls.
+
+    :param valuation: Portfolio valuation snapshot to derive category options.
+    :return: Tuple of (FilterCriteria, sort_by column name, descending flag).
+    """
+    st.session_state.setdefault(FILTER_QUERY_KEY, "")
+    st.session_state.setdefault(FILTER_TYPE_KEY, ALL_FILTER)
+    st.session_state.setdefault(FILTER_CATEGORY_KEY, ALL_FILTER)
+    st.session_state.setdefault(SORT_FIELD_KEY, SORT_BY_VALUE)
+    st.session_state.setdefault(SORT_ORDER_KEY, SORT_DIRECTION_DESC)
+
+    categories = available_categories(valuation)
+    if st.session_state.get(FILTER_CATEGORY_KEY) not in categories:
+        st.session_state[FILTER_CATEGORY_KEY] = ALL_FILTER
+
+    fcols = st.columns((2, 1, 1, 1, 1))
+    with fcols[0]:
+        query = st.text_input(
+            "Suche (Name, Ticker, Kennung, Kategorie)",
+            key=FILTER_QUERY_KEY,
+        )
+    with fcols[1]:
+        instrument_type = st.selectbox(
+            "Instrumenttyp",
+            TYPE_FILTER_OPTIONS,
+            key=FILTER_TYPE_KEY,
+        )
+    with fcols[2]:
+        category = st.selectbox(
+            "Kategorie",
+            categories,
+            key=FILTER_CATEGORY_KEY,
+        )
+    with fcols[3]:
+        sort_by = st.selectbox(
+            "Sortierung",
+            SORT_FIELDS,
+            key=SORT_FIELD_KEY,
+        )
+    with fcols[4]:
+        sort_order = st.selectbox(
+            "Reihenfolge",
+            SORT_DIRECTION_OPTIONS,
+            key=SORT_ORDER_KEY,
+        )
+
+    criteria = FilterCriteria(
+        query=query,
+        instrument_type=instrument_type,
+        category=category,
+    )
+    descending = sort_order == SORT_DIRECTION_DESC
+    return criteria, sort_by, descending
+
+
 def treemap_figure(model: TreemapModel) -> go.Figure:
-    """Draw the prepared tiles; all values and colors come from the model."""
+    """Draw the prepared tiles; all values and colors come from the model.
+
+    :param model: Prepared TreemapModel.
+    :return: Plotly Figure containing the treemap trace.
+    """
     figure = go.Figure(
         go.Treemap(
             ids=[f"tile-{index}" for index in range(len(model.tiles))],
@@ -77,7 +205,10 @@ def treemap_figure(model: TreemapModel) -> go.Figure:
 
 
 def render_color_legend(model: TreemapModel) -> None:
-    """Visible legend: symmetric around zero, plus the gray n. v. state."""
+    """Render visible legend: symmetric around zero, plus the gray n. v. state.
+
+    :param model: Prepared TreemapModel.
+    """
     scale = model.scale_percent
     stops = ", ".join(
         f"{color_for(scale * Decimal(step) / 10, scale)}"
@@ -100,6 +231,10 @@ def render_color_legend(model: TreemapModel) -> None:
 
 
 def render_treemap(model: TreemapModel) -> None:
+    """Render the treemap chart, color legend and omitted-positions notice.
+
+    :param model: Prepared TreemapModel.
+    """
     if not model.tiles:
         st.info("Keine bewertete Position für die Treemap.")
     else:
@@ -111,13 +246,54 @@ def render_treemap(model: TreemapModel) -> None:
         )
 
 
+def render_positions_table(
+    rows: Sequence[PositionTableRow],
+    *,
+    total_active_count: int,
+    filtered: bool = False,
+) -> None:
+    """Render the positions table including unvalued positions and portfolio weights.
+
+    :param rows: Sorted sequence of PositionTableRow items.
+    :param total_active_count: Total count of active instrument groups before filtering.
+    :param filtered: Whether any search, type, or category filter is currently active.
+    """
+    st.subheader("Positionsübersicht")
+    weight_note = (
+        f"Spalte „{WEIGHT_COLUMN_LABEL}“ bezieht sich auch bei aktiven Filtern "
+        "auf den gesamten bewerteten Depotbestand."
+    )
+    if filtered:
+        st.caption(
+            f"{len(rows)} von {total_active_count} aktiven Positionen sichtbar · {weight_note}"
+        )
+    else:
+        st.caption(
+            f"Alle {len(rows)} aktiven Positionen inkl. Datenlücken · {weight_note}"
+        )
+    display_dicts = [row.to_display_dict() for row in rows]
+    st.dataframe(display_dicts, hide_index=True, width="stretch")
+
+
 def render_dashboard(
     snapshot: PortfolioSnapshot,
-    rows: list[dict[str, str | float]],
+    rows: list[dict[str, str | float]] | None,
     valuation: PortfolioValuation,
     performances: Callable[[str, str], Sequence[Performance]],
+    *,
+    returns: PortfolioReturns | None = None,
 ) -> None:
-    """Render the shell and treemap; callers supply values and percentages."""
+    """Render the shell, KPIs, shared filters, treemap and positions table.
+
+    KPIs, treemap and positions table always use the same ``valuation`` snapshot.
+
+    :param snapshot: Portfolio snapshot being displayed.
+    :param rows: Deprecated static row list (retained for call compatibility).
+    :param valuation: Portfolio valuation derived from ``snapshot``.
+    :param performances: Callback returning one Performance per group in ``valuation.groups``.
+    :param returns: Optional precomputed PortfolioReturns for the personal view.
+    """
+    _ = rows
     st.title("Depot-Dashboard – Demo")
     st.caption(f"Demo-Depot · {len(snapshot.positions)} Beispielpositionen")
     timestamp = snapshot.attempted_at.strftime("%d.%m.%Y, %H:%M %Z")
@@ -126,10 +302,51 @@ def render_dashboard(
 
     st.divider()
     view, period = render_view_controls()
+    is_personal = view == PERSONAL_VIEW
+    current_performances = tuple(performances(view, period))
+    resolved_returns = (
+        returns
+        if returns is not None
+        else (portfolio_returns(valuation) if is_personal else None)
+    )
+
     st.subheader(f"{view} · {period}")
-    if view == PERSONAL_VIEW:
+    if is_personal:
         st.info("Rendite seit Kauf: n. v. – die Demo berechnet keine persönliche Rendite.")
     else:
         st.caption("Die Demo zeigt feste, erfundene Beispielwerte für die Kursentwicklung.")
-    render_treemap(build_treemap(valuation, performances(view, period)))
-    st.dataframe(rows, hide_index=True, width="stretch")
+
+    kpis = build_kpis(
+        valuation,
+        current_performances,
+        is_personal_view=is_personal,
+        returns=resolved_returns,
+    )
+    render_kpis(kpis, is_personal_view=is_personal)
+
+    criteria, sort_by, descending = render_filter_controls(valuation)
+    filtered_groups, filtered_performances = filter_groups(
+        valuation, current_performances, criteria
+    )
+    render_treemap(
+        build_treemap(valuation, filtered_performances, groups=filtered_groups)
+    )
+
+    table_rows = build_table_rows(
+        valuation,
+        current_performances,
+        criteria=criteria,
+        is_personal_view=is_personal,
+        returns=resolved_returns,
+    )
+    sorted_rows = sort_table_rows(table_rows, sort_by=sort_by, descending=descending)
+    is_filtered = bool(
+        criteria.query.strip()
+        or criteria.instrument_type != ALL_FILTER
+        or criteria.category != ALL_FILTER
+    )
+    render_positions_table(
+        sorted_rows,
+        total_active_count=kpis.active_group_count,
+        filtered=is_filtered,
+    )
