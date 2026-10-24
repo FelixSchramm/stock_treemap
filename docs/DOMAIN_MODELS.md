@@ -50,7 +50,9 @@ Alle bekannten Zeitpunkte müssen eine Zeitzone enthalten. Die Modelle setzen
 keine Zeitpunkte aus der aktuellen Uhr, der Sheet-Zeitzone oder dem Abrufdatum
 als tatsächlichen Kurszeitpunkt ein. Die reine
 [EUR-Bewertung](EUR_VALUATION.md) ergänzt gerichtetes FX, Summen und Gewichte;
-Providerzugriff, Parser und Renditen folgen in ihren eigenen Issues.
+[persönliche Renditen](PERSONAL_RETURNS.md) verwenden daraus nur Positionen mit
+explizit geprüftem positivem verbleibendem Einstand. Providerzugriff und Parser
+folgen in ihren eigenen Issues.
 
 Synthetisches Beispiel, vollständig offline:
 
