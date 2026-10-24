@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, agents/integration]
+    branches: [main, agents/integration, agents/batch-1]
   push:
-    branches: [main, agents/integration]
+    branches: [main, agents/integration, agents/batch-1]
 
 permissions:
   contents: read
