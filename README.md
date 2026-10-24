@@ -15,6 +15,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Geprüfte Instrument- und Provider-Zuordnung](docs/INSTRUMENT_MAPPING.md)
 - [Lesender Sheets-Adapter und Fehlerstatus](docs/SHEETS_ADAPTER.md)
 - [Kurs-, Historien- und FX-Providervertrag](docs/MARKET_DATA.md)
+- [Container und Betriebsparameter](docs/CONTAINER.md)
 
 ## Dashboard entwickeln und prüfen
 
