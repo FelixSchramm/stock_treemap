@@ -41,8 +41,9 @@ MIN_SCALE_PERCENT = Decimal("1")
 
 NEGATIVE_COLOR = (179, 38, 30)
 NEUTRAL_COLOR = (95, 99, 104)
-POSITIVE_COLOR = (30, 142, 62)
+POSITIVE_COLOR = (24, 128, 56)
 MISSING_COLOR = "#3c4043"
+TILE_TEXT_COLOR = "#ffffff"
 
 ALL_FILTER = "Alle"
 NO_CATEGORY_LABEL = "Ohne Kategorie"
@@ -234,6 +235,26 @@ class PositionTableRow:
             "Status": self.status,
         }
 
+    def detail_lines(self) -> tuple[str, ...]:
+        """Build complete non-hover detail lines covering all tooltip and table fields.
+
+        :return: Tuple of human-readable German lines for touch and keyboard access.
+        """
+        header = self.name + (f" ({self.ticker})" if self.ticker else "")
+        return (
+            header,
+            f"Typ: {self.instrument_type}",
+            f"Kategorie: {self.category}",
+            f"Währung: {self.currency}",
+            f"Stückzahl: {self.quantity_label}",
+            f"Wert: {self.amount_eur_label}",
+            f"Anteil am bewerteten Depot: {self.weight_label}",
+            f"Entwicklung: {self.percent_label} ({performance_direction_label(self.percent)})",
+            f"Datenstand: {self.as_of}",
+            f"Referenzdatum: {self.reference_date}",
+            f"Status: {self.status}",
+        )
+
 
 def performance_from_period(result: "PeriodReturn") -> Performance:
     """Convert a period return result into a display performance object.
@@ -292,6 +313,52 @@ def format_percent(percent: Decimal | None) -> str:
         return NOT_AVAILABLE
     text = _german(percent, 2)
     return f"{text} %" if text.startswith("-") or text == "0,00" else f"+{text} %"
+
+
+def performance_direction_label(percent: Decimal | None) -> str:
+    """Return a non-color German direction label for accessibility alongside colors.
+
+    :param percent: Percentage value or None.
+    :return: German text label describing gain, loss, unchanged, or missing state.
+    """
+    if percent is None:
+        return f"Keine Kennzahl ({NOT_AVAILABLE})"
+    rounded = percent.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
+    if rounded > 0:
+        return "Gewinn (+)"
+    if rounded < 0:
+        return "Verlust (−)"
+    return "Unverändert (0,00 %)"
+
+
+def _relative_luminance(hex_color: str) -> float:
+    """Calculate WCAG 2.1 relative luminance for a 6-digit hex color.
+
+    :param hex_color: Hex color string like ``"#188038"``.
+    :return: Relative luminance in ``[0.0, 1.0]``.
+    """
+    cleaned = hex_color.lstrip("#")
+    if len(cleaned) != 6:
+        raise ValueError(f"expected 6-digit hex color, got {hex_color!r}")
+    channels = [int(cleaned[i : i + 2], 16) / 255.0 for i in (0, 2, 4)]
+    linear = [
+        c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+        for c in channels
+    ]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(foreground_hex: str, background_hex: str) -> float:
+    """Calculate WCAG 2.1 contrast ratio between two hex colors.
+
+    :param foreground_hex: Foreground hex color string.
+    :param background_hex: Background hex color string.
+    :return: Contrast ratio ``>= 1.0``.
+    """
+    lum_a = _relative_luminance(foreground_hex)
+    lum_b = _relative_luminance(background_hex)
+    lighter, darker = max(lum_a, lum_b), min(lum_a, lum_b)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 def _format_quantity(quantity: Decimal) -> str:
@@ -1152,4 +1219,16 @@ def build_status_notes(
             ticker_part = f" ({row.ticker})" if row.ticker else ""
             notes.append(f"{row.name}{ticker_part}: {row.status}")
     return tuple(notes)
+
+
+def build_position_details(
+    rows: Sequence[PositionTableRow],
+) -> tuple[tuple[str, ...], ...]:
+    """Build non-hover detail blocks for all visible rows (including tiny/unvalued).
+
+    :param rows: Sequence of PositionTableRow objects.
+    :return: Tuple of detail line tuples, one per row.
+    """
+    return tuple(row.detail_lines() for row in rows)
+
 
