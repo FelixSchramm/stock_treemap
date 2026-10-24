@@ -1,8 +1,23 @@
 """Small native Streamlit helpers for the German dashboard shell."""
 
+from collections.abc import Callable, Sequence
+from decimal import Decimal
+from html import escape
+
+import plotly.graph_objects as go
 import streamlit as st
 
 from portfolio_dashboard.models import PortfolioSnapshot
+from portfolio_dashboard.treemap import (
+    MISSING_COLOR,
+    NOT_AVAILABLE,
+    Performance,
+    TreemapModel,
+    build_treemap,
+    color_for,
+    format_percent,
+)
+from portfolio_dashboard.valuations import PortfolioValuation
 
 COURSE_VIEW = "Kursentwicklung"
 PERSONAL_VIEW = "Meine Entwicklung"
@@ -41,10 +56,68 @@ def render_view_controls() -> tuple[str, str]:
     return view, period
 
 
+def treemap_figure(model: TreemapModel) -> go.Figure:
+    """Draw the prepared tiles; all values and colors come from the model."""
+    figure = go.Figure(
+        go.Treemap(
+            ids=[f"tile-{index}" for index in range(len(model.tiles))],
+            labels=[tile.name for tile in model.tiles],
+            parents=[""] * len(model.tiles),
+            values=[float(tile.amount_eur) for tile in model.tiles],
+            text=["<br>".join(escape(line) for line in tile.label) for tile in model.tiles],
+            textinfo="text",
+            hovertext=["<br>".join(escape(line) for line in tile.tooltip) for tile in model.tiles],
+            hoverinfo="text",
+            marker={"colors": [tile.color for tile in model.tiles], "line": {"width": 2}},
+            sort=False,
+        )
+    )
+    figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0}, height=480)
+    return figure
+
+
+def render_color_legend(model: TreemapModel) -> None:
+    """Visible legend: symmetric around zero, plus the gray n. v. state."""
+    scale = model.scale_percent
+    stops = ", ".join(
+        f"{color_for(scale * Decimal(step) / 10, scale)}"
+        for step in range(-10, 11)
+    )
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:8px;font-size:0.85rem">'
+        f"<span>{escape(format_percent(-scale))} %</span>"
+        f'<div style="flex:1;height:12px;border-radius:6px;'
+        f'background:linear-gradient(to right, {stops})"></div>'
+        f"<span>{escape(format_percent(scale))} %</span>"
+        f'<span style="background:{MISSING_COLOR};padding:0 6px;border-radius:4px">'
+        f"{NOT_AVAILABLE}</span></div>",
+        unsafe_allow_html=True,
+    )
+    note = "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %"
+    if model.capped:
+        note += "; größere Werte sind nur farblich begrenzt, Zahlen bleiben unverändert"
+    st.caption(note + ".")
+
+
+def render_treemap(model: TreemapModel) -> None:
+    if not model.tiles:
+        st.info("Keine bewertete Position für die Treemap.")
+    else:
+        st.plotly_chart(treemap_figure(model), width="stretch")
+        render_color_legend(model)
+    if model.omitted_count:
+        st.caption(
+            f"{model.omitted_count} Position(en) ohne bewerteten EUR-Wert: keine Kachel."
+        )
+
+
 def render_dashboard(
-    snapshot: PortfolioSnapshot, rows: list[dict[str, str | float]]
+    snapshot: PortfolioSnapshot,
+    rows: list[dict[str, str | float]],
+    valuation: PortfolioValuation,
+    performances: Callable[[str, str], Sequence[Performance]],
 ) -> None:
-    """Render only the synthetic shell; no source access or return calculation."""
+    """Render the shell and treemap; callers supply values and percentages."""
     st.title("Depot-Dashboard – Demo")
     st.caption(f"Demo-Depot · {len(snapshot.positions)} Beispielpositionen")
     timestamp = snapshot.attempted_at.strftime("%d.%m.%Y, %H:%M %Z")
@@ -57,5 +130,6 @@ def render_dashboard(
     if view == PERSONAL_VIEW:
         st.info("Rendite seit Kauf: n. v. – die Demo berechnet keine persönliche Rendite.")
     else:
-        st.caption("Die Demo zeigt feste Beispielwerte; Kursrenditen sind noch nicht verfügbar.")
+        st.caption("Die Demo zeigt feste, erfundene Beispielwerte für die Kursentwicklung.")
+    render_treemap(build_treemap(valuation, performances(view, period)))
     st.dataframe(rows, hide_index=True, width="stretch")

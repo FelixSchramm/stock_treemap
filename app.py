@@ -6,8 +6,14 @@ import streamlit as st
 
 from portfolio_dashboard.auth import require_owner
 from portfolio_dashboard.config import ConfigurationError, Mode, load_config
-from portfolio_dashboard.demo import demo_rows, demo_snapshot
-from portfolio_dashboard.ui import render_dashboard
+from portfolio_dashboard.demo import (
+    demo_course_performances,
+    demo_personal_performances,
+    demo_rows,
+    demo_snapshot,
+    demo_valuation,
+)
+from portfolio_dashboard.ui import COURSE_VIEW, render_dashboard
 
 st.set_page_config(page_title="Depot-Dashboard – Demo", layout="wide")
 try:
@@ -30,4 +36,15 @@ if config.mode is Mode.PRODUCTION:
 
 # All loaders and output (including future real-data/export paths) belong below
 # the production owner gate. Never cache an authorization decision.
-render_dashboard(demo_snapshot(), demo_rows())
+demo_data = demo_snapshot()
+demo_values = demo_valuation(demo_data)
+render_dashboard(
+    demo_data,
+    demo_rows(),
+    demo_values,
+    lambda view, period: (
+        demo_course_performances(period)
+        if view == COURSE_VIEW
+        else demo_personal_performances(demo_values)
+    ),
+)
