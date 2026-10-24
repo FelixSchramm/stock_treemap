@@ -12,6 +12,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Allgemeines Importschema](docs/DATA_SOURCE.md)
 - [Fachlicher Datenvertrag](docs/DOMAIN_MODELS.md)
 - [Geprüfte Instrument- und Provider-Zuordnung](docs/INSTRUMENT_MAPPING.md)
+- [Kurs-, Historien- und FX-Providervertrag](docs/MARKET_DATA.md)
 
 ## Dashboard entwickeln und prüfen
 
@@ -38,7 +39,7 @@ Die Tests führen den Streamlit-Einstieg aus und prüfen die sichtbaren syntheti
 
 - `PORTFOLIO_MODE`: `demo` oder `production`. Demo verwendet nur synthetische Daten; im aktuellen Stand bleibt der Produktiveinstieg auch bei vollständiger Konfiguration geschlossen, bis die Besitzerprüfung implementiert ist.
 - `PORTFOLIO_SOURCE=google_sheets`, `PORTFOLIO_SHEET_ID`, `PORTFOLIO_SHEET_RANGE`, `PORTFOLIO_SHEETS_CREDENTIALS_FILE`: explizite Quellkonfiguration. Der Konfigurationslader liest keine Credential-Dateien und übernimmt keine möglicherweise geerbte Plattformidentität automatisch. Laufzeit-Lesezugang folgt in M2-03/M2-04.
-- `PORTFOLIO_PROVIDER=yfinance`: vorgesehener Anbieter im Produktivmodus. Demo erzwingt stattdessen den synthetischen Anbieter; Providerabrufe folgen in M3-03.
+- `PORTFOLIO_PROVIDER=yfinance`: vorgesehener Anbieter im Produktivmodus. Demo erzwingt stattdessen den synthetischen Anbieter. Der austauschbare [Adapter](docs/MARKET_DATA.md) für verifizierte Kurs-/Historien-/FX-Mappings ist unabhängig testbar; der reale Lader ist noch nicht angebunden.
 - `PORTFOLIO_QUOTES_TTL_SECONDS=60`, `PORTFOLIO_HOLDINGS_TTL_SECONDS=300`, `PORTFOLIO_HISTORY_TTL_SECONDS=21600`: positive ganze Sekunden entsprechend ADR 0005.
 - `PORTFOLIO_LOGIN_PROVIDER=google` sowie die `PORTFOLIO_OWNER_*`, `PORTFOLIO_OIDC_*` und `PORTFOLIO_COOKIE_SECRET`-Felder: getrennte OIDC-/Besitzerkonfiguration. Vollständige Konfiguration ist keine Anmeldung und keine Besitzerfreigabe. Login und serverseitige Autorisierung folgen in M6-03.
 

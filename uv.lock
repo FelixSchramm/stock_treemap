@@ -434,10 +434,6 @@ dependencies = [
     { name = "pandas" },
     { name = "plotly" },
     { name = "streamlit" },
-]
-
-[package.optional-dependencies]
-prototype = [
     { name = "yfinance" },
 ]
 
@@ -453,7 +449,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=5.20" },
     { name = "streamlit", specifier = ">=1.49" },
-    { name = "yfinance", marker = "extra == 'prototype'", specifier = ">=0.2.40" },
+    { name = "yfinance", specifier = "==1.7.0" },
 ]
 provides-extras = ["prototype"]
 
