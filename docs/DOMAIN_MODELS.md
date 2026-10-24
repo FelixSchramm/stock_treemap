@@ -1,5 +1,8 @@
 # Fachlicher Datenvertrag
 
+Die getrennten [Fundamental- und Modellwertverträge](FUNDAMENTAL_MODELS.md)
+ergänzen diese vorhandenen Import-/Marktpreismodelle für M8-03 (#72).
+
 `portfolio_dashboard.models` definiert unveränderliche Python-Dataclasses und
 Enums für Import, spätere Berechnungen und Oberfläche. Das Modul verwendet nur
 die Standardbibliothek; es parst keine Zellen, lädt keine Daten, ordnet keine
