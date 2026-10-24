@@ -26,7 +26,7 @@ from portfolio_dashboard.sheet_parser import (
 )
 
 SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
-_RANGE = re.compile(r"(?:'(?:[^']|'')+'|[^'!\r\n]+)!A([1-9][0-9]*):M([1-9][0-9]*)")
+_RANGE = re.compile(r"(?:'(?:[^']|'')+'|[^'!\r\n]+)!A([1-9][0-9]*):([M-T])([1-9][0-9]*)")
 _PRIVATE_READ = ContextVar("private_sheet_read", default=False)
 
 
@@ -153,6 +153,7 @@ class SheetsAdapter:
     _url: str = field(init=False, repr=False)
     _header_row: int = field(init=False, repr=False)
     _row_count: int = field(init=False, repr=False)
+    _column_count: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if (
@@ -171,10 +172,10 @@ class SheetsAdapter:
         match = _RANGE.fullmatch(cell_range) if isinstance(cell_range, str) else None
         if match is None:
             raise SheetsConfigurationError(
-                "Explicit worksheet and bounded A–M row range required."
+                "Explicit worksheet and bounded A–M..A–T row range required."
             )
         try:
-            first, last = map(int, match.groups())
+            first, last = int(match.group(1)), int(match.group(3))
         except ValueError:
             raise SheetsConfigurationError("Invalid bounded row range.") from None
         if last < first:
@@ -184,6 +185,7 @@ class SheetsAdapter:
         object.__setattr__(self, "timeout_seconds", _timeout(self.timeout_seconds))
         object.__setattr__(self, "_header_row", first)
         object.__setattr__(self, "_row_count", last - first + 1)
+        object.__setattr__(self, "_column_count", ord(match.group(2)) - ord("A") + 1)
         object.__setattr__(
             self,
             "_url",
@@ -243,7 +245,7 @@ class SheetsAdapter:
             return self._invalid_response(attempted_at)
         if any(
             not isinstance(row, list)
-            or len(row) > 13
+            or len(row) > self._column_count
             or any(
                 type(cell) not in (str, int, float, Decimal, bool, type(None))
                 for cell in row

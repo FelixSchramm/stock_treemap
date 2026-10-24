@@ -8,7 +8,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from portfolio_dashboard.demo import DEMO_TIMESTAMP, demo_snapshot
-from portfolio_dashboard.models import CostBasisStatus
+from portfolio_dashboard.models import CostBasisStatus, ValuationSource
 from portfolio_dashboard.ui import (
     COURSE_PERIOD_KEY,
     COURSE_PERIODS,
@@ -96,14 +96,18 @@ def test_new_session_does_not_inherit_the_previous_view_or_period(offline_demo):
     assert fresh.radio[1].value == "Heute"
 
 
-def test_demo_snapshot_cannot_claim_verified_cost_or_live_quotes():
+def test_demo_snapshot_cannot_claim_verified_cost_or_provider_quotes():
     snapshot = demo_snapshot()
     assert snapshot.attempted_at == DEMO_TIMESTAMP
     assert [position.name for position in snapshot.positions] == [
         "Demo-Aktie A", "Demo-Fonds B"
     ]
     assert all(position.imported_at == DEMO_TIMESTAMP for position in snapshot.positions)
-    assert all(position.valuation is None for position in snapshot.positions)
+    assert all(
+        position.valuation.provenance.source is ValuationSource.SHEET
+        and position.valuation.provenance.provider is None
+        for position in snapshot.positions
+    )
     assert all(
         position.cost_basis.status is CostBasisStatus.MISSING
         and not position.cost_basis.usable_for_since_purchase
