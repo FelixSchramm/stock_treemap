@@ -258,7 +258,10 @@ def _price_date(cell: object) -> datetime | None:
     if isinstance(cell, bool):
         return None
     if isinstance(cell, (int, float, Decimal)):
-        if cell == int(cell) and 1 <= cell < 100000:
+        if isinstance(cell, Decimal) and not cell.is_finite():
+            return None
+        # Bound the value before converting; NaN/infinity and huge serials are invalid.
+        if 1 <= cell < 100000 and cell == int(cell):
             day = _SERIAL_EPOCH + timedelta(days=int(cell))
     elif isinstance(cell, str):
         text = cell.strip()
@@ -449,6 +452,7 @@ def parse_sheet_rows(
         row_provenance = provenance
         if "price_date" in extra and not _missing(extra["price_date"]):
             observed = _price_date(extra["price_date"])
+            row_provenance = Provenance(ValuationSource.SHEET, imported_at, observed)
             if observed is None:
                 row_warnings.append(
                     _warning(
@@ -458,8 +462,6 @@ def parse_sheet_rows(
                         source_row,
                     )
                 )
-            else:
-                row_provenance = Provenance(ValuationSource.SHEET, imported_at, observed)
         if row_provenance.observed_at is None and price_status is ValueStatus.AVAILABLE:
             price_warnings.append(
                 _warning(
