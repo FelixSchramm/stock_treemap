@@ -15,6 +15,10 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Geprüfte Instrument- und Provider-Zuordnung](docs/INSTRUMENT_MAPPING.md)
 - [Lesender Sheets-Adapter und Fehlerstatus](docs/SHEETS_ADAPTER.md)
 - [Kurs-, Historien- und FX-Providervertrag](docs/MARKET_DATA.md)
+- [EUR-Bewertung und Gewichtung](docs/EUR_VALUATION.md)
+- [Persönliche Rendite seit Kauf](docs/PERSONAL_RETURNS.md)
+- [Kursperioden (Heute, Woche, Monat, Jahr)](docs/PRICE_PERIODS.md)
+- [Fachliche Regressionen, Abnahmewerte und Toleranzen](docs/DOMAIN_REGRESSIONS.md)
 - [Container und Betriebsparameter](docs/CONTAINER.md)
 - [Treemap-Wertmodell](docs/TREEMAP.md)
 
