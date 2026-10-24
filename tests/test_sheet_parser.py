@@ -435,3 +435,84 @@ assert len(result.active_positions) == 1
 assert not result.active_positions[0].cost_basis.usable_for_since_purchase
 """
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+HINT_HEADERS = SHEET_HEADERS + (
+    "",
+    "Kategorie",
+    "Anteil (%)",
+    "",
+    "ISIN",
+    "Handelsplatz",
+    "Kursdatum (Quelle: Synthetic)",
+)
+
+
+def hinted_row(isin="DE0000000001", venue="Synthetic venue", price_date="23.10.2026"):
+    return synthetic_row() + ["", "", "", "", isin, venue, price_date]
+
+
+def parse_hinted(rows):
+    return parse_sheet_rows(
+        HINT_HEADERS, rows, imported_at=IMPORTED, metadata=GERMAN
+    )
+
+
+def test_optional_r_to_t_columns_carry_unverified_hints_and_row_price_date():
+    (position,) = parse_hinted([hinted_row()]).active_positions
+    assert position.instrument.source_isin == "DE0000000001"
+    assert position.instrument.source_venue == "Synthetic venue"
+    # Hints never become identity, venue verification or provider input.
+    assert position.instrument.instrument_id is None
+    assert position.instrument.trading_venue is None
+    assert position.instrument.provider_mapping is None
+    observed = position.valuation.provenance.observed_at
+    assert observed.date().isoformat() == "2026-10-23"
+    assert observed.tzinfo is not None
+    assert "unknown_price_time" not in {w.code for w in position.warnings}
+
+
+@pytest.mark.parametrize("price_date", [46318, 46318.0, "2026-10-23", "23.10.2026"])
+def test_price_date_accepts_serial_iso_and_german_dates(price_date):
+    (position,) = parse_hinted([hinted_row(price_date=price_date)]).active_positions
+    assert position.valuation.provenance.observed_at.date().isoformat() == "2026-10-23"
+
+
+@pytest.mark.parametrize("price_date", ["gestern", "31.02.2026", True, 0])
+def test_invalid_price_date_keeps_price_with_unknown_time(price_date):
+    (position,) = parse_hinted([hinted_row(price_date=price_date)]).active_positions
+    assert position.valuation.provenance.observed_at is None
+    codes = {w.code for w in position.warnings}
+    assert "unknown_price_time" in codes
+
+
+def test_invalid_isin_is_dropped_with_a_neutral_warning():
+    (position,) = parse_hinted([hinted_row(isin="not-an-isin")]).active_positions
+    assert position.instrument.source_isin is None
+    assert "invalid_isin" in {w.code for w in position.warnings}
+    assert "not-an-isin" not in repr(position.warnings)
+
+
+def test_blank_hints_and_missing_columns_behave_like_before():
+    (blank,) = parse_hinted([hinted_row(isin="", venue="", price_date="")]).active_positions
+    assert blank.instrument.source_isin is None
+    assert blank.instrument.source_venue is None
+    assert blank.valuation.provenance.observed_at is None
+    (plain,) = parse([synthetic_row()]).active_positions
+    assert plain.instrument.source_isin is None
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Brokerage-Gesamtwert laut Synthetic (01.01.2026)",
+        "Differenz zu Synthetic (Kursabweichungen)",
+    ],
+)
+def test_reconciliation_rows_below_the_data_are_summaries_not_rejections(label):
+    comparison = ["" for _ in SHEET_HEADERS]
+    comparison[0] = label
+    comparison[7] = "100,00"
+    result = parse([synthetic_row(), comparison])
+    assert result.snapshot.status is SnapshotStatus.COMPLETE
+    assert [e.reason for e in result.excluded_rows] == ["summary"]

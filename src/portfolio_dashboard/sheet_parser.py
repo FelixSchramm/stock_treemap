@@ -1,4 +1,4 @@
-"""Pure A–M Sheet parsing; no source access, identity lookup or calculations.
+"""Pure A–M Sheet parsing (plus optional R–T hints); no source access, identity lookup or calculations.
 
 The caller supplies the number locale and import timestamp. Only the documented
 EUR/percentage-point columns establish units; source symbols establish no ID.
@@ -7,9 +7,10 @@ EUR/percentage-point columns establish units; source symbols establish no ID.
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+from zoneinfo import ZoneInfo
 
 from portfolio_dashboard.models import (
     CostBasis,
@@ -73,6 +74,15 @@ _SUMMARY_LABELS = {
     "benchmark",
 }
 _EUR = QuoteUnit("EUR", Decimal("1"))
+_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
+_BERLIN = ZoneInfo("Europe/Berlin")
+_SERIAL_EPOCH = date(1899, 12, 30)
+# Optional columns right of M: (field, header test), searched only in N–T.
+_OPTIONAL = (
+    ("source_isin", lambda header: header == "isin"),
+    ("source_venue", lambda header: header == "handelsplatz"),
+    ("price_date", lambda header: header.startswith("kursdatum")),
+)
 
 
 class NumberLocale(Enum):
@@ -228,10 +238,50 @@ def _schema(
     return mapping, warnings
 
 
+def _optional_columns(headers: Sequence[object]) -> dict[str, int]:
+    """Locate optional hint columns in N–T; absent or duplicated ones are unread."""
+    normalized = [_normal_header(cell) for cell in headers[13:20]]
+    found: dict[str, int] = {}
+    for field, test in _OPTIONAL:
+        matches = [i for i, header in enumerate(normalized) if test(header)]
+        if len(matches) == 1:
+            found[field] = 13 + matches[0]
+    return found
+
+
+def _price_date(cell: object) -> datetime | None:
+    """Read a date-only cell; day precision, so use the start of the Berlin day.
+
+    Accepts dd.mm.yyyy, ISO text or a Sheets serial number (UNFORMATTED_VALUE).
+    """
+    day: date | None = None
+    if isinstance(cell, bool):
+        return None
+    if isinstance(cell, (int, float, Decimal)):
+        if cell == int(cell) and 1 <= cell < 100000:
+            day = _SERIAL_EPOCH + timedelta(days=int(cell))
+    elif isinstance(cell, str):
+        text = cell.strip()
+        for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                day = datetime.strptime(text, fmt).date()
+                break
+            except ValueError:
+                continue
+    return None if day is None else datetime(day.year, day.month, day.day, tzinfo=_BERLIN)
+
+
 def _is_summary(cells: dict[str, object]) -> bool:
     name = _normal_header(cells["name"])
     label = name in _SUMMARY_LABELS or name.startswith(
-        ("summe ", "gesamt ", "vergleich ", "benchmark ")
+        (
+        "summe ",
+        "gesamt ",
+        "vergleich ",
+        "benchmark ",
+        "brokerage",
+        "differenz ",
+    )
     )
     # An instrument named e.g. 'Total' with a valid type remains a holding.
     return label and _text(cells["instrument_type"]) is None
@@ -261,6 +311,7 @@ def parse_sheet_rows(
         ValuationSource.SHEET, imported_at, metadata.sheet_price_observed_at
     )
     mapping, warnings = _schema(headers, header_row)
+    optional = _optional_columns(headers)
     if warnings:
         return SheetParseResult(
             PortfolioSnapshot(
@@ -276,6 +327,10 @@ def parse_sheet_rows(
         cells = {
             field: row[index] if index < len(row) else None
             for field, index in mapping.items()
+        }
+        extra = {
+            field: row[index] if index < len(row) else None
+            for field, index in optional.items()
         }
         if all(_missing(cell) for cell in cells.values()):
             excluded.append(ExcludedRow(source_row, "empty"))
@@ -345,6 +400,18 @@ def parse_sheet_rows(
                         source_row,
                     )
                 )
+        isin = _text(extra.get("source_isin"))
+        if isin is not None and not _ISIN.fullmatch(isin):
+            row_warnings.append(
+                _warning(
+                    "invalid_isin",
+                    "ISIN-Hinweis hat kein gültiges Format und wird verworfen.",
+                    "source_isin",
+                    source_row,
+                )
+            )
+            isin = None
+        venue = _text(extra.get("source_venue"))
         currency = texts["quote_currency"]
         unit = None
         if currency is not None:
@@ -379,7 +446,21 @@ def parse_sheet_rows(
                     source_row,
                 )
             )
-        elif provenance.observed_at is None:
+        row_provenance = provenance
+        if "price_date" in extra and not _missing(extra["price_date"]):
+            observed = _price_date(extra["price_date"])
+            if observed is None:
+                row_warnings.append(
+                    _warning(
+                        "invalid_price_date",
+                        "Kursdatum ist kein gültiges Datum; Kursstand bleibt unbekannt.",
+                        "price_date",
+                        source_row,
+                    )
+                )
+            else:
+                row_provenance = Provenance(ValuationSource.SHEET, imported_at, observed)
+        if row_provenance.observed_at is None and price_status is ValueStatus.AVAILABLE:
             price_warnings.append(
                 _warning(
                     "unknown_price_time",
@@ -390,7 +471,7 @@ def parse_sheet_rows(
             )
         row_warnings.extend(price_warnings)
         valuation = Valuation(
-            price, price_status, provenance, _EUR, tuple(price_warnings)
+            price, price_status, row_provenance, _EUR, tuple(price_warnings)
         )
 
         cost, cost_status = _number(
@@ -467,6 +548,8 @@ def parse_sheet_rows(
                     display_ticker=texts["display_ticker"],
                     source_symbol=texts["source_symbol"],
                     quote_unit=unit,
+                    source_isin=isin,
+                    source_venue=venue,
                 ),
                 texts["category"],
                 source_row,

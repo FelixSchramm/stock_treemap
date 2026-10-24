@@ -148,11 +148,21 @@ class Instrument:
     trading_venue: str | None = None
     quote_unit: QuoteUnit | None = None
     provider_mapping: ProviderMapping | None = None
+    # Unverified hints from the import source; never identity or provider input.
+    source_isin: str | None = None
+    source_venue: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.instrument_type, InstrumentType):
             raise TypeError("instrument_type must be InstrumentType")
-        for name in ("instrument_id", "display_ticker", "source_symbol", "trading_venue"):
+        for name in (
+            "instrument_id",
+            "display_ticker",
+            "source_symbol",
+            "trading_venue",
+            "source_isin",
+            "source_venue",
+        ):
             value = getattr(self, name)
             if value is not None:
                 _text(value, name)

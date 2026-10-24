@@ -12,7 +12,13 @@ von A–M genau einmal vorkommen. Ihre Reihenfolge darf wechseln; Großschreibun
 und wiederholte Leerzeichen ändern das Mapping nicht. Fehlende oder doppelte
 Überschriften ergeben einen `FAILED`-Snapshot mit Feld und Überschriftenzeile.
 Zellen rechts von M werden ignoriert, auch wenn dort gleichnamige Aggregate
-stehen. Kurze Datenzeilen erhalten fehlende Zellen; `header_row` bestimmt den
+stehen. Ausnahme sind die optionalen Hinweisspalten *ISIN*, *Handelsplatz* und
+*Kursdatum…* in N–T (siehe [DATA_SOURCE.md](DATA_SOURCE.md)): ISIN und Handelsplatz
+landen als `source_isin`/`source_venue` ohne jede Identitäts- oder Providerwirkung,
+eine ungültige ISIN wird mit `invalid_isin` verworfen. Das Kursdatum (`dd.mm.yyyy`,
+ISO oder Sheets-Seriennummer) setzt den Kursstand der Zeile; ungültig ergibt
+`invalid_price_date` und der Kursstand bleibt unbekannt. Zeilen wie
+„Brokerage-Gesamtwert…“ oder „Differenz zu…“ ohne Typ zählen als Summenzeilen. Kurze Datenzeilen erhalten fehlende Zellen; `header_row` bestimmt den
 tatsächlichen Zeilenbezug eines konfigurierten Ausschnitts.
 
 `SheetMetadata.number_locale` ist erforderlich: `NumberLocale.GERMAN` liest

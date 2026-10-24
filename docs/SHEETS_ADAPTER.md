@@ -13,8 +13,8 @@ abgerufen; Formeln liefern ihre berechneten Werte. JSON-Dezimalzahlen gehen als
 Der Host übergibt `SourceConfig` mit `kind=SourceKind.GOOGLE_SHEETS`, privater
 Spreadsheet-ID und endlichem A1-Bereich, beispielsweise dem **synthetischen**
 `'Synthetic tab'!A7:M1000`. Der Bereich muss ein ausdrücklich benanntes Blatt,
-Spalten A–M und beide Zeilengrenzen enthalten. Die erste Bereichszeile enthält die
-dreizehn Überschriften; die tatsächlichen Quellenzeilen bleiben erhalten. Die
+Spalten A bis zu einer Endspalte zwischen M und T und beide Zeilengrenzen enthalten (Endspalte T liest auch die optionalen Hinweisspalten). Die erste Bereichszeile enthält die
+dreizehn Pflichtüberschriften; die tatsächlichen Quellenzeilen bleiben erhalten. Die
 Anzahl zurückgegebener Zeilen und Spalten darf den Bereich nicht überschreiten.
 Nicht unterstützte Bereiche werden vor einem Abruf mit neutraler Meldung
 abgelehnt. `SheetMetadata` legt Zahlenformat und gegebenenfalls unabhängig
@@ -81,3 +81,11 @@ Prüfung mit synthetischen Sessions und gesperrten IP-Sockets:
 Diese Tests belegen **keinen echten Laufzeitzugang**. Service-Account, gezielte
 Freigabe und echter Abruf bleiben für #14 beziehungsweise den späteren
 geschützten Hosting-Abgleich ungeprüft.
+
+## Session aus Service-Account-Schlüssel
+
+`portfolio_dashboard.sheets_session.build_readonly_session(path)` baut aus der
+Schlüsseldatei (`PORTFOLIO_SHEETS_CREDENTIALS_FILE`, außerhalb des Repos) eine
+`AuthorizedSession` mit ausschließlich dem Scope `SHEETS_READONLY_SCOPE`. Nur
+Schlüssel vom Typ `service_account` werden akzeptiert. Fehler nennen weder Pfad
+noch Inhalt. Das Sheet muss dem Dienstkonto als Betrachter freigegeben sein.

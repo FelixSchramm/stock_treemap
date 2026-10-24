@@ -26,6 +26,14 @@ Die konkrete Quelle und die Ergebnisse des ersten Leseabgleichs liegen lokal unt
 | L | Kategorie | `category` |
 | M | Gewicht (%) | Referenz; aus derselben Bewertungsmenge neu berechnen |
 
+Optionale Hinweisspalten rechts von M (gesucht in N–T, per Überschrift, nur bei genau einem Treffer):
+
+| Überschrift | Internes Feld / Verwendung |
+| --- | --- |
+| ISIN | `source_isin`: **ungeprüfter** Hinweis, keine Instrument-ID; die geprüfte Zuordnung bleibt in `instruments.py` |
+| Handelsplatz | `source_venue`: ungeprüfter Hinweis, nicht `trading_venue` |
+| Kursdatum… | Kursstand des Sheet-Kurses dieser Zeile; Tagesgenauigkeit (Beginn des Berliner Tages) |
+
 Die erwarteten J-Formeln erzeugen Prozentpunkte (`× 100`), keine Bruchteile: 20 bedeutet 20 %, nicht 2000 %. Eingelesene Referenzwerte dürfen nicht nochmals mit 100 multipliziert werden. Die Anwendung berechnet ihre Kennzahlen aus Eingangsgrößen.
 
 Das Modell ergänzt eine geprüfte `instrument_id`, Provider-Zuordnung, Währungseinheit, Quellenzeile, Importzeitpunkt und je Bewertung Quelle/Kurszeitpunkt/Status. Geld und Mengen bleiben numerisch. Leere Felder und „k. A.“ bedeuten fehlende Daten.
