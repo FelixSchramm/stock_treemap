@@ -384,6 +384,24 @@ def test_rejected_symbols_do_not_starve_healthy_bundled_quotes(env, refresh):
         )
 
 
+def test_rejected_symbols_do_not_block_fx_and_history_after_the_quote_bundle(env):
+    clock, provider, cache = env
+    rejected = [instrument(name) for name in "UVW"]
+    stock = instrument("S")
+    provider.rejected = set(rejected)
+    for cycle in range(30):  # refresh.py order: quotes, then FX, then history
+        quotes = cache.quotes([*rejected, stock])
+        fx = cache.fx(PAIR)
+        history = cache.history(stock, START, END)
+        if cycle:  # a cold start cannot tell rejected symbols from an outage
+            assert quotes[stock].valuation.status is ValueStatus.AVAILABLE
+            for result in (fx, history):
+                assert result.status is ValueStatus.AVAILABLE
+                assert result.provenance.source is ValuationSource.PROVIDER
+                assert "provider_backoff" not in codes(result)
+        clock.advance(300)
+
+
 def test_unmapped_instruments_do_not_trigger_provider_backoff(env):
     clock, provider, cache = env
     unmapped = [instrument(name) for name in "UVW"]
