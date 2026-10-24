@@ -23,13 +23,19 @@ def production_settings() -> dict[str, str]:
         "PORTFOLIO_MODE": "production",
         "PORTFOLIO_OWNER_ISSUER": "https://accounts.google.com",
         "PORTFOLIO_OWNER_SUBJECT": "synthetic-owner-subject",
-        "PORTFOLIO_OIDC_CLIENT_ID": "synthetic-client-id",
-        "PORTFOLIO_OIDC_CLIENT_SECRET": "synthetic-client-secret",
-        "PORTFOLIO_COOKIE_SECRET": "synthetic-cookie-secret",
-        "PORTFOLIO_OIDC_REDIRECT_URI": "https://dashboard.example.invalid/oauth2callback",
         "PORTFOLIO_SHEET_ID": "synthetic-source-id",
         "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
         "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-file.json",
+    }
+
+
+def production_auth() -> dict[str, str]:
+    return {
+        "client_id": "synthetic-client-id",
+        "client_secret": "synthetic-client-secret",
+        "cookie_secret": "synthetic-cookie-secret",
+        "redirect_uri": "https://dashboard.example.invalid/oauth2callback",
+        "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
     }
 
 
@@ -87,42 +93,45 @@ def test_production_requires_explicit_nonplaceholder_settings(field):
     values = production_settings()
     values.pop(field)
     with pytest.raises(ConfigurationError) as caught:
-        load_config(values)
+        load_config(values, auth_settings=production_auth())
     assert field in str(caught.value)
     for value in values.values():
         assert value not in str(caught.value)
     values[field] = "<PLACEHOLDER>"
     with pytest.raises(ConfigurationError):
-        load_config(values)
+        load_config(values, auth_settings=production_auth())
 
 
-@pytest.mark.parametrize("field", ["PORTFOLIO_MODE", "PORTFOLIO_SOURCE", "PORTFOLIO_PROVIDER", "PORTFOLIO_LOGIN_PROVIDER", "PORTFOLIO_OWNER_ISSUER", "PORTFOLIO_OIDC_REDIRECT_URI"])
+@pytest.mark.parametrize("field", ["PORTFOLIO_MODE", "PORTFOLIO_SOURCE", "PORTFOLIO_PROVIDER", "PORTFOLIO_LOGIN_PROVIDER", "PORTFOLIO_OWNER_ISSUER"])
 def test_unsupported_settings_do_not_echo_values(field):
     values = production_settings() | {field: "synthetic-private-value"}
     with pytest.raises(ConfigurationError) as caught:
-        load_config(values)
+        load_config(values, auth_settings=production_auth())
     assert "synthetic-private-value" not in str(caught.value)
     assert field in str(caught.value)
 
 
-@pytest.mark.parametrize("redirect", ["http://dashboard.example.invalid/oauth2callback", "https://[synthetic-private-value"])
+@pytest.mark.parametrize("redirect", [
+    "http://dashboard.example.invalid/oauth2callback", "https://[synthetic-private-value",
+    "https://dashboard.example.invalid/", "https://user@dashboard.example.invalid/oauth2callback",
+    "https://dashboard.example.invalid/oauth2callback?private=synthetic-private-value",
+])
 def test_production_requires_valid_https_callback_without_leaking_parse_errors(redirect):
     with pytest.raises(ConfigurationError) as caught:
-        load_config(production_settings() | {"PORTFOLIO_OIDC_REDIRECT_URI": redirect})
-    assert "PORTFOLIO_OIDC_REDIRECT_URI" in str(caught.value)
+        load_config(production_settings(), auth_settings=production_auth() | {"redirect_uri": redirect})
+    assert "auth.redirect_uri" in str(caught.value)
     assert redirect not in str(caught.value)
-    assert caught.value.__suppress_context__ or "http://" in redirect
 
 
 def test_config_representations_hide_private_values():
     values = production_settings()
-    config = load_config(values)
+    config = load_config(values, auth_settings=production_auth())
     assert config.mode is Mode.PRODUCTION
     assert config.source.kind is SourceKind.GOOGLE_SHEETS
     assert config.provider is Provider.YFINANCE
     assert config.login.enabled
     for item in (config, config.source, config.login):
-        for name, value in values.items():
+        for name, value in (values | production_auth()).items():
             if name != "PORTFOLIO_MODE":
                 assert value not in repr(item)
 
@@ -142,7 +151,10 @@ def test_production_app_stays_closed_before_loading_any_rows(monkeypatch, comple
     monkeypatch.setattr(portfolio_dashboard.demo, "demo_rows", unexpected)
     monkeypatch.setattr(portfolio_dashboard.demo, "demo_snapshot", unexpected)
     monkeypatch.setattr(socket, "create_connection", unexpected)
-    app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py")).run()
+    app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py"))
+    # Provide an in-memory secret store; never consult host secret files.
+    app.secrets["auth"] = production_auth() if complete else {}
+    app.run()
     assert not app.exception
     assert len(app.error) == 1
     assert not app.dataframe
@@ -150,6 +162,35 @@ def test_production_app_stays_closed_before_loading_any_rows(monkeypatch, comple
     for name, value in values.items():
         if name != "PORTFOLIO_MODE":
             assert value not in app.error[0].value
+
+
+@pytest.mark.parametrize("field", list(production_auth()))
+@pytest.mark.parametrize("invalid", [None, "", "<PLACEHOLDER>", "CHANGE_ME", 42])
+def test_server_auth_requires_all_fields_without_echoing_values(field, invalid):
+    auth = production_auth() | {field: invalid}
+    with pytest.raises(ConfigurationError) as caught:
+        load_config(production_settings(), auth_settings=auth)
+    assert field in str(caught.value)
+    assert "synthetic-client-secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize("auth", [None, {}, {"client_kwargs": {"claims_options": {}}},
+                                       production_auth() | {"expose_tokens": ["id"]},
+                                       production_auth() | {"server_metadata_url": "https://other.example.invalid"}])
+def test_missing_auth_or_sdk_overrides_fail_closed(auth):
+    with pytest.raises(ConfigurationError):
+        load_config(production_settings(), auth_settings=auth)
+
+
+def test_legacy_environment_oidc_fields_cannot_replace_server_auth():
+    values = production_settings() | {
+        "PORTFOLIO_OIDC_CLIENT_ID": "synthetic-client-id",
+        "PORTFOLIO_OIDC_CLIENT_SECRET": "synthetic-client-secret",
+        "PORTFOLIO_COOKIE_SECRET": "synthetic-cookie-secret",
+        "PORTFOLIO_OIDC_REDIRECT_URI": "https://dashboard.example.invalid/oauth2callback",
+    }
+    with pytest.raises(ConfigurationError, match="auth"):
+        load_config(values)
 
 
 def test_synthetic_fixture_cases_cover_import_boundaries_without_shared_mutation():

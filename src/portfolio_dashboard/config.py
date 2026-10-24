@@ -1,8 +1,8 @@
 """Typed runtime settings without UI, provider imports, or credential-file reads.
 
 Demo is the default and deliberately discards all real source/login settings.
-Reading configuration is not authentication; production stays closed in the UI
-until the separately implemented owner authorization is available.
+Reading configuration is not authentication. Production also requires the
+SDK-validated session and explicit owner authorization on every app run.
 """
 
 import os
@@ -66,14 +66,14 @@ class AppConfig:
     login: LoginConfig
 
 
-def _text(values: Mapping[str, str], name: str, default: str = "") -> str:
+def _text(values: Mapping[str, object], name: str, default: str = "") -> str:
     value = values.get(name, default)
     if not isinstance(value, str):
         raise ConfigurationError(f"Konfiguration muss Text enthalten: {name}.")
     return value.strip()
 
 
-def _required(values: Mapping[str, str], name: str) -> str:
+def _required(values: Mapping[str, object], name: str) -> str:
     value = _text(values, name)
     if not value or value.startswith("<") or value == "CHANGE_ME":
         raise ConfigurationError(f"Produktivkonfiguration fehlt: {name}.")
@@ -90,11 +90,20 @@ def _positive_seconds(values: Mapping[str, str], name: str, default: int) -> int
     return value
 
 
-def load_config(values: Mapping[str, str] | None = None) -> AppConfig:
+GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
+
+
+def load_config(
+    values: Mapping[str, str] | None = None,
+    *,
+    auth_settings: Mapping[str, object] | None = None,
+) -> AppConfig:
     """Load exported settings; do not read .env or any credential file.
 
     ``values`` permits deterministic callers and tests. Secrets/source settings
     are ignored in demo mode, even if inherited from the process environment.
+    Production OIDC settings must come from Streamlit's server-side [auth]
+    section, which its supported login/callback implementation also uses.
     """
     values = os.environ if values is None else values
     try:
@@ -120,21 +129,35 @@ def load_config(values: Mapping[str, str] | None = None) -> AppConfig:
     owner_issuer = _required(values, "PORTFOLIO_OWNER_ISSUER")
     if owner_issuer not in {"https://accounts.google.com", "accounts.google.com"}:
         raise ConfigurationError("Ungültiger Google-Issuer: PORTFOLIO_OWNER_ISSUER.")
+    if not isinstance(auth_settings, Mapping):
+        raise ConfigurationError("Produktivkonfiguration fehlt: auth.")
+    # One default Google provider; do not allow SDK/client validation overrides.
+    if set(auth_settings) - {
+        "client_id", "client_secret", "cookie_secret", "redirect_uri",
+        "server_metadata_url",
+    }:
+        raise ConfigurationError("Nicht unterstützte Konfiguration: auth.")
+    if _required(auth_settings, "server_metadata_url") != GOOGLE_METADATA_URL:
+        raise ConfigurationError("Ungültiger Google-Metadatenendpunkt: auth.server_metadata_url.")
     login = LoginConfig(
         enabled=True,
         owner_issuer=owner_issuer,
         owner_subject=_required(values, "PORTFOLIO_OWNER_SUBJECT"),
-        client_id=_required(values, "PORTFOLIO_OIDC_CLIENT_ID"),
-        client_secret=_required(values, "PORTFOLIO_OIDC_CLIENT_SECRET"),
-        cookie_secret=_required(values, "PORTFOLIO_COOKIE_SECRET"),
-        redirect_uri=_required(values, "PORTFOLIO_OIDC_REDIRECT_URI"),
+        client_id=_required(auth_settings, "client_id"),
+        client_secret=_required(auth_settings, "client_secret"),
+        cookie_secret=_required(auth_settings, "cookie_secret"),
+        redirect_uri=_required(auth_settings, "redirect_uri"),
     )
     try:
         redirect = urlsplit(login.redirect_uri)
     except ValueError:
-        raise ConfigurationError("HTTPS-Callback erforderlich: PORTFOLIO_OIDC_REDIRECT_URI.") from None
-    if redirect.scheme != "https" or not redirect.netloc:
-        raise ConfigurationError("HTTPS-Callback erforderlich: PORTFOLIO_OIDC_REDIRECT_URI.")
+        raise ConfigurationError("HTTPS-Callback erforderlich: auth.redirect_uri.") from None
+    if (
+        redirect.scheme != "https" or not redirect.hostname
+        or redirect.username or redirect.password or redirect.query or redirect.fragment
+        or not redirect.path.endswith("/oauth2callback")
+    ):
+        raise ConfigurationError("HTTPS-Callback erforderlich: auth.redirect_uri.")
     source = SourceConfig(
         kind=SourceKind.GOOGLE_SHEETS,
         spreadsheet_id=_required(values, "PORTFOLIO_SHEET_ID"),
