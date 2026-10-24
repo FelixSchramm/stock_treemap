@@ -12,7 +12,7 @@ from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import TYPE_CHECKING
 
-from portfolio_dashboard.models import InstrumentType
+from portfolio_dashboard.models import InstrumentType, PositionActivity
 from portfolio_dashboard.returns import PortfolioReturns
 from portfolio_dashboard.valuations import PortfolioValuation, ValuationGroup
 
@@ -20,6 +20,7 @@ if TYPE_CHECKING:  # price_periods pulls in pandas; the demo path stays light.
     from portfolio_dashboard.price_periods import PeriodReturn
 
 NOT_AVAILABLE = "n. v."
+UNKNOWN_QUOTE_TIME = "Kursstand unbekannt"
 # Display-only bound of the symmetric color scale, in percent.
 COLOR_CAP_PERCENT = Decimal("50")
 MIN_SCALE_PERCENT = Decimal("1")
@@ -84,7 +85,7 @@ def format_percent(percent: Decimal | None) -> str:
     if percent is None:
         return NOT_AVAILABLE
     text = _german(percent, 2)
-    return text if text.startswith("-") or text == "0,00" else f"+{text}"
+    return f"{text} %" if text.startswith("-") or text == "0,00" else f"+{text} %"
 
 
 def color_scale(percents: Sequence[Decimal | None]) -> tuple[Decimal, bool]:
@@ -115,10 +116,10 @@ def _as_of(group: ValuationGroup) -> str:
         quote = member.position.valuation
         if member.amount_eur is None or quote is None:
             continue
-        provenance = quote.provenance
-        stamps.append(provenance.observed_at or provenance.retrieved_at)
-    if not stamps:
-        return NOT_AVAILABLE
+        stamps.append(quote.provenance.observed_at)
+    # The retrieval time is never a quote time (DOMAIN_MODELS, ADR 0005).
+    if not stamps or None in stamps:
+        return UNKNOWN_QUOTE_TIME
     return min(stamps).strftime("%d.%m.%Y, %H:%M %Z")
 
 
@@ -127,6 +128,9 @@ def _tooltip(
 ) -> tuple[str, ...]:
     first = group.members[0].position
     valued = [m for m in group.members if m.amount_eur is not None]
+    active = [
+        m for m in group.members if m.position.activity is PositionActivity.ACTIVE
+    ]
     quantity = sum((m.position.quantity for m in valued), Decimal(0))
     currencies = {
         m.position.valuation.unit.currency
@@ -151,7 +155,7 @@ def _tooltip(
             else performance.reference_date.strftime("%d.%m.%Y")
         ),
     ]
-    if len(valued) < len(group.members):
+    if any(m.amount_eur is None for m in active):
         lines.append("Hinweis: nur teilweise bewertet")
     return tuple(lines)
 

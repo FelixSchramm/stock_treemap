@@ -117,7 +117,12 @@ def protected_app(monkeypatch):
     monkeypatch.setattr(Path, "open", guard_path_open)
     monkeypatch.setattr(socket, "create_connection", unexpected)
     calls = []
-    for module, name in ((demo, "demo_snapshot"), (demo, "demo_rows"), (ui, "render_dashboard")):
+    for module, name in (
+        (demo, "demo_snapshot"),
+        (demo, "demo_valuation"),
+        (demo, "demo_rows"),
+        (ui, "render_dashboard"),
+    ):
         original = getattr(module, name)
 
         def track(*args, _name=name, _original=original, **kwargs):
@@ -160,7 +165,7 @@ def test_owner_access_and_revocation_are_checked_on_each_run(protected_app, monk
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
     assert not app.exception
-    assert calls == ["demo_snapshot", "demo_rows", "render_dashboard"]
+    assert calls == ["demo_snapshot", "demo_valuation", "demo_rows", "render_dashboard"]
     assert app.dataframe[0].value["Instrument"].tolist() == ["Demo-Aktie A", "Demo-Fonds B"]
     calls.clear()
     monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
@@ -177,7 +182,7 @@ def test_native_streamlit_user_mapping_reaches_the_same_owner_gate(protected_app
     monkeypatch.setattr(st, "user", UserInfoProxy())
     app.run()
     assert not app.exception and app.dataframe
-    assert calls == ["demo_snapshot", "demo_rows", "render_dashboard"]
+    assert calls == ["demo_snapshot", "demo_valuation", "demo_rows", "render_dashboard"]
 
 
 @pytest.mark.parametrize("missing", ["PORTFOLIO_OWNER_SUBJECT", "PORTFOLIO_SHEET_ID", "auth"])

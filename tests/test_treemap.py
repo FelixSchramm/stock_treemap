@@ -108,7 +108,7 @@ def test_personal_view_without_verified_cost_is_n_v_but_with_cost_is_signed():
         position("Ohne Einstand", InstrumentType.STOCK, "1", "80", row=2),
     )
     tiles = build_treemap(valuation, personal_performances(portfolio_returns(valuation))).tiles
-    assert [t.label[-1] for t in tiles] == ["+20,00", "n. v."]
+    assert [t.label[-1] for t in tiles] == ["+20,00 %", "n. v."]
     assert [t.color == MISSING_COLOR for t in tiles] == [False, True]
 
 
@@ -135,8 +135,8 @@ def test_color_cap_changes_only_the_color_never_the_numbers():
     )
     assert model.scale_percent == COLOR_CAP_PERCENT and model.capped
     assert model.tiles[0].percent == Decimal("120.5")
-    assert model.tiles[0].label[-1] == "+120,50"
-    assert "Entwicklung: +120,50" in model.tiles[0].tooltip
+    assert model.tiles[0].label[-1] == "+120,50 %"
+    assert "Entwicklung: +120,50 %" in model.tiles[0].tooltip
     assert model.tiles[0].color == hexcolor(POSITIVE_COLOR)
     assert model.tiles[1].color == color_for(Decimal("-25"), COLOR_CAP_PERCENT)
 
@@ -159,10 +159,10 @@ def test_scale_is_symmetric_and_derived_from_visible_values():
 
 
 def test_format_percent_is_german_signed_and_never_negative_zero():
-    assert format_percent(Decimal("1234.5")) == "+1.234,50"
-    assert format_percent(Decimal("-0.004")) == "0,00"
-    assert format_percent(Decimal("0")) == "0,00"
-    assert format_percent(Decimal("-2.345")) == "-2,34"
+    assert format_percent(Decimal("1234.5")) == "+1.234,50 %"
+    assert format_percent(Decimal("-0.004")) == "0,00 %"
+    assert format_percent(Decimal("0")) == "0,00 %"
+    assert format_percent(Decimal("-2.345")) == "-2,34 %"
     assert format_percent(None) == "n. v."
 
 
@@ -192,8 +192,8 @@ def test_tooltip_contains_quantity_type_currency_value_weight_stand_and_referenc
         "Stückzahl: 2,5",
         "Wert: 50,00 EUR",
         "Anteil am bewerteten Depot: 25,00 %",
-        "Entwicklung: +2,00",
-        "Datenstand: 05.01.2026, 15:30 UTC",
+        "Entwicklung: +2,00 %",
+        "Datenstand: Kursstand unbekannt",
         "Referenzdatum: 02.01.2026",
     )
 
@@ -223,3 +223,39 @@ def test_dashboard_renders_same_tile_areas_in_both_views():
     assert course["values"] == personal["values"] == [1200.0, 800.0]
     assert course["marker"]["colors"] != personal["marker"]["colors"]
     assert set(personal["marker"]["colors"]) == {MISSING_COLOR}
+
+
+def test_tooltip_shows_only_a_proven_quote_time_never_the_retrieval_time():
+    observed = datetime(2026, 1, 5, 9, 0, tzinfo=timezone.utc)
+    provider = Provenance(
+        ValuationSource.PROVIDER, STAMP, observed_at=observed, provider="demo-provider"
+    )
+    valuation = valued(
+        position("Beobachtet", InstrumentType.STOCK, "1", "10", row=1),
+        position("Sheet", InstrumentType.STOCK, "1", "10", row=2),
+    )
+    quote = valuation.groups[0].members[0].position.valuation
+    object.__setattr__(quote, "provenance", provider)
+    observed_tile, sheet_tile = build_treemap(valuation, [Performance(None)] * 2).tiles
+    assert "Datenstand: 05.01.2026, 09:00 UTC" in observed_tile.tooltip
+    assert "Datenstand: Kursstand unbekannt" in sheet_tile.tooltip
+    assert not any("15:30" in line for line in sheet_tile.tooltip)
+
+
+def test_partial_hint_ignores_inactive_members_of_a_group():
+    valuation = valued(
+        position("Aktie", InstrumentType.STOCK, "1", "10", row=1),
+        position("Aktie", InstrumentType.STOCK, "0", "10", row=2),
+    )
+    tiles = build_treemap(valuation, [Performance(None)] * len(valuation.groups)).tiles
+    assert all("Hinweis: nur teilweise bewertet" not in t.tooltip for t in tiles)
+
+
+def test_legend_and_note_texts_are_visible():
+    app = AppTest.from_file(str(APP_PATH)).run()
+    assert not app.exception
+    legend = " ".join(m.value for m in app.markdown)
+    assert "<span>-" in legend and " %</span>" in legend and "n. v." in legend
+    assert "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %." in [
+        c.value for c in app.caption
+    ]

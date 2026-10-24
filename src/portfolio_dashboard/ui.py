@@ -85,10 +85,10 @@ def render_color_legend(model: TreemapModel) -> None:
     )
     st.markdown(
         '<div style="display:flex;align-items:center;gap:8px;font-size:0.85rem">'
-        f"<span>{escape(format_percent(-scale))} %</span>"
+        f"<span>{escape(format_percent(-scale))}</span>"
         f'<div style="flex:1;height:12px;border-radius:6px;'
         f'background:linear-gradient(to right, {stops})"></div>'
-        f"<span>{escape(format_percent(scale))} %</span>"
+        f"<span>{escape(format_percent(scale))}</span>"
         f'<span style="background:{MISSING_COLOR};padding:0 6px;border-radius:4px">'
         f"{NOT_AVAILABLE}</span></div>",
         unsafe_allow_html=True,
@@ -107,7 +107,7 @@ def render_treemap(model: TreemapModel) -> None:
         render_color_legend(model)
     if model.omitted_count:
         st.caption(
-            f"{model.omitted_count} Position(en) ohne bewerteten EUR-Wert: keine Kachel."
+            f"{model.omitted_count} Position(en) ohne positiven EUR-Wert: keine Kachel."
         )
 
 
