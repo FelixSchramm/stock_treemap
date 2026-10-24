@@ -120,3 +120,28 @@ TLS-Konfigurationen werden nicht verändert oder deaktiviert.
 Yahoo-Konnektivität aus der Zielumgebung ist weiterhin **ungeprüft**. Reale
 Zuordnungen und Abdeckung bleiben in #17 offen. Cache, Bündelung und Backoff
 folgen in #19; UI, Authentifizierung, Lader und Bewertung sind nicht Teil von #18.
+
+## Cache, Backoff und Ersatzwerte (#19)
+
+`portfolio_dashboard.quote_cache.QuoteCache` umschließt einen
+`MarketDataProvider` mit einem Speicher-Cache ohne Hintergrund-Scheduler. Uhr und
+`CacheTTLs` (Standard: Kurse/FX 60 s, Bestände 5 min, Historien 6 h) werden
+injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
+
+- Innerhalb der TTL wird der gespeicherte Wert unverändert ohne Abruf geliefert.
+- `refresh=True` (manuelles Aktualisieren) überspringt nur die TTL, nicht das Backoff.
+- Fehler erzeugen ein Backoff je Schlüssel (15 s, verdoppelt, höchstens 300 s;
+  Konstruktorparameter). Solange es läuft, erfolgt kein Providerabruf. Ein Erfolg setzt es zurück.
+- Fehler nach einem früheren Erfolg liefern den letzten Wert mit
+  `source=CACHED_PROVIDER`, unverändertem Abruf-/Kurszeitpunkt (sichtbares Alter)
+  und der Warnung `cached_provider_value`. Bestände behalten den letzten nicht
+  fehlgeschlagenen Snapshot (`attempted_at` zeigt das Alter).
+- Der Cache ist nur im Speicher: nach einem Neustart ohne Daten bleibt das
+  Ergebnis des Providers (`MISSING`, „Daten nicht verfügbar“); es gibt keinen
+  fiktiven letzten Stand.
+- `choose_valuation(markt, sheet)`: geprüfter Providerpreis, sonst letzter
+  Providerpreis mit Alter, sonst ausdrücklich gekennzeichneter EUR-Sheet-Wert
+  (`price_source_fallback`, ohne Kurszeit zusätzlich `sheet_value_quote_time_unknown`).
+  Nicht-EUR- oder fehlende Sheet-Werte ersetzen nichts.
+- `supports_period_return(valuation)` ist für Sheet-/manuelle Preise `False`: sie
+  bestimmen höchstens die Fläche, erzeugen aber keine Periodenrendite.
