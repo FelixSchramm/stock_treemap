@@ -7,8 +7,10 @@ CACHED_PROVIDER with its original retrieval/observation times (the visible age).
 A manual refresh (refresh=True) skips only the TTL; it obeys the same backoff.
 quotes() bundles a cycle: only due keys are fetched, and after
 provider_failure_threshold consecutive provider failures (warning code
-provider_failure: a request was made and failed; unmapped or invalid single
-instruments do not count) a provider-wide backoff stops further fetches (quotes, FX, history; not holdings).
+provider_failure, including provider-rejected symbols) a provider-wide backoff
+stops further fetches (quotes, FX, history; not holdings). Missing mappings and
+validation failures do not count. Bundled quotes try keys with fewer failures
+first, so permanently rejected symbols cannot keep taking the recovery probe.
 """
 
 from collections.abc import Callable, Iterable
@@ -153,8 +155,13 @@ class QuoteCache:
     def quotes(
         self, instruments: Iterable[Instrument], *, refresh: bool = False
     ) -> dict[Instrument, PriceObservation]:
-        """One bundled cycle: only due keys are fetched, bounded by provider backoff."""
-        return {item: self.quote(item, refresh=refresh) for item in instruments}
+        """Fetch due keys with fewer failures first; return in input order."""
+        items = list(instruments)
+        ordered = sorted(
+            items, key=lambda item: self._entries.get(("quote", item), _Entry()).failures
+        )
+        results = {item: self.quote(item, refresh=refresh) for item in ordered}
+        return {item: results[item] for item in items}
 
     def fx(self, pair: VerifiedFxPair, *, refresh: bool = False) -> FxObservation:
         return self._get(
@@ -229,7 +236,7 @@ class QuoteCache:
 
 
 def _is_provider_outage(result) -> bool:
-    """Only a failed provider request counts; instrument-specific results do not."""
+    """Count provider_failure, which can also mean the provider rejected a symbol."""
     warnings = getattr(getattr(result, "valuation", result), "warnings", ())
     return any(warning.code == "provider_failure" for warning in warnings)
 

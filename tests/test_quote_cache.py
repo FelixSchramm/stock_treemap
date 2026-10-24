@@ -65,11 +65,12 @@ class Clock:
 
 
 class FakeProvider:
-    """Counts calls; `fail` is an outage, `unmapped` instruments never reach the provider."""
+    """Synthetic outages, permanent symbol failures, and missing mappings."""
 
     def __init__(self, clock):
         self.clock = clock
         self.fail = False
+        self.rejected = set()
         self.unmapped = set()
         self.calls = 0
         self.price = Decimal(10)
@@ -90,7 +91,7 @@ class FakeProvider:
                     warnings=(DataWarning("unverified_mapping", "no mapping"),),
                 )
             )
-        if self.fail:
+        if self.fail or instr in self.rejected:
             return PriceObservation(
                 Valuation(
                     None,
@@ -111,7 +112,7 @@ class FakeProvider:
                 self._prov(),
                 warnings=(DataWarning("no_provider_coverage", "no coverage"),),
             )
-        if self.fail:
+        if self.fail or instr in self.rejected:
             return PriceHistory(ValueStatus.MISSING, self._prov(), warnings=(DOWN,))
         return PriceHistory(ValueStatus.AVAILABLE, self._prov())
 
@@ -341,11 +342,46 @@ def test_provider_wide_backoff_limits_a_failing_cycle(env):
     clock.advance(29)
     cache.quotes(items)
     assert provider.calls == 4
+    for _ in range(40):
+        clock.advance(15)
+        before = provider.calls
+        cache.quotes(items, refresh=True)
+        assert provider.calls - before <= 1  # bounded even as probes change keys
     provider.fail = False
-    clock.advance(1)
-    cache.quotes(items)
-    assert provider.calls > 4
-    assert cache.quotes(items)[items[0]].valuation.status is ValueStatus.AVAILABLE
+    clock.advance(300)
+    before = provider.calls
+    recovered = cache.quotes(items)
+    assert provider.calls == before + len(items)
+    assert all(o.valuation.status is ValueStatus.AVAILABLE for o in recovered.values())
+    assert all(
+        o.valuation.provenance.source is ValuationSource.PROVIDER
+        for o in recovered.values()
+    )
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_rejected_symbols_do_not_starve_healthy_bundled_quotes(env, refresh):
+    clock, provider, cache = env
+    rejected = [instrument(name) for name in "UVW"]
+    stock = instrument("S")
+    items = [*rejected, stock]
+    provider.rejected = set(rejected)
+    first = cache.quotes(iter(items), refresh=refresh)
+    assert "provider_backoff" in codes(first[stock].valuation)
+    assert provider.calls == 3
+
+    for _ in range(29):
+        clock.advance(60)
+        result = cache.quotes(iter(items), refresh=refresh)
+        assert list(result) == items  # fetch ordering must not reorder the result
+        healthy = result[stock].valuation
+        assert healthy.status is ValueStatus.AVAILABLE
+        assert healthy.provenance.source is ValuationSource.PROVIDER
+        assert healthy.provenance.retrieved_at == clock()
+        assert not healthy.warnings
+        assert all(
+            result[item].valuation.status is ValueStatus.MISSING for item in rejected
+        )
 
 
 def test_unmapped_instruments_do_not_trigger_provider_backoff(env):
@@ -358,10 +394,14 @@ def test_unmapped_instruments_do_not_trigger_provider_backoff(env):
         assert result[stock].valuation.status is ValueStatus.AVAILABLE
         assert "provider_backoff" not in codes(result[stock].valuation)
         clock.advance(60)
-    for item in unmapped:  # three failed history periods of one unmapped instrument
-        for _ in range(3):
-            cache.history(item, START, END)
-    assert cache.quote(stock).valuation.status is ValueStatus.AVAILABLE
+    before = provider.calls
+    for days in range(3):  # distinct keys must each reach the provider adapter
+        cache.history(unmapped[0], START + timedelta(days=days), END)
+    fresh = cache.quote(instrument("NEW")).valuation
+    assert provider.calls == before + 4
+    assert fresh.status is ValueStatus.AVAILABLE
+    assert fresh.provenance.source is ValuationSource.PROVIDER
+    assert not {"provider_backoff", "cached_provider_value"} & codes(fresh)
 
 
 def test_stock_is_fetched_again_after_outage_with_unmapped_instrument_before_it(env):
