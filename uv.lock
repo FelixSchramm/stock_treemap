@@ -433,6 +433,7 @@ source = { editable = "." }
 dependencies = [
     { name = "pandas" },
     { name = "plotly" },
+    { name = "requests" },
     { name = "streamlit" },
 ]
 
@@ -452,6 +453,7 @@ dev = [
 requires-dist = [
     { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=5.20" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "streamlit", specifier = ">=1.40" },
     { name = "yfinance", marker = "extra == 'prototype'", specifier = ">=0.2.40" },
 ]
