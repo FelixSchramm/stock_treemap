@@ -626,8 +626,13 @@ class FundamentalReportSet:
             )
             if end > day:
                 issues.append(QualityIssue(QualityStatus.INVALID, "future_observation"))
+        historical = FLOW_FIELDS - {
+            FundamentalField.PROVIDER_FCF,
+            FundamentalField.CHANGE_OPERATING_NWC,
+        }
+        # Only required historical inputs establish history, not optional controls.
         periods = sorted(
-            {o.period for o in observations if isinstance(o.period, FlowPeriod)},
+            {o.period for o in observations if o.field in historical},
             key=lambda p: p.start,
         )
         annual = [p for p in periods if p.kind is PeriodKind.FISCAL_YEAR and p.complete]
@@ -639,10 +644,6 @@ class FundamentalReportSet:
         ):
             issues.append(QualityIssue(QualityStatus.INVALID, "mixed_flow_periods"))
         keys = {(o.field, o.period) for o in observations}
-        historical = FLOW_FIELDS - {
-            FundamentalField.PROVIDER_FCF,
-            FundamentalField.CHANGE_OPERATING_NWC,
-        }
         for period in annual:
             required = {(f, period) for f in historical}
             # Retain opening and closing balance evidence for the later NWC check.

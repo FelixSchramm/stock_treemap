@@ -577,6 +577,89 @@ def test_explicit_material_qualifications_block_and_optional_missing_controls_do
     assert "synthetic-unresolved-capital-action" in blocking(qualified)
 
 
+@pytest.mark.parametrize(
+    "when",
+    [
+        FlowPeriod(
+            date(2024, 1, 1), date(2024, 3, 31), PeriodKind.QUARTER, "synthetic-Q1", True
+        ),
+        FlowPeriod(
+            date(2024, 7, 1), date(2025, 6, 30), PeriodKind.TTM, "synthetic-TTM", True
+        ),
+        period(2025),
+    ],
+    ids=["quarter", "ttm", "additional-year"],
+)
+@pytest.mark.parametrize("missing", [False, True], ids=["available", "missing"])
+def test_optional_provider_fcf_original_periods_do_not_extend_required_history(
+    when, missing
+):
+    report = report_set()
+    control = observation(FundamentalField.PROVIDER_FCF, when=when)
+    if missing:
+        control = replace(control, status=ValueStatus.MISSING, value=None, unit=None)
+    with_control = replace(report, observations=report.observations + (control,))
+
+    assert not blocking(with_control)
+    assert with_control.effective_observations[-1] is control
+    assert with_control.issues_at(AT) == report.issues_at(AT)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        FundamentalField.EBIT,
+        FundamentalField.OPERATING_TAX_RATE,
+        FundamentalField.DEPRECIATION_AMORTIZATION,
+        FundamentalField.CAPEX,
+    ],
+)
+@pytest.mark.parametrize(
+    "when,reason",
+    [
+        (
+            FlowPeriod(
+                date(2025, 1, 1), date(2025, 3, 31),
+                PeriodKind.QUARTER, "synthetic-Q1", True,
+            ),
+            "mixed_flow_periods",
+        ),
+        (
+            FlowPeriod(
+                date(2024, 7, 1), date(2025, 6, 30),
+                PeriodKind.TTM, "synthetic-TTM", True,
+            ),
+            "mixed_flow_periods",
+        ),
+        (period(2025), "historical_components"),
+    ],
+    ids=["quarter", "ttm", "additional-year"],
+)
+def test_required_historical_fields_still_enforce_period_consistency(field, when, reason):
+    report = report_set()
+    value = D("0.2") if field is FundamentalField.OPERATING_TAX_RATE else D(100)
+    required_input = observation(field, value, when)
+    extended = replace(report, observations=report.observations + (required_input,))
+    assert reason in blocking(extended)
+
+
+def test_optional_provider_fcf_cannot_supply_missing_required_history():
+    report = report_set()
+    short_history = tuple(o for o in report.observations if o.period != period(2022))
+    control = observation(FundamentalField.PROVIDER_FCF, when=period(2022))
+    report = replace(report, observations=short_history + (control,))
+    assert blocking(report) == {"minimum_history"}
+
+
+def test_recent_optional_provider_fcf_cannot_refresh_required_annual_report_age():
+    report = report_set()
+    control = observation(FundamentalField.PROVIDER_FCF, when=period(2025))
+    with_control = replace(report, observations=report.observations + (control,))
+    stale_at = AT + timedelta(days=185)
+    assert "annual_report_age" in blocking(with_control, stale_at)
+    assert blocking(with_control, stale_at) == blocking(report, stale_at)
+
+
 def test_assumptions_references_require_exact_input_revision_class_and_currency():
     from portfolio_dashboard.intrinsic_models import (
         InputReference,
