@@ -20,6 +20,7 @@ from portfolio_dashboard.treemap import (
     NOT_AVAILABLE,
     SORT_BY_VALUE,
     SORT_FIELDS,
+    TILE_TEXT_COLOR,
     WEIGHT_COLUMN_LABEL,
     FilterCriteria,
     Performance,
@@ -28,6 +29,7 @@ from portfolio_dashboard.treemap import (
     TreemapModel,
     available_categories,
     build_kpis,
+    build_position_details,
     build_status_notes,
     build_table_rows,
     build_treemap,
@@ -59,6 +61,46 @@ SORT_FIELD_KEY = "dashboard.sort_field"
 SORT_ORDER_KEY = "dashboard.sort_order"
 REFRESH_BUTTON_KEY = "dashboard.refresh"
 BUNDLE_STATE_KEY = "dashboard.bundle"
+
+MOBILE_ACCESSIBILITY_CSS = """
+<style>
+/* Touch targets >= 44px (2.75rem) for iPhone/mobile usability */
+div.stButton > button,
+div[role="radiogroup"] label,
+div[data-baseweb="select"] > div,
+div.stTextInput input,
+details > summary {
+    min-height: 2.75rem;
+}
+div[role="radiogroup"] {
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+}
+/* Keyboard focus ring visibility */
+div.stButton > button:focus-visible,
+div[role="radiogroup"] input:focus-visible + div,
+div.stTextInput input:focus-visible,
+details > summary:focus-visible {
+    outline: 2px solid #8ab4f8 !important;
+    outline-offset: 2px !important;
+}
+/* Responsive wrapping on narrow iPhone viewports */
+@media (max-width: 640px) {
+    div[data-testid="stMetricValue"] {
+        font-size: 1.25rem !important;
+        word-break: break-word;
+    }
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap;
+    }
+}
+</style>
+"""
+
+
+def render_accessibility_styles() -> None:
+    """Inject mobile touch-target, wrapping and keyboard-focus styles."""
+    st.markdown(MOBILE_ACCESSIBILITY_CSS, unsafe_allow_html=True)
 
 
 def _remember_course_period() -> None:
@@ -210,6 +252,7 @@ def treemap_figure(model: TreemapModel) -> go.Figure:
             textinfo="text",
             hovertext=["<br>".join(escape(line) for line in tile.tooltip) for tile in model.tiles],
             hoverinfo="text",
+            insidetextfont={"color": TILE_TEXT_COLOR},
             marker={"colors": [tile.color for tile in model.tiles], "line": {"width": 2}},
             sort=False,
         )
@@ -229,19 +272,26 @@ def render_color_legend(model: TreemapModel) -> None:
         for step in range(-10, 11)
     )
     st.markdown(
-        '<div style="display:flex;align-items:center;gap:8px;font-size:0.85rem">'
+        '<div role="region" aria-label="Farblegende der Treemap" '
+        'style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:0.85rem">'
+        '<span>Verlust</span>'
         f"<span>{escape(format_percent(-scale))}</span>"
-        f'<div style="flex:1;height:12px;border-radius:6px;'
+        f'<div style="flex:1;min-width:120px;height:12px;border-radius:6px;'
         f'background:linear-gradient(to right, {stops})"></div>'
         f"<span>{escape(format_percent(scale))}</span>"
-        f'<span style="background:{MISSING_COLOR};padding:0 6px;border-radius:4px">'
-        f"{NOT_AVAILABLE}</span></div>",
+        '<span>Gewinn</span>'
+        f'<span style="background:{MISSING_COLOR};color:{TILE_TEXT_COLOR};'
+        f'padding:2px 8px;border-radius:4px">{NOT_AVAILABLE} (keine Kennzahl)</span></div>',
         unsafe_allow_html=True,
     )
     note = "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %"
     if model.capped:
         note += "; größere Werte sind nur farblich begrenzt, Zahlen bleiben unverändert"
     st.caption(note + ".")
+    st.caption(
+        "Barrierefreiheit: Vorzeichen (+/−) und Text ergänzen die Farbcodierung; "
+        "alle Detailwerte stehen ohne Hover in Tabelle und Positionsdetails bereit."
+    )
 
 
 def render_treemap(model: TreemapModel) -> None:
@@ -287,6 +337,29 @@ def render_positions_table(
         )
     display_dicts = [row.to_display_dict() for row in rows]
     st.dataframe(display_dicts, hide_index=True, width="stretch")
+    render_position_details(rows)
+
+
+def render_position_details(rows: Sequence[PositionTableRow]) -> None:
+    """Render keyboard- and touch-accessible detail cards without requiring hover.
+
+    Provides every tooltip field (and status/category) in a wrapping vertical
+    layout for narrow iPhone screens, keyboard users, and tiny/unvalued positions.
+
+    :param rows: Sequence of visible PositionTableRow items.
+    """
+    detail_blocks = build_position_details(rows)
+    with st.expander(
+        f"Positionsdetails ohne Hover ({len(detail_blocks)})", expanded=False
+    ):
+        if not detail_blocks:
+            st.caption("Keine Positionen für die aktuelle Filterauswahl.")
+        else:
+            for block in detail_blocks:
+                st.markdown(
+                    f"**{escape(block[0])}**  \n"
+                    + " · ".join(escape(line) for line in block[1:]),
+                )
 
 
 def render_data_status(notes: Sequence[str]) -> None:
@@ -328,6 +401,7 @@ def render_dashboard(
     :param period_reasons: Optional callback returning period reason codes per group.
     """
     _ = rows
+    render_accessibility_styles()
     header_cols = st.columns((4, 1))
     with header_cols[0]:
         st.title("Depot-Dashboard – Demo")

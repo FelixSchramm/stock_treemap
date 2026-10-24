@@ -21,6 +21,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Fachliche Regressionen, Abnahmewerte und Toleranzen](docs/DOMAIN_REGRESSIONS.md)
 - [Container und Betriebsparameter](docs/CONTAINER.md)
 - [Treemap-Wertmodell](docs/TREEMAP.md)
+- [Mobile Bedienung und Barrierefreiheit](docs/MOBILE_ACCESSIBILITY.md)
 
 ## Dashboard entwickeln und prüfen
 
