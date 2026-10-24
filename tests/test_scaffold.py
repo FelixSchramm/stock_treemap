@@ -22,6 +22,10 @@ def no_network(*args, **kwargs):
     raise AssertionError('Domain code attempted a network connection')
 socket.socket = no_network
 from portfolio_dashboard.demo import demo_rows
+from portfolio_dashboard.config import load_config
+from portfolio_dashboard.fixtures import synthetic_import_cases
+assert load_config({}).mode.value == 'demo'
+assert len(synthetic_import_cases()) >= 6
 first = demo_rows()
 assert len(first) == 2
 assert first[0]['Instrument'] == 'Demo-Aktie A'
