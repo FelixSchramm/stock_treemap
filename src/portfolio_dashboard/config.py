@@ -5,10 +5,10 @@ Reading configuration is not authentication; production stays closed in the UI
 until the separately implemented owner authorization is available.
 """
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-import os
 from urllib.parse import urlsplit
 
 

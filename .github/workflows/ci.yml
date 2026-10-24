@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, agents/integration]
+  push:
+    branches: [main, agents/integration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Locked install, lint, tests (Python 3.12)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PORTFOLIO_MODE: demo
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.23"
+          enable-cache: false
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Lint
+        run: uv run --locked ruff check .
+      - name: Test synthetic behavior without IP network access
+        run: uv run --locked pytest
