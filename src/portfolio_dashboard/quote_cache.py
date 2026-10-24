@@ -6,8 +6,9 @@ state. After a prior success, a failure returns that value relabeled
 CACHED_PROVIDER with its original retrieval/observation times (the visible age).
 A manual refresh (refresh=True) skips only the TTL; it obeys the same backoff.
 quotes() bundles a cycle: only due keys are fetched, and after
-provider_failure_threshold consecutive provider failures a provider-wide
-backoff stops further fetches (quotes, FX, history; not holdings).
+provider_failure_threshold consecutive provider failures (warning code
+provider_failure: a request was made and failed; unmapped or invalid single
+instruments do not count) a provider-wide backoff stops further fetches (quotes, FX, history; not holdings).
 """
 
 from collections.abc import Callable, Iterable
@@ -106,7 +107,7 @@ class QuoteCache:
                     self._provider_failures = 0
                     self._provider_retry_after = None
                 return fetched
-            if provider_wide:
+            if provider_wide and _is_provider_outage(fetched):
                 self._provider_failures += 1
                 excess = self._provider_failures - self.provider_failure_threshold
                 if excess >= 0:
@@ -225,6 +226,12 @@ class QuoteCache:
             None,
             provider_wide=False,
         )
+
+
+def _is_provider_outage(result) -> bool:
+    """Only a failed provider request counts; instrument-specific results do not."""
+    warnings = getattr(getattr(result, "valuation", result), "warnings", ())
+    return any(warning.code == "provider_failure" for warning in warnings)
 
 
 def _missing_provenance(mapping, now: datetime) -> Provenance:

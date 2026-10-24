@@ -50,6 +50,9 @@ def instrument(name="A"):
 PAIR = VerifiedFxPair(USD, EUR, ProviderMapping("synthetic", "FX.X"), "SYNTH-FX")
 
 
+DOWN = DataWarning("provider_failure", "down")
+
+
 class Clock:
     def __init__(self):
         self.now = T0
@@ -62,11 +65,12 @@ class Clock:
 
 
 class FakeProvider:
-    """Counts calls; `fail` makes every call return MISSING results."""
+    """Counts calls; `fail` is an outage, `unmapped` instruments never reach the provider."""
 
     def __init__(self, clock):
         self.clock = clock
         self.fail = False
+        self.unmapped = set()
         self.calls = 0
         self.price = Decimal(10)
 
@@ -77,13 +81,22 @@ class FakeProvider:
 
     def latest_quote(self, instr):
         self.calls += 1
+        if instr in self.unmapped:
+            return PriceObservation(
+                Valuation(
+                    None,
+                    ValueStatus.MISSING,
+                    self._prov(),
+                    warnings=(DataWarning("unverified_mapping", "no mapping"),),
+                )
+            )
         if self.fail:
             return PriceObservation(
                 Valuation(
                     None,
                     ValueStatus.MISSING,
                     self._prov(),
-                    warnings=(DataWarning("x", "down"),),
+                    warnings=(DOWN,),
                 )
             )
         return PriceObservation(
@@ -92,13 +105,22 @@ class FakeProvider:
 
     def history(self, instr, start, end, *, minimum_points=2):
         self.calls += 1
-        status = ValueStatus.MISSING if self.fail else ValueStatus.AVAILABLE
-        return PriceHistory(status, self._prov())
+        if instr in self.unmapped:
+            return PriceHistory(
+                ValueStatus.MISSING,
+                self._prov(),
+                warnings=(DataWarning("no_provider_coverage", "no coverage"),),
+            )
+        if self.fail:
+            return PriceHistory(ValueStatus.MISSING, self._prov(), warnings=(DOWN,))
+        return PriceHistory(ValueStatus.AVAILABLE, self._prov())
 
     def fx(self, pair):
         self.calls += 1
         if self.fail:
-            return FxObservation(pair, None, ValueStatus.MISSING, self._prov())
+            return FxObservation(
+                pair, None, ValueStatus.MISSING, self._prov(), (DOWN,)
+            )
         return FxObservation(pair, Decimal("1.1"), ValueStatus.AVAILABLE, self._prov())
 
 
@@ -326,6 +348,52 @@ def test_provider_wide_backoff_limits_a_failing_cycle(env):
     assert cache.quotes(items)[items[0]].valuation.status is ValueStatus.AVAILABLE
 
 
+def test_unmapped_instruments_do_not_trigger_provider_backoff(env):
+    clock, provider, cache = env
+    unmapped = [instrument(name) for name in "UVW"]
+    stock = instrument("S")
+    provider.unmapped = set(unmapped)
+    for _ in range(3):
+        result = cache.quotes([*unmapped, stock])
+        assert result[stock].valuation.status is ValueStatus.AVAILABLE
+        assert "provider_backoff" not in codes(result[stock].valuation)
+        clock.advance(60)
+    for item in unmapped:  # three failed history periods of one unmapped instrument
+        for _ in range(3):
+            cache.history(item, START, END)
+    assert cache.quote(stock).valuation.status is ValueStatus.AVAILABLE
+
+
+def test_stock_is_fetched_again_after_outage_with_unmapped_instrument_before_it(env):
+    clock, provider, cache = env
+    unmapped, stock = instrument("U"), instrument("S")
+    provider.unmapped = {unmapped}
+    provider.fail = True
+    items = [unmapped, stock, instrument("S2"), instrument("S3")]
+    cache.quotes(items)  # three real failures in one cycle
+    calls = provider.calls
+    assert "provider_backoff" in codes(cache.quote(instrument("T")).valuation)
+    assert provider.calls == calls  # real outage still triggers provider-wide backoff
+    provider.fail = False
+    for _ in range(40):  # outage over; backoff is at most 300 s
+        clock.advance(15)
+        if cache.quotes(items)[stock].valuation.status is ValueStatus.AVAILABLE:
+            break
+    assert cache.quotes(items)[stock].valuation.status is ValueStatus.AVAILABLE
+
+
+def test_success_resets_provider_failure_count(env):
+    clock, provider, cache = env
+    for fail in (True, True, False, True, True):
+        provider.fail = fail
+        clock.advance(300)
+        cache.quote(instrument(), refresh=True)
+    provider.fail = False
+    calls = provider.calls
+    cache.fx(PAIR)  # no provider-wide backoff: two failures after the reset
+    assert provider.calls == calls + 1
+
+
 def test_provider_backoff_applies_to_fx_and_history_but_not_holdings(env):
     clock, provider, cache = env
     provider.fail = True
@@ -358,7 +426,7 @@ def test_priority_provider_then_cached_provider_then_flagged_eur_sheet(env):
     missing = QuoteCache(provider, clock=clock).quote(instrument()).valuation
     chosen = choose_valuation(missing, sheet())
     assert chosen.provenance.source is ValuationSource.SHEET
-    assert {"price_source_fallback", "sheet_value_quote_time_unknown", "x"} <= codes(
+    assert {"price_source_fallback", "sheet_value_quote_time_unknown", "provider_failure"} <= codes(
         chosen
     )
     known = choose_valuation(missing, sheet(observed=T0))

@@ -134,7 +134,8 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
   Konstruktorparameter). Solange es läuft, erfolgt kein Providerabruf. Ein Erfolg setzt es zurück.
 - `quotes(instruments)` bündelt einen Durchgang: nur fällige Schlüssel werden
   abgerufen. Nach `provider_failure_threshold` (3) aufeinanderfolgenden
-  Providerfehlern gilt ein anbieterweites Backoff (gleiche Folge, 15 s bis 300 s)
+  Providerfehlern (Warncode `provider_failure`: Anfrage erfolgt und gescheitert;
+  nicht zugeordnete oder einzeln ungültige Instrumente zählen nicht) gilt ein anbieterweites Backoff (gleiche Folge, 15 s bis 300 s)
   für Kurse, FX und Historie; übrige Abrufe entfallen (`provider_backoff`,
   `MISSING`), auch bei `refresh=True`. Bestände sind davon ausgenommen.
   Die Schwelle ist ein Standardwert, keine Besitzervorgabe.
