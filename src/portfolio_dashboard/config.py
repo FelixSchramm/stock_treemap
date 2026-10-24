@@ -8,7 +8,7 @@ Local reads the real source without login; the app serves it on loopback only.
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from urllib.parse import urlsplit
 
@@ -46,6 +46,7 @@ class SourceConfig:
     spreadsheet_id: str | None = field(default=None, repr=False)
     worksheet_range: str | None = field(default=None, repr=False)
     credentials_file: str | None = field(default=None, repr=False)
+    listings_file: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +134,11 @@ def load_config(
     )
     if mode is Mode.LOCAL:
         # No login and no auth secrets; app.py refuses non-loopback addresses.
+        # Without a listings file the local mode stays Sheet-only.
+        listings_file = _text(values, "PORTFOLIO_LISTINGS_FILE") or None
+        if listings_file is not None and listings_file.startswith("<"):
+            raise ConfigurationError("Lokale Konfiguration ungültig: PORTFOLIO_LISTINGS_FILE.")
+        source = replace(source, listings_file=listings_file)
         return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig())
 
     if _text(values, "PORTFOLIO_LOGIN_PROVIDER", "google") != "google":
