@@ -48,8 +48,9 @@ Instrumente automatisch zu und berechnet keine Werte oder Renditen.
 
 Alle bekannten Zeitpunkte müssen eine Zeitzone enthalten. Die Modelle setzen
 keine Zeitpunkte aus der aktuellen Uhr, der Sheet-Zeitzone oder dem Abrufdatum
-als tatsächlichen Kurszeitpunkt ein. FX, Providerzugriff, Parser und Berechnungen
-folgen in ihren eigenen Issues.
+als tatsächlichen Kurszeitpunkt ein. Die reine
+[EUR-Bewertung](EUR_VALUATION.md) ergänzt gerichtetes FX, Summen und Gewichte;
+Providerzugriff, Parser und Renditen folgen in ihren eigenen Issues.
 
 Synthetisches Beispiel, vollständig offline:
 
