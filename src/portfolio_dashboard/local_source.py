@@ -1,8 +1,9 @@
-"""Refresh coordinator for the loopback-bound local mode.
+"""Refresh coordinator for the owner's own data (local and production mode).
 
-Values, weights and returns since purchase come from the owner's Sheet. An
-optional private listings file assigns owner-verified Yahoo EUR listings by the
-Sheet ISIN; only those positions receive provider quotes and course periods.
+Values, weights and returns since purchase come from the owner's Sheet. Private
+listings assign owner-verified Yahoo EUR listings by the Sheet ISIN; only those
+positions receive provider quotes and course periods. Local mode reads the key
+and listings from files, production from the server-side secrets.
 """
 
 import tomllib
@@ -27,7 +28,10 @@ from portfolio_dashboard.quote_cache import QuoteCache
 from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
 from portfolio_dashboard.sheet_parser import NumberLocale, SheetMetadata
 from portfolio_dashboard.sheets_adapter import SheetsAdapter
-from portfolio_dashboard.sheets_session import build_readonly_session
+from portfolio_dashboard.sheets_session import (
+    build_readonly_session,
+    build_readonly_session_from_info,
+)
 
 # Owner decisions: German Sheet; column I holds the cost of remaining units (#20).
 LOCAL_SHEET_METADATA = SheetMetadata(
@@ -78,14 +82,19 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
 
 
 def load_listings(path: str) -> tuple[VerifiedListing, ...]:
-    """Read ``[[listing]]`` entries with isin, type, symbol, venue and form/class."""
+    """Read the ``[[listing]]`` entries of a private TOML file."""
     try:
         with open(path, "rb") as file:
             entries = tomllib.load(file).get("listing", [])
     except (OSError, tomllib.TOMLDecodeError):
         raise ListingsFileError("Zuordnungsdatei fehlt oder ist ungültig.") from None
+    return parse_listings(entries)
+
+
+def parse_listings(entries: object) -> tuple[VerifiedListing, ...]:
+    """Validate entries with isin, type, symbol, venue and form/class."""
     if not isinstance(entries, list):
-        raise ListingsFileError("Zuordnungsdatei enthält keine Liste [[listing]].")
+        raise ListingsFileError("Zuordnung enthält keine Liste [[listing]].")
     listings = []
     for number, entry in enumerate(entries, 1):
         try:
@@ -109,12 +118,12 @@ def load_listings(path: str) -> tuple[VerifiedListing, ...]:
             )
         except (KeyError, TypeError, ValueError):
             raise ListingsFileError(
-                f"Zuordnungsdatei: Eintrag {number} ist unvollständig oder ungültig."
+                f"Zuordnung: Eintrag {number} ist unvollständig oder ungültig."
             ) from None
     isins = [listing.isin for listing in listings]
     symbols = [listing.instrument.provider_mapping.symbol for listing in listings]
     if len(set(isins)) < len(isins) or len(set(symbols)) < len(symbols):
-        raise ListingsFileError("Zuordnungsdatei: ISIN oder Symbol mehrfach vergeben.")
+        raise ListingsFileError("Zuordnung: ISIN oder Symbol mehrfach vergeben.")
     return tuple(listings)
 
 
@@ -149,17 +158,32 @@ def assign_listings(
 
 
 def build_local_coordinator(config: AppConfig) -> PortfolioRefreshCoordinator:
-    """Read the configured Sheet through the read-only service-account session."""
+    """Local mode: key and optional listings from the configured files."""
     listings = (
         load_listings(config.source.listings_file)
         if config.source.listings_file
         else ()
     )
-    adapter = SheetsAdapter(
-        config.source,
-        LOCAL_SHEET_METADATA,
-        build_readonly_session(config.source.credentials_file),
+    return _coordinator(
+        config, build_readonly_session(config.source.credentials_file), listings
     )
+
+
+def build_production_coordinator(
+    config: AppConfig, service_account: object, listing_entries: object
+) -> PortfolioRefreshCoordinator:
+    """Production: [sheets_service_account] and [[listing]] from server secrets."""
+    listings = parse_listings(listing_entries)
+    return _coordinator(
+        config, build_readonly_session_from_info(service_account), listings
+    )
+
+
+def _coordinator(
+    config: AppConfig, session, listings: tuple[VerifiedListing, ...]
+) -> PortfolioRefreshCoordinator:
+    """Read the configured Sheet through the read-only service-account session."""
+    adapter = SheetsAdapter(config.source, LOCAL_SHEET_METADATA, session)
 
     def read_holdings(attempted_at):
         return assign_listings(

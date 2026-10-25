@@ -89,3 +89,6 @@ Schlüsseldatei (`PORTFOLIO_SHEETS_CREDENTIALS_FILE`, außerhalb des Repos) eine
 `AuthorizedSession` mit ausschließlich dem Scope `SHEETS_READONLY_SCOPE`. Nur
 Schlüssel vom Typ `service_account` werden akzeptiert. Fehler nennen weder Pfad
 noch Inhalt. Das Sheet muss dem Dienstkonto als Betrachter freigegeben sein.
+Im Produktivmodus baut `build_readonly_session_from_info(section)` dieselbe
+Session aus dem Secret-Abschnitt `[sheets_service_account]`, erst nach der
+Besitzerprüfung.
