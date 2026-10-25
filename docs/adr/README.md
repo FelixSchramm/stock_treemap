@@ -14,6 +14,8 @@ Stand: 23. Oktober 2026. **Angenommen** bedeutet für die Planung festgelegt, ni
 | [0008](0008-treemap-und-bedienung.md) | Treemap, Ansichtswechsel und Gestaltung | Angenommen | Gewichtung/Umschalter vom Nutzer; UI technisch |
 | [0009](0009-betrieb-und-qualitaet.md) | Hosting-Anforderungen, Versionierung und Prüfung | Angenommen; Anbieter offen | Online vom Nutzer; Betriebsregeln technisch |
 
+| [0010](0010-innerer-wert-fcff.md) | FCFF-DCF, Datenanforderungen und Modellgrenzen (M8) | Fachvertrag; Implementierung/Live-Abdeckung offen | Epic #69 / Issue #70; technische Modellregeln |
+
 ## Verbindliche Nutzerentscheidungen
 
 - Kachelgröße nach eigener Positionsgröße in Geld.
