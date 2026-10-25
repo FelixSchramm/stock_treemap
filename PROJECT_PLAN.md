@@ -8,7 +8,7 @@ Das Dashboard wird **direkt online mit Login** bereitgestellt und ist am Mac und
 
 - **Treemap-Fläche:** Wert der eigenen Position, nicht Börsenkapitalisierung.
 - **Standardansicht „Kursentwicklung“:** Heute; umschaltbar auf 1 Woche, 1 Monat und 1 Jahr.
-- **Button „Meine Entwicklung“:** Gewinn/Verlust der noch gehaltenen Positionen seit Kauf in Prozent.
+- **„Meine Entwicklung“ (Zeitraum „Seit Kauf“):** Gewinn/Verlust der noch gehaltenen Positionen seit Kauf in Prozent.
 - **Bestände und Einstandswerte:** aus dem bestehenden Google Sheet.
 - **Projektverwaltung:** Python mit uv.
 
@@ -42,7 +42,7 @@ Die Chat-Verbindung ist vom Laufzeitzugang des späteren Dashboards getrennt. De
 
 1. **Login-Seite:** Anmeldung und Status bei fehlender Berechtigung. Depotdaten werden erst nach Anmeldung und Besitzerprüfung geladen.
 2. **Kopfbereich:** Depotname, Datenstand, Aktualisieren und Abmelden.
-3. **Ansicht:** „Kursentwicklung“ / „Meine Entwicklung“. Kursentwicklung öffnet mit Heute; die persönliche Ansicht zeigt fest „Seit Kauf“ und blendet die Periodenauswahl aus.
+3. **Zeitraum:** eine Auswahl mit Heute, Woche, Monat, Jahr (Kursentwicklung) und „Seit Kauf“ (Meine Entwicklung). Ein neuer Aufruf öffnet mit Heute.
 4. **Kennzahlen:** Bewerteter Depotwert in EUR, aktive Positionen, Datenabdeckung und größte Gewinner/Verlierer. Die persönliche Ansicht ergänzt den Einstandsvergleich der berechenbaren Positionen.
 5. **Treemap:** Name/Ticker und Prozentwert; Tooltip mit Instrument, Stückzahl, EUR-Wert, Depotanteil, Bezugswährung, Referenzdatum und Kursstand.
 6. **Tabelle:** Suche, Sortierung und Filter nach Kategorie/Instrumenttyp. Auch nicht bewertbare Positionen bleiben hier sichtbar.
@@ -146,7 +146,7 @@ Anbieterauswahl und Produktkennungen werden nicht durch Vermutungen ersetzt. Ein
 - Online-Zugriff über HTTPS funktioniert am Mac und iPhone ohne laufenden lokalen Rechner.
 - Anonyme Besucher und nicht zugelassene Konten sehen keine Depotdaten; auch Downloads und alternative Datenpfade sind geschützt.
 - Neuaufruf startet mit „Kursentwicklung / Heute“; alle vier Zeiträume aktualisieren die relevanten Werte konsistent.
-- „Meine Entwicklung“ zeigt Gewinn/Verlust seit Kauf in Prozent mit EUR-Einstand; Periodenknöpfe sind darin ausgeblendet.
+- „Seit Kauf“ (Meine Entwicklung) zeigt Gewinn/Verlust seit Kauf in Prozent mit EUR-Einstand.
 - Flächen bilden eigene Positionswerte ab. Aktien und darauf bezogene Derivate bleiben eigenständig.
 - Treemap, Tabelle und Summen verwenden dieselbe Bewertungslogik und denselben Datenstand; Teilabdeckung ist sichtbar.
 - Fehlende Werte erscheinen nicht als 0 %, alte/manuelle Werte nicht als aktuelle Echtzeitkurse.

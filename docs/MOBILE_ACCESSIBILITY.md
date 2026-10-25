@@ -6,17 +6,17 @@ Dieses Dokument beschreibt die geprüften Bildschirmgrößen, Browser, Bedienabl
 
 | Gerätekategorie / Viewport | Auflösung (CSS-Pixel) | Geprüfte Browser / Engines | Geprüfte Abläufe |
 | --- | --- | --- | --- |
-| **iPhone SE / Mini (Hochformat)** | `375 × 667 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Ansichtswechsel, Periodenwahl, Suche/Filter, Aktualisieren, Positionsdetails ohne Hover |
+| **iPhone SE / Mini (Hochformat)** | `375 × 667 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Zeitraumwahl, Suche/Filter, Aktualisieren, Positionsdetails ohne Hover |
 | **iPhone 15 / 16 (Hoch- & Querformat)** | `390 × 844 px` / `393 × 852 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Treemap-Legende mit Umbruch, Kennzahlen-Umbruch, Sortierung, kleine Positionen (`< 0,1 %`) |
 | **iPhone Plus / Pro Max** | `430 × 932 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Vollständiger Bedienablauf inkl. Datenstatus-Expander und Positionsübersicht |
 | **Tablet / schmales Fenster** | `768 × 1024 px` | macOS Safari, Google Chrome | Spaltenumbruch der Filterleiste und Kennzahlen |
 | **Mac Desktop** | `1280 × 800 px`, `1440 × 900 px` | macOS Safari, Google Chrome | Mehrspaltige Darstellung, Tastaturnavigation (`Tab`, `Shift+Tab`, `Enter`, `Space`, Pfeiltasten) |
 
-Zusätzlich sichern deterministische Offline-Tests in [`tests/test_mobile_accessibility.py`](../tests/test_mobile_accessibility.py) den kompletten Bedienablauf ohne Hover, die Vollständigkeit aller Tooltip-Informationen außerhalb der Treemap sowie die WCAG-AA-Kontraste automatisiert ab.
+Zusätzlich sichern deterministische Offline-Tests in [`tests/test_mobile_accessibility.py`](../tests/test_mobile_accessibility.py) den kompletten Bedienablauf ohne Hover, die Vollständigkeit aller Tooltip-Informationen außerhalb der Treemap sowie die WCAG-AA-Kontraste automatisiert ab. Die Zeitraumauswahl mit fünf Optionen (Heute bis Seit Kauf, seit PR #98) ist bisher nur per Streamlit-AppTest geprüft; die Prüfung im Browser auf dem iPhone steht noch aus.
 
 ## 2. Touch-Ziele, Umbruch und schmale Ansicht
 
-- **Touch-Ziele (`>= 44 px`):** Alle interaktiven Bedienelemente (`Aktualisieren`-Button, Radio-Optionen für `Ansicht` und `Kursperiode`, `Suche`, `Instrumenttyp`, `Kategorie`, `Sortierung`, `Reihenfolge` sowie die ausklappbaren Bereiche `Positionsdetails ohne Hover` und `Datenstatus & Hinweise`) erhalten über `MOBILE_ACCESSIBILITY_CSS` in [`ui.py`](../src/portfolio_dashboard/ui.py) eine Mindesthöhe von `2.75rem` (`44 px` gemäß Apple iOS Human Interface Guidelines).
+- **Touch-Ziele (`>= 44 px`):** Alle interaktiven Bedienelemente (`Aktualisieren`-Button, Radio-Optionen für `Zeitraum`, `Suche`, `Instrumenttyp`, `Kategorie`, `Sortierung`, `Reihenfolge` sowie die ausklappbaren Bereiche `Positionsdetails ohne Hover` und `Datenstatus & Hinweise`) erhalten über `MOBILE_ACCESSIBILITY_CSS` in [`ui.py`](../src/portfolio_dashboard/ui.py) eine Mindesthöhe von `2.75rem` (`44 px` gemäß Apple iOS Human Interface Guidelines).
 - **Umbruch (`<= 640 px`):** Radio-Gruppen (`div[role="radiogroup"]`), die Farblegende und mehrspaltige Blöcke (`stHorizontalBlock`) umbrechen auf schmalen Bildschirmen automatisch (`flex-wrap: wrap`), sodass kein Steuerknopf abgeschnitten wird.
 
 ## 3. Bedienung ohne Hover und Erreichbarkeit kleiner Positionen

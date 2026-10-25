@@ -23,3 +23,7 @@ Die Oberfläche ist deutsch, dunkel und für schmale Displays ausgelegt. Kontras
 ## Alternativen und Konsequenzen
 
 Börsenwertgewichtung wurde durch die Nutzervorgabe ausgeschlossen. Gleiche Flächen würden Depotgewichte verbergen. Reine Hover-Bedienung wäre auf dem iPhone unpraktisch. Tabelle und mobile Prüfung gehören daher zur ersten Version. Konkretes Layout und Kontraste werden im Browser geprüft.
+
+## Nachtrag 2026-10-25: Zeitraumauswahl statt Ansichts-Umschalter
+
+Besitzerentscheidung vom 25.10.2026 (PR #98): Der Ansichts-Umschalter „Kursentwicklung“ / „Meine Entwicklung“ entfällt. „Seit Kauf“ ist die fünfte Option der Auswahl „Zeitraum“ (Heute, Woche, Monat, Jahr, Seit Kauf) und färbt dieselben Kacheln nach Gewinn/Verlust seit Kauf. Damit entfällt das gesonderte Merken der letzten Kursperiode beim Zurückwechseln; ein neuer Aufruf startet weiterhin bei Heute.

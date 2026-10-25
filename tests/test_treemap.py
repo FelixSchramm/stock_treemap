@@ -380,6 +380,45 @@ def test_kpis_report_coverage_winner_loser_and_personal_cost_comparison():
     )
 
 
+def test_kpi_labels_use_full_names_when_stock_and_derivative_share_a_ticker():
+    valuation = valued(
+        position("Alpha Synth AG", InstrumentType.STOCK, "10", "11", ticker="SYN-A", row=1),
+        position(
+            "Turbo Long Alpha Synth",
+            InstrumentType.DERIVATIVE,
+            "5",
+            "10",
+            ticker="SYN-A",
+            row=2,
+        ),
+    )
+    kpis = build_kpis(valuation, [Performance(Decimal("-3")), Performance(Decimal("8"))])
+    assert len(valuation.groups) == 2
+    assert kpis.winner_label == "Turbo Long Alpha Synth: +8,00 %"
+    assert kpis.loser_label == "Alpha Synth AG: -3,00 %"
+
+
+def test_kpi_labels_keep_full_names_without_ticker_despite_a_shared_first_word():
+    valuation = valued(
+        position("Synthfonds Core Welt", InstrumentType.ETF, "4", "90", row=1),
+        position("Synthfonds Schwellenländer", InstrumentType.ETF, "2", "50", row=2),
+    )
+    kpis = build_kpis(valuation, [Performance(Decimal("5")), Performance(Decimal("-2"))])
+    assert kpis.winner_label == "Synthfonds Core Welt: +5,00 %"
+    assert kpis.loser_label == "Synthfonds Schwellenländer: -2,00 %"
+
+
+def test_kpi_labels_use_a_unique_ticker_and_the_full_name_without_ticker():
+    valuation = valued(
+        position("Beta Synth AG", InstrumentType.STOCK, "1", "70", ticker="SYN-B", row=1),
+        position("Gamma Synth AG", InstrumentType.STOCK, "1", "30", row=2),
+    )
+    kpis = build_kpis(valuation, [Performance(Decimal("7")), Performance(Decimal("-1.5"))])
+    assert kpis.winner_label == "SYN-B: +7,00 %"
+    assert kpis.winner.name == "Beta Synth AG"
+    assert kpis.loser_label == "Gamma Synth AG: -1,50 %"
+
+
 def test_sort_table_rows_always_places_missing_values_last_and_breaks_ties_by_name():
     valuation = valued(
         position("Zeta", InstrumentType.STOCK, "1", "100", row=1),

@@ -19,7 +19,7 @@ G/V_i_Prozent = (V_i / B_i − 1) × 100
 
 EUR-Sheet-Ersatzkurse werden nicht erneut umgerechnet. Fremdwährungskurse erfordern richtige FX-Richtung und Einheit, gegebenenfalls Pence statt Pfund. FX-Zeitpunkte gehören zum Bewertungsstatus.
 
-Die persönliche Ansicht heißt „Seit Kauf“ und blendet die Periodenauswahl aus. Sie betrachtet unrealisierte Gewinne/Verluste aktueller Bestände. Dividenden, realisierte Verkäufe und Steuern sind nicht enthalten; Gebühren nur, soweit in der dokumentierten Sheet-Kostenbasis berücksichtigt.
+Die persönliche Ansicht heißt „Seit Kauf“ und ist die fünfte Option der Zeitraumauswahl (Nachtrag in [0008](0008-treemap-und-bedienung.md)). Sie betrachtet unrealisierte Gewinne/Verluste aktueller Bestände. Dividenden, realisierte Verkäufe und Steuern sind nicht enthalten; Gebühren nur, soweit in der dokumentierten Sheet-Kostenbasis berücksichtigt.
 
 Fehlender, ungültiger oder nicht positiver Einstand ergibt keinen Prozentwert. Nullbestände werden aus aktiver Bewertung und Kostenbasis ausgeschlossen. Positionen ohne bewertbaren Kurs bleiben in der Tabelle, fehlen aber in berechenbaren Summen. Manuelle/veraltete Bewertungen übertragen ihren Status auf die Kennzahl.
 

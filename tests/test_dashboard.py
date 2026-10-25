@@ -13,14 +13,12 @@ from portfolio_dashboard.treemap import WEIGHT_COLUMN_LABEL
 from portfolio_dashboard.ui import (
     COURSE_PERIOD_KEY,
     COURSE_PERIODS,
-    COURSE_VIEW,
     FILTER_CATEGORY_KEY,
     FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
     SORT_DIRECTION_ASC,
     SORT_FIELD_KEY,
     SORT_ORDER_KEY,
-    VIEW_KEY,
 )
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
@@ -54,10 +52,13 @@ def offline_demo(monkeypatch):
 def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline_demo):
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception
-    assert app.session_state[VIEW_KEY] == COURSE_VIEW
+    assert app.radio[0].label == "Zeitraum"
     assert app.radio[0].options == [*COURSE_PERIODS, "Seit Kauf"]
     assert app.radio[0].value == "Heute"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
+    # Unique demo tickers stay compact; the full name is the metric's help text.
+    assert (app.metric[2].value, app.metric[2].help) == ("DEMO-A: +1,25 %", "Demo-Aktie A")
+    assert (app.metric[3].value, app.metric[3].help) == ("DEMO-B: -0,80 %", "Demo-Fonds B")
     assert "Demo-Depot · 2 Beispielpositionen" in [item.value for item in app.caption]
     assert "Datenstand (synthetisch): 23.10.2026, 12:00 UTC" in [
         item.value for item in app.caption
@@ -99,7 +100,7 @@ def test_new_session_does_not_inherit_the_previous_view_or_period(offline_demo):
 
     fresh = AppTest.from_file(str(APP_PATH)).run()
     assert not fresh.exception
-    assert fresh.session_state[VIEW_KEY] == COURSE_VIEW
+    assert fresh.subheader[0].value == "Kursentwicklung · Heute"
     assert fresh.radio[0].value == "Heute"
 
 

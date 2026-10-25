@@ -6,6 +6,7 @@ performance (course period or personal return) only drives color and label.
 Colors may be capped for display; every printed number stays unlimited.
 """
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -420,12 +421,15 @@ def _active_members(group: ValuationGroup):
     ]
 
 
-def _short_label(name: str, ticker: str | None) -> str:
-    """Return the ticker for compact KPI tiles, else the first word of the name."""
-    if ticker:
-        return ticker
-    words = name.split()
-    return words[0] if words else name
+def _kpi_label(name: str, ticker: str | None, ticker_counts: Counter) -> str:
+    """Return the ticker for compact KPI tiles only if no other group shares it.
+
+    :param name: Full instrument name.
+    :param ticker: Optional display ticker.
+    :param ticker_counts: Number of valuation groups per display ticker in the snapshot.
+    :return: The unique ticker, otherwise the full name.
+    """
+    return ticker if ticker and ticker_counts[ticker] == 1 else name
 
 
 def _is_active_group(group: ValuationGroup) -> bool:
@@ -705,6 +709,9 @@ def build_kpis(
     if len(performances) != len(valuation.groups):
         raise ValueError("one performance per valuation group is required")
 
+    ticker_counts = Counter(
+        group.members[0].position.instrument.display_ticker for group in valuation.groups
+    )
     active_pairs = [
         (group, perf)
         for group, perf in zip(valuation.groups, performances)
@@ -766,7 +773,7 @@ def build_kpis(
             name=win_first.name,
             ticker=win_ticker,
             percent=win_perf.percent,
-            formatted=f"{_short_label(win_first.name, win_ticker)}: {win_pct}",
+            formatted=f"{_kpi_label(win_first.name, win_ticker, ticker_counts)}: {win_pct}",
         )
 
     loser: PerformerSummary | None = None
@@ -786,7 +793,7 @@ def build_kpis(
             name=lose_first.name,
             ticker=lose_ticker,
             percent=lose_perf.percent,
-            formatted=f"{_short_label(lose_first.name, lose_ticker)}: {lose_pct}",
+            formatted=f"{_kpi_label(lose_first.name, lose_ticker, ticker_counts)}: {lose_pct}",
         )
 
     if winner is not None:

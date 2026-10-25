@@ -50,9 +50,9 @@ SORT_DIRECTION_DESC = "Absteigend"
 SORT_DIRECTION_ASC = "Aufsteigend"
 SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
 
-# Public keys are the retained session state; the hidden widget may be removed
-# by Streamlit when switching views, so it has its own temporary key.
-VIEW_KEY = "dashboard.view"
+# Public keys are the retained session state. COURSE_PERIOD_KEY holds the
+# selected Zeitraum (a course period or "Seit Kauf"); the radio keeps its own
+# widget key and is re-seeded from it on every run.
 COURSE_PERIOD_KEY = "dashboard.course_period"
 _PERIOD_WIDGET_KEY = "_dashboard.course_period"
 FILTER_QUERY_KEY = "dashboard.filter_query"
@@ -105,26 +105,25 @@ def render_accessibility_styles() -> None:
 
 
 def _remember_course_period() -> None:
-    """Persist the selected course period across view switches."""
+    """Persist the selected Zeitraum in the public session key."""
     st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
 
 
 def render_view_controls() -> tuple[str, str]:
-    """Return the view and period, preserving course periods across hidden runs.
+    """Render the Zeitraum radio and derive the view from the selection.
 
-    :return: Tuple of (selected view, selected period or ``"Seit Kauf"``).
+    :return: Tuple of (derived view, selected course period or ``"Seit Kauf"``).
     """
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
     st.session_state[_PERIOD_WIDGET_KEY] = st.session_state[COURSE_PERIOD_KEY]
     period = st.radio(
-        "Kursperiode",
+        "Zeitraum",
         (*COURSE_PERIODS, SINCE_PURCHASE),
         key=_PERIOD_WIDGET_KEY,
         on_change=_remember_course_period,
         horizontal=True,
     )
     view = PERSONAL_VIEW if period == SINCE_PURCHASE else COURSE_VIEW
-    st.session_state[VIEW_KEY] = view
     return view, period
 
 
@@ -150,9 +149,17 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
             delta_color="off",
         )
     with cols[2]:
-        st.metric("Größter Gewinner", kpis.winner_label)
+        st.metric(
+            "Größter Gewinner",
+            kpis.winner_label,
+            help=kpis.winner.name if kpis.winner is not None else None,
+        )
     with cols[3]:
-        st.metric("Größter Verlierer", kpis.loser_label)
+        st.metric(
+            "Größter Verlierer",
+            kpis.loser_label,
+            help=kpis.loser.name if kpis.loser is not None else None,
+        )
     st.caption(
         f"Depotkennzahlen (ungefilterter Gesamtbestand) · {kpis.total_status_note} · "
         f"{kpis.performance_reference_label}."
