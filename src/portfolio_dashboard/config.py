@@ -136,7 +136,9 @@ def load_config(
         # No login and no auth secrets; app.py refuses non-loopback addresses.
         # Without a listings file the local mode stays Sheet-only.
         listings_file = _text(values, "PORTFOLIO_LISTINGS_FILE") or None
-        if listings_file is not None and listings_file.startswith("<"):
+        if listings_file is not None and (
+            listings_file.startswith("<") or listings_file == "CHANGE_ME"
+        ):
             raise ConfigurationError("Lokale Konfiguration ungültig: PORTFOLIO_LISTINGS_FILE.")
         source = replace(source, listings_file=listings_file)
         return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig())
