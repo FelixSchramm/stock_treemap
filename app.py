@@ -17,7 +17,7 @@ from portfolio_dashboard.demo import (
     demo_snapshot,
     demo_valuation,
 )
-from portfolio_dashboard.local_source import build_local_coordinator
+from portfolio_dashboard.local_source import ListingsFileError, build_local_coordinator
 from portfolio_dashboard.models import PortfolioSnapshot, SnapshotStatus
 from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
@@ -54,7 +54,7 @@ if config.mode is Mode.LOCAL:
     if LOCAL_COORDINATOR_KEY not in st.session_state:
         try:
             st.session_state[LOCAL_COORDINATOR_KEY] = build_local_coordinator(config)
-        except (SheetsConfigurationError, SheetsCredentialError) as exc:
+        except (ListingsFileError, SheetsConfigurationError, SheetsCredentialError) as exc:
             st.error(str(exc))
             st.stop()
     # The coordinator replaces these placeholders with its atomic bundle.
