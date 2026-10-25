@@ -49,7 +49,7 @@ from portfolio_dashboard.treemap import (
     personal_performances,
     sort_table_rows,
 )
-from portfolio_dashboard.ui import PERSONAL_VIEW, VIEW_KEY, treemap_figure
+from portfolio_dashboard.ui import treemap_figure
 from portfolio_dashboard.valuations import FxRate, value_portfolio
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
