@@ -28,6 +28,15 @@ def production_settings() -> dict[str, str]:
     }
 
 
+def local_settings() -> dict[str, str]:
+    return {
+        "PORTFOLIO_MODE": "local",
+        "PORTFOLIO_SHEET_ID": "synthetic-source-id",
+        "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
+        "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-local-file.json",
+    }
+
+
 def production_auth() -> dict[str, str]:
     return {
         "client_id": "synthetic-client-id",
@@ -214,3 +223,19 @@ def test_synthetic_fixture_cases_cover_import_boundaries_without_shared_mutation
     assert all(row["symbol"].startswith("DEMO-") for row in rows)
     rows[0]["symbol"] = "changed"
     assert synthetic_import_cases()[0]["symbol"] == "DEMO-A"
+
+
+def test_private_path_is_optional_and_hidden_in_production_configuration():
+    values = production_settings() | {"PORTFOLIO_PRIVATE_DATA_DIR": "/synthetic-private-runtime"}
+    config = load_config(values, auth_settings=production_auth())
+    assert config.private_data_dir == "/synthetic-private-runtime"
+    assert config.private_data_dir not in repr(config)
+    assert load_config(production_settings(), auth_settings=production_auth()).private_data_dir is None
+
+
+def test_local_private_path_is_explicit_without_loading_it():
+    values = local_settings() | {"PORTFOLIO_PRIVATE_DATA_DIR": "/synthetic-private-runtime"}
+    config = load_config(values)
+    assert config.private_data_dir == "/synthetic-private-runtime"
+    assert config.source.credentials_file == values["PORTFOLIO_SHEETS_CREDENTIALS_FILE"]
+    assert not config.login.enabled
