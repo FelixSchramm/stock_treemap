@@ -306,7 +306,7 @@ def test_invalid_json_is_not_a_successful_empty_import(raw):
                 "Synthetic!A7:M",
                 "Synthetic!A7:M6",
                 "Synthetic!B7:M20",
-                "Synthetic!A7:U20",
+                "Synthetic!A7:Y20",
                 "Synthetic!A0:M20",
                 PRIVATE,
             )

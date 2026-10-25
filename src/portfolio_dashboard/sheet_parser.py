@@ -1,4 +1,4 @@
-"""Pure A–M Sheet parsing (plus optional R–T hints); no source access, identity lookup or calculations.
+"""Pure A–M Sheet parsing with optional header-bound metadata through X.
 
 The caller supplies the number locale and import timestamp. Only the documented
 EUR/percentage-point columns establish units; source symbols establish no ID.
@@ -77,11 +77,15 @@ _EUR = QuoteUnit("EUR", Decimal("1"))
 _ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
 _BERLIN = ZoneInfo("Europe/Berlin")
 _SERIAL_EPOCH = date(1899, 12, 30)
-# Optional columns right of M: (field, header test), searched only in N–T.
+# Optional columns right of M: (field, header test), searched only in N–X.
 _OPTIONAL = (
     ("source_isin", lambda header: header == "isin"),
     ("source_venue", lambda header: header == "handelsplatz"),
     ("price_date", lambda header: header.startswith("kursdatum")),
+    ("yahoo_symbol", lambda header: header == "yahoo-symbol"),
+    ("yahoo_venue", lambda header: header == "yahoo-handelsplatz"),
+    ("yahoo_equity_form", lambda header: header == "yahoo-aktienform"),
+    ("yahoo_share_class", lambda header: header == "yahoo-anteilsklasse"),
 )
 
 
@@ -131,6 +135,17 @@ class ExcludedRow:
 
 
 @dataclass(frozen=True, slots=True)
+class SheetListingInput:
+    """Explicit owner-maintained alternative; validation belongs to the loader."""
+
+    source_row: int
+    symbol: str
+    venue: str
+    equity_form: str | None = None
+    share_class: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SheetParseResult:
     """Snapshot preserves signed nonzero rows; active_positions is the long set.
 
@@ -142,6 +157,7 @@ class SheetParseResult:
     snapshot: PortfolioSnapshot
     references: tuple[SheetReferenceValues, ...] = ()
     excluded_rows: tuple[ExcludedRow, ...] = ()
+    yahoo_listings: tuple[SheetListingInput, ...] = ()
 
     @property
     def active_positions(self) -> tuple[Position, ...]:
@@ -239,8 +255,8 @@ def _schema(
 
 
 def _optional_columns(headers: Sequence[object]) -> dict[str, int]:
-    """Locate optional hint columns in N–T; absent or duplicated ones are unread."""
-    normalized = [_normal_header(cell) for cell in headers[13:20]]
+    """Locate optional columns in N–X; absent or duplicated ones are unread."""
+    normalized = [_normal_header(cell) for cell in headers[13:24]]
     found: dict[str, int] = {}
     for field, test in _OPTIONAL:
         matches = [i for i, header in enumerate(normalized) if test(header)]
@@ -304,8 +320,8 @@ def parse_sheet_rows(
 ) -> SheetParseResult:
     """Parse header-relative rows using only supplied, deterministic inputs.
 
-    All thirteen headers are required within A–M, in any order; cells to the
-    right are ignored, including aggregates. Short rows have missing trailing
+    All thirteen headers are required within A–M, in any order; additional cells
+    are read only through explicit optional headers. Short rows have missing trailing
     cells. All diagnostic messages use fixed schema text, never raw cell values.
     Number strings must match the explicit locale; numeric cells are already
     unformatted. J and M retain percentage-point magnitude, even with a '%' sign.
@@ -325,10 +341,18 @@ def parse_sheet_rows(
                 imported_at, SnapshotStatus.FAILED, warnings=tuple(warnings)
             )
         )
+    for field, test in _OPTIONAL:
+        if field.startswith("yahoo_") and sum(test(_normal_header(cell)) for cell in headers[13:24]) > 1:
+            warnings.append(_warning(
+                "duplicate_yahoo_column",
+                "Yahoo-Ersatzspalte mehrfach vorhanden; diese Angabe wird ignoriert.",
+                field, header_row,
+            ))
 
     positions: list[Position] = []
     references: list[SheetReferenceValues] = []
     excluded: list[ExcludedRow] = []
+    yahoo_listings: list[SheetListingInput] = []
     rejected = False
     for source_row, row in enumerate(rows, start=header_row + 1):
         cells = {
@@ -419,6 +443,33 @@ def parse_sheet_rows(
             )
             isin = None
         venue = _text(extra.get("source_venue"))
+        yahoo_fields = ("yahoo_symbol", "yahoo_venue", "yahoo_equity_form", "yahoo_share_class")
+        if any(not _missing(extra.get(field)) for field in yahoo_fields):
+            symbol, yahoo_venue, equity_form, share_class = (
+                _text(extra.get(field)) for field in yahoo_fields
+            )
+            valid = (
+                isin is not None and symbol is not None and yahoo_venue is not None
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.^=_-]{0,63}", symbol)
+                and (
+                    instrument_type is InstrumentType.STOCK
+                    and equity_form in {"share", "adr"} and share_class is None
+                    or instrument_type is InstrumentType.ETF
+                    and share_class is not None and equity_form is None
+                )
+                and all(_missing(extra.get(field)) or isinstance(extra.get(field), str)
+                        for field in yahoo_fields)
+            )
+            if valid:
+                yahoo_listings.append(SheetListingInput(
+                    source_row, symbol, yahoo_venue, equity_form, share_class
+                ))
+            else:
+                row_warnings.append(_warning(
+                    "invalid_yahoo_listing",
+                    "Yahoo-Ersatzzuordnung unvollständig oder ungültig; ignoriert.",
+                    "yahoo_listing", source_row,
+                ))
         currency = texts["quote_currency"]
         unit = None
         if currency is not None:
@@ -573,4 +624,4 @@ def parse_sheet_rows(
         tuple(positions),
         tuple(warnings),
     )
-    return SheetParseResult(snapshot, tuple(references), tuple(excluded))
+    return SheetParseResult(snapshot, tuple(references), tuple(excluded), tuple(yahoo_listings))

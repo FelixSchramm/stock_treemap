@@ -160,10 +160,12 @@ class YFinanceProvider:
         *,
         ticker_factory: Callable[[str], Ticker] = _ticker,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        listing_resolver: Callable[[Instrument], VerifiedListing | None] | None = None,
     ) -> None:
         self._listings = listings
         self._ticker_factory = ticker_factory
         self._clock = clock
+        self._listing_resolver = listing_resolver
 
     def _provenance(self, observed_at: datetime | None = None) -> Provenance:
         return Provenance(
@@ -171,7 +173,11 @@ class YFinanceProvider:
         )
 
     def _listing(self, instrument: Instrument) -> Instrument:
-        listing = resolve_listing(instrument, self._listings)
+        listing = (
+            self._listing_resolver(instrument)
+            if self._listing_resolver is not None
+            else resolve_listing(instrument, self._listings)
+        )
         if listing is None:
             raise _Unavailable("unverified_mapping")
         verified = listing.instrument

@@ -14,6 +14,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from typing import TYPE_CHECKING
 
 from portfolio_dashboard.models import (
+    DataWarning,
     InstrumentType,
     PositionActivity,
     ValuationSource,
@@ -95,8 +96,29 @@ _PERIOD_REASON_LABELS = {
     "unexpected_gap": "Historie unvollständig",
     "missing_current_close": "Aktueller Schlusskurs fehlt",
     "calendar_incomplete": "Handelskalender unvollständig",
-    "unverified_instrument": "Kennung/Zuordnung fehlt",
+    "unverified_instrument": "Keine Kurszuordnung",
     "history_unavailable": "Historie fehlt",
+}
+
+# Only these fixed labels may describe a rejected provider quote. Never display
+# warning messages, unknown codes, symbols, exception details or raw responses.
+_MARKET_FAILURE_LABELS = {
+    "unverified_mapping": "Zuordnung nicht bestätigt",
+    "no_provider_coverage": "Keine Anbieterabdeckung",
+    "unsupported_provider": "Kursquelle nicht unterstützt",
+    "provider_failure": "Kursanbieter nicht erreichbar",
+    "provider_backoff": "Abruf vorübergehend pausiert",
+    "missing_data": "Keine Kursdaten",
+    "missing_metadata": "Prüfdaten fehlen",
+    "instrument_metadata_mismatch": "Instrument oder Handelsplatz weicht ab",
+    "unknown_or_conflicting_unit": "Währung oder Kurseinheit unklar",
+    "unknown_exchange_timezone": "Börsenzeitzone unbekannt",
+    "invalid_price": "Kurs ungültig",
+    "missing_quote_time": "Kurszeitpunkt fehlt",
+    "invalid_quote_time": "Kurszeitpunkt ungültig",
+    "invalid_history": "Tageskurse ungültig",
+    "invalid_session_date": "Handelstag ungültig",
+    "insufficient_history": "Zu wenige Tageskurse",
 }
 
 
@@ -106,6 +128,7 @@ class Performance:
 
     percent: Decimal | None
     reference_date: date | None = None
+    warnings: tuple[DataWarning, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +228,7 @@ class PositionTableRow:
     reference_date: str
     status: str
     source_row: int
+    quote_mapping: str = "Keine Kurszuordnung"
 
     def to_display_dict(self) -> dict[str, str | float | None]:
         """Convert row into a dictionary suitable for Streamlit dataframe display.
@@ -235,6 +259,7 @@ class PositionTableRow:
             "Entwicklung (%)": self.percent_label,
             "Datenstand": self.as_of,
             "Referenzdatum": self.reference_date,
+            "Kurszuordnung": self.quote_mapping,
             "Status": self.status,
         }
 
@@ -255,6 +280,7 @@ class PositionTableRow:
             f"Entwicklung: {self.percent_label} ({performance_direction_label(self.percent)})",
             f"Datenstand: {self.as_of}",
             f"Referenzdatum: {self.reference_date}",
+            f"Kurszuordnung: {self.quote_mapping}",
             f"Status: {self.status}",
         )
 
@@ -518,6 +544,31 @@ def group_status_label(
     notes: list[str] = []
     unvalued = [m for m in active if m.amount_eur is None]
     valued = [m for m in active if m.amount_eur is not None]
+    warning_codes = {w.code for member in active for w in member.warnings}
+    quote_warning_codes = {
+        warning.code for member in active
+        if member.position.valuation is not None
+        for warning in member.position.valuation.warnings
+    }
+    if "listing_source_sheet" in warning_codes:
+        notes.append("Kurszuordnung: Sheet-Ersatz")
+    elif "listing_source_app" in warning_codes:
+        notes.append("Kurszuordnung: App")
+    if "sheet_alternative_rejected" in warning_codes:
+        alternative_codes = {code.removeprefix("sheet_alternative_") for code in warning_codes
+                             if code.startswith("sheet_alternative_")}
+        causes = [label for code, label in _MARKET_FAILURE_LABELS.items() if code in alternative_codes]
+        detail = f" ({', '.join(causes)})" if causes else ""
+        notes.append(f"Sheet-Ersatzzuordnung ohne zusätzliche nutzbare Perioden{detail}")
+    if "missing_quote_mapping" in warning_codes or period_reason == "unverified_instrument":
+        notes.append("Keine Kurszuordnung")
+    if (
+        warning_codes & {"quote_fetch_failed", "price_source_fallback"}
+        or period_reason == "quote_unavailable"
+    ):
+        causes = [label for code, label in _MARKET_FAILURE_LABELS.items() if code in quote_warning_codes]
+        cause = ", ".join(causes) if causes else "Kurs nicht verfügbar"
+        notes.append(f"Kursabruf fehlgeschlagen ({cause})")
 
     if not valued:
         for member in unvalued:
@@ -557,16 +608,6 @@ def group_status_label(
         for m in valued
         for w in m.warnings
     )
-    has_unmapped_fallback = any(
-        m.position.valuation is not None
-        and m.position.valuation.provenance.source is ValuationSource.SHEET
-        and m.position.instrument.instrument_id is None
-        and any(w.code == "price_source_fallback" for w in m.warnings)
-        for m in valued
-    )
-
-    if has_unmapped_fallback:
-        notes.append("Kennung/Zuordnung fehlt")
     if has_sheet_unknown:
         notes.append(SHEET_UNKNOWN_QUOTE_STATUS)
     elif has_sheet_timed:
@@ -591,8 +632,18 @@ def group_status_label(
                 notes.append("Rendite seit Kauf n. v.")
         elif is_personal_view:
             notes.append("Einstand fehlt")
+        elif period_reason in {"unverified_instrument", "quote_unavailable"}:
+            pass  # The specific mapping/quote cause is already shown above.
         elif period_reason == "sheet_fallback" and (has_sheet_unknown or has_sheet_timed):
             notes.append("Keine Kurshistorie bei Sheet-Bewertung")
+        elif period_reason == "history_unavailable":
+            history_codes = {warning.code for warning in performance.warnings}
+            causes = [
+                label for code, label in _MARKET_FAILURE_LABELS.items()
+                if code in history_codes
+            ]
+            cause = ", ".join(causes) if causes else "Keine geprüften Tageskurse"
+            notes.append(f"Kurshistorie nicht verfügbar ({cause})")
         elif period_reason in _PERIOD_REASON_LABELS:
             mapped_reason = _PERIOD_REASON_LABELS[period_reason]
             if mapped_reason not in notes:
@@ -650,6 +701,7 @@ def build_treemap(
     performances: Sequence[Performance],
     *,
     groups: Sequence[ValuationGroup] | None = None,
+    hide_missing_performance: bool = False,
 ) -> TreemapModel:
     """Build one tile per verified instrument group, aligned with groups and performances.
 
@@ -661,16 +713,22 @@ def build_treemap(
     :param valuation: Complete portfolio valuation snapshot.
     :param performances: One Performance per group in ``groups`` (or ``valuation.groups``).
     :param groups: Optional filtered subset of valuation groups.
+    :param hide_missing_performance: Hide only tiles without the selected return.
     :return: Prepared TreemapModel.
     :raises ValueError: If ``len(performances)`` does not match the group count.
     """
     target_groups = valuation.groups if groups is None else tuple(groups)
     if len(performances) != len(target_groups):
         raise ValueError("one performance per valuation group is required")
-    shown = [
+    valued = [
         (group, performance)
         for group, performance in zip(target_groups, performances)
         if group.amount_eur is not None and group.amount_eur > 0
+    ]
+    shown = [
+        (group, performance)
+        for group, performance in valued
+        if not hide_missing_performance or performance.percent is not None
     ]
     scale, capped = color_scale([performance.percent for _, performance in shown])
     tiles = []
@@ -689,7 +747,7 @@ def build_treemap(
                 tooltip=_tooltip(group, performance, ticker),
             )
         )
-    return TreemapModel(tuple(tiles), len(target_groups) - len(shown), scale, capped)
+    return TreemapModel(tuple(tiles), len(target_groups) - len(valued), scale, capped)
 
 
 def build_kpis(
@@ -1143,6 +1201,14 @@ def build_table_rows(
                 reference_date=reference_str,
                 status=status_str,
                 source_row=first.source_row,
+                quote_mapping=(
+                    ("Sheet-Ersatz" if any(w.code == "listing_source_sheet" for w in first.warnings)
+                     else "App")
+                    + f" · {first.instrument.provider_mapping.provider}"
+                    + f" · {first.instrument.provider_mapping.symbol}"
+                    + f" · {first.instrument.trading_venue}"
+                    if first.instrument.provider_mapping is not None else "Keine Kurszuordnung"
+                ),
             )
         )
     return tuple(rows)

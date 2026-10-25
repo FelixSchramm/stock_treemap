@@ -36,7 +36,7 @@ from portfolio_dashboard.quote_cache import (
 from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
 from portfolio_dashboard.sheets_adapter import SheetsReadResult
 from portfolio_dashboard.treemap import (
-     SHEET_UNKNOWN_QUOTE_STATUS,
+    SHEET_UNKNOWN_QUOTE_STATUS,
     Performance,
     performance_from_period,
 )
@@ -54,6 +54,35 @@ PERIOD_KEY_TO_ENUM = {
     "Jahr": PricePeriod.YEAR,
 }
 DATA_UNAVAILABLE_TEXT = "Daten nicht verfügbar"
+PeriodResults = tuple[dict[str, Performance], dict[str, str | None]]
+
+
+def _missing_periods(reason: str) -> PeriodResults:
+    return ({p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
+            {p: reason for p in PERIOD_KEY_TO_ENUM})
+
+
+def _listing_period_results(
+    listing: VerifiedListing, quote_obs: PriceObservation | None,
+    calendars: Mapping[str, SessionCalendar], cache: QuoteCache,
+    now: datetime, *, refresh: bool,
+) -> PeriodResults:
+    """Evaluate quote and history from exactly one verified listing."""
+    if quote_obs is None or quote_obs.valuation.status is not ValueStatus.AVAILABLE:
+        return _missing_periods("quote_unavailable")
+    venue = listing.instrument.trading_venue or "DEFAULT"
+    calendar = calendars.get(venue) or calendars.get("DEFAULT")
+    if calendar is None:
+        return _missing_periods("calendar_incomplete")
+    history = cache.history(listing.instrument, calendar.first_day, calendar.last_day,
+                            refresh=refresh)
+    results = price_period_returns(history, quote_obs, calendar, now)
+    perfs, reasons = {}, {}
+    for label, period in PERIOD_KEY_TO_ENUM.items():
+        result = results[period]
+        perfs[label] = replace(performance_from_period(result), warnings=history.warnings)
+        reasons[label] = result.reason
+    return perfs, reasons
 
 
 def format_snapshot_age(attempted_at: datetime, now: datetime) -> str:
@@ -175,7 +204,8 @@ def _group_period_results(
     now: datetime,
     *,
     refresh: bool,
-) -> tuple[dict[str, Performance], dict[str, str | None]]:
+    prepared_periods: Mapping[Instrument, PeriodResults] | None = None,
+) -> PeriodResults:
     """Compute course performances and reason codes across all four periods for a group.
 
     :param group: Valuation group to evaluate.
@@ -202,6 +232,19 @@ def _group_period_results(
     listing = resolve_listing(first.instrument, listings)
     valued = [m for m in active if m.amount_eur is not None]
 
+    if listing is None or listing.instrument.provider_mapping is None:
+        return (
+            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
+            {p: "unverified_instrument" for p in PERIOD_KEY_TO_ENUM},
+        )
+
+    quote_obs = quote_map.get(listing.instrument)
+    if quote_obs is None or quote_obs.valuation.status is not ValueStatus.AVAILABLE:
+        return (
+            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
+            {p: "quote_unavailable" for p in PERIOD_KEY_TO_ENUM},
+        )
+
     if not valued:
         return (
             {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
@@ -218,36 +261,9 @@ def _group_period_results(
             {p: "sheet_fallback" for p in PERIOD_KEY_TO_ENUM},
         )
 
-    if listing is None or listing.instrument.provider_mapping is None:
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "unverified_instrument" for p in PERIOD_KEY_TO_ENUM},
-        )
-
-    venue = listing.instrument.trading_venue or "DEFAULT"
-    calendar = calendars.get(venue) or calendars.get("DEFAULT")
-    if calendar is None:
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "calendar_incomplete" for p in PERIOD_KEY_TO_ENUM},
-        )
-
-    history = cache.history(
-        listing.instrument,
-        calendar.first_day,
-        calendar.last_day,
-        refresh=refresh,
-    )
-    quote_obs = quote_map.get(listing.instrument)
-    results = price_period_returns(history, quote_obs, calendar, now)
-
-    perfs: dict[str, Performance] = {}
-    reasons: dict[str, str | None] = {}
-    for label, period_enum in PERIOD_KEY_TO_ENUM.items():
-        res = results[period_enum]
-        perfs[label] = performance_from_period(res)
-        reasons[label] = res.reason
-    return perfs, reasons
+    if prepared_periods is not None and listing.instrument in prepared_periods:
+        return prepared_periods[listing.instrument]
+    return _listing_period_results(listing, quote_obs, calendars, cache, now, refresh=refresh)
 
 
 class PortfolioRefreshCoordinator:
@@ -259,6 +275,7 @@ class PortfolioRefreshCoordinator:
         cache: QuoteCache,
         *,
         listings: tuple[VerifiedListing, ...] = (),
+        fallback_listings: Callable[[], Mapping[int, VerifiedListing]] | None = None,
         fx_pairs: Mapping[str, VerifiedFxPair] | None = None,
         calendars: Mapping[str, SessionCalendar] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -276,6 +293,7 @@ class PortfolioRefreshCoordinator:
         self._read_holdings = read_holdings
         self._cache = cache
         self._listings = listings
+        self._fallback_listings = fallback_listings
         self._fx_pairs = dict(fx_pairs) if fx_pairs is not None else {}
         self._calendars = dict(calendars) if calendars is not None else {}
         self._clock = clock
@@ -408,6 +426,20 @@ class PortfolioRefreshCoordinator:
                     mapped_instruments.append(listing.instrument)
 
             quote_map = self._cache.quotes(mapped_instruments, refresh=refresh)
+            fallback_listings = dict(self._fallback_listings()) if self._fallback_listings else {}
+            prepared_periods: dict[Instrument, PeriodResults] = {}
+            active_listings: dict[tuple[str, str], VerifiedListing] = {}
+
+            def candidate_results(candidate):
+                instrument = candidate.instrument
+                if instrument not in quote_map:
+                    quote_map[instrument] = self._cache.quote(instrument, refresh=refresh)
+                if instrument not in prepared_periods:
+                    prepared_periods[instrument] = _listing_period_results(
+                        candidate, quote_map[instrument], self._calendars, self._cache,
+                        now, refresh=refresh,
+                    )
+                return prepared_periods[instrument]
 
             enriched_positions: list[Position] = []
             needed_currencies: set[str] = set()
@@ -416,22 +448,80 @@ class PortfolioRefreshCoordinator:
                     enriched_positions.append(pos)
                     continue
                 listing = resolve_listing(pos.instrument, self._listings)
+                if listing is not None and listing.instrument.provider_mapping is None:
+                    listing = None
+                alternative = fallback_listings.get(pos.source_row)
+                alternative_used = False
+                alternative_rejected = False
+                alternative_evidence: tuple[DataWarning, ...] = ()
+                if alternative is not None:
+                    primary_periods = candidate_results(listing) if listing else _missing_periods("unverified_instrument")
+                    primary_available = {key for key, value in primary_periods[0].items()
+                                         if value.percent is not None}
+                    if listing is None or len(primary_available) < len(PERIOD_KEY_TO_ENUM):
+                        alternative_periods = candidate_results(alternative)
+                        alternative_available = {key for key, value in alternative_periods[0].items()
+                                                 if value.percent is not None}
+                        primary_quote_ok = listing is not None and quote_map[listing.instrument].valuation.status is ValueStatus.AVAILABLE
+                        alternative_quote_ok = quote_map[alternative.instrument].valuation.status is ValueStatus.AVAILABLE
+                        if listing is None or (
+                            alternative_quote_ok and (
+                                not primary_quote_ok or primary_available < alternative_available
+                            )
+                        ):
+                            listing = alternative
+                            alternative_used = True
+                        else:
+                            alternative_rejected = True
+                            evidence = (
+                                quote_map[alternative.instrument].valuation.warnings
+                                + tuple(warning for performance in alternative_periods[0].values()
+                                        for warning in performance.warnings)
+                            )
+                            alternative_evidence = tuple(DataWarning(
+                                f"sheet_alternative_{code}", "Sheet-Ersatzzuordnung nicht verwendet"
+                            ) for code in dict.fromkeys(w.code for w in evidence))
                 if (
                     listing is not None
                     and listing.instrument.provider_mapping is not None
                 ):
                     obs = quote_map[listing.instrument]
                     chosen = choose_valuation(obs.valuation, pos.valuation)
+                    if obs.valuation.status is not ValueStatus.AVAILABLE:
+                        chosen = replace(
+                            chosen,
+                            warnings=chosen.warnings + (
+                                DataWarning("quote_fetch_failed", "Kursabruf fehlgeschlagen"),
+                            ),
+                        )
                     updated_inst = (
-                        listing.instrument
-                        if chosen.provenance.source is not ValuationSource.SHEET
-                        else pos.instrument
+                        replace(pos.instrument,
+                                instrument_id=listing.instrument.instrument_id,
+                                trading_venue=listing.instrument.trading_venue,
+                                quote_unit=listing.instrument.quote_unit,
+                                provider_mapping=listing.instrument.provider_mapping)
+                    )
+                    source_warning = DataWarning(
+                        "listing_source_sheet" if alternative_used else "listing_source_app",
+                        "Sheet-Ersatzzuordnung verwendet" if alternative_used else "App-Kurszuordnung",
                     )
                     updated_pos = replace(
-                        pos, instrument=updated_inst, valuation=chosen
+                        pos, instrument=updated_inst, valuation=chosen,
+                        warnings=pos.warnings + (source_warning,) + (
+                            (DataWarning("sheet_alternative_rejected", "Sheet-Ersatzzuordnung nicht verwendet"),)
+                            if alternative_rejected else ()
+                        ) + alternative_evidence,
                     )
+                    active_listings[(listing.instrument.instrument_id,
+                                     listing.instrument.trading_venue)] = listing
                 else:
                     updated_pos = _ensure_sheet_unknown_warning(pos)
+                    updated_pos = replace(
+                        updated_pos,
+                        warnings=updated_pos.warnings + (
+                            DataWarning("missing_quote_mapping", "Keine Kurszuordnung"),
+                        ),
+                    )
 
                 enriched_positions.append(updated_pos)
                 if (
@@ -465,7 +555,7 @@ class PortfolioRefreshCoordinator:
                 raw_snapshot, positions=tuple(enriched_positions)
             )
             valuation = value_portfolio(
-                enriched_snapshot, self._listings, fx_rates
+                enriched_snapshot, tuple(active_listings.values()), fx_rates
             )
             returns = portfolio_returns(valuation)
 
@@ -479,12 +569,13 @@ class PortfolioRefreshCoordinator:
             for group in valuation.groups:
                 g_perfs, g_reasons = _group_period_results(
                     group,
-                    self._listings,
+                    tuple(active_listings.values()),
                     quote_map,
                     self._calendars,
                     self._cache,
                     now,
                     refresh=refresh,
+                    prepared_periods=prepared_periods,
                 )
                 for label in PERIOD_KEY_TO_ENUM:
                     course_perfs[label].append(g_perfs[label])

@@ -26,7 +26,7 @@ from portfolio_dashboard.sheet_parser import (
 )
 
 SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
-_RANGE = re.compile(r"(?:'(?:[^']|'')+'|[^'!\r\n]+)!A([1-9][0-9]*):([M-T])([1-9][0-9]*)")
+_RANGE = re.compile(r"(?:'(?:[^']|'')+'|[^'!\r\n]+)!A([1-9][0-9]*):([M-X])([1-9][0-9]*)")
 _PRIVATE_READ = ContextVar("private_sheet_read", default=False)
 
 
@@ -172,7 +172,7 @@ class SheetsAdapter:
         match = _RANGE.fullmatch(cell_range) if isinstance(cell_range, str) else None
         if match is None:
             raise SheetsConfigurationError(
-                "Explicit worksheet and bounded A–M..A–T row range required."
+                "Explicit worksheet and bounded A–M..A–X row range required."
             )
         try:
             first, last = int(match.group(1)), int(match.group(3))

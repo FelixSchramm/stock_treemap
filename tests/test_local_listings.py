@@ -202,7 +202,7 @@ class SyntheticSession:
 class EurProvider:
     """Answers only the verified listing; history stays unavailable."""
 
-    def __init__(self, listings):
+    def __init__(self, listings, *, listing_resolver=None):
         self.symbols = {
             listing.instrument.provider_mapping.symbol for listing in listings
         }

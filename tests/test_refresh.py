@@ -20,11 +20,13 @@ from portfolio_dashboard.market_data import (
 from portfolio_dashboard.models import (
     CostBasis,
     CostBasisStatus,
+    DataWarning,
     Instrument,
     InstrumentType,
     PortfolioSnapshot,
     Position,
     Provenance,
+    ProviderMapping,
     QuoteUnit,
     SnapshotStatus,
     Valuation,
@@ -48,6 +50,7 @@ from portfolio_dashboard.treemap import (
     SHEET_UNKNOWN_QUOTE_STATUS,
     Performance,
     build_kpis,
+    build_position_details,
     build_status_notes,
     build_table_rows,
 )
@@ -359,9 +362,162 @@ def test_manual_sheet_values_without_timestamp_are_named_sheet_wert_kursstand_un
     )
 
     assert len(rows) == 1
+    assert "Keine Kurszuordnung" in rows[0].status
+    assert reasons == ("unverified_instrument",)
     assert SHEET_UNKNOWN_QUOTE_STATUS in rows[0].status
     assert SHEET_UNKNOWN_QUOTE_STATUS in kpis.total_status_note
     assert any(SHEET_UNKNOWN_QUOTE_STATUS in note for note in notes)
+
+
+def _course_status_bundle(
+    *, mapped, failure_code="provider_failure", sheet_price="100", history_code=None
+):
+    """Refresh a synthetic identified position without any provider network access."""
+    instrument = Instrument(
+        InstrumentType.STOCK,
+        instrument_id="SYNTHETIC-IDENTITY",
+        trading_venue="FRA",
+        quote_unit=EUR,
+    )
+    listing = VerifiedListing(
+        instrument=Instrument(
+            InstrumentType.STOCK,
+            instrument_id=instrument.instrument_id,
+            trading_venue="FRA",
+            quote_unit=EUR,
+            provider_mapping=ProviderMapping("yfinance", "SYNTHETIC.F"),
+        ),
+        equity_form=EquityForm.SHARE,
+    )
+    position = Position(
+        name="Synthetische Position",
+        quantity=Decimal(2),
+        instrument=instrument,
+        category=None,
+        source_row=2,
+        imported_at=T0,
+        valuation=(
+            Valuation(Decimal(sheet_price), ValueStatus.AVAILABLE,
+                      Provenance(ValuationSource.SHEET, T0), EUR)
+            if sheet_price is not None else None
+        ),
+    )
+    snapshot = PortfolioSnapshot(T0, SnapshotStatus.COMPLETE, (position,))
+
+    class RejectedQuoteProvider(_FakeMarketProvider):
+        def latest_quote(self, instrument):
+            if history_code is not None:
+                return super().latest_quote(instrument)
+            self.quote_calls += 1
+            return PriceObservation(
+                Valuation(
+                    None,
+                    ValueStatus.MISSING,
+                    Provenance(ValuationSource.PROVIDER, T0, provider="yfinance"),
+                    warnings=(DataWarning(failure_code, "SYNTHETIC PRIVATE DETAIL"),),
+                )
+            )
+
+        def history(self, instrument, start, end, *, minimum_points=2):
+            return PriceHistory(
+                ValueStatus.MISSING,
+                Provenance(ValuationSource.PROVIDER, T0, provider="yfinance"),
+                warnings=(DataWarning(history_code, "SYNTHETIC PRIVATE HISTORY"),),
+            )
+
+    provider = RejectedQuoteProvider()
+    coordinator = PortfolioRefreshCoordinator(
+        lambda _: snapshot,
+        QuoteCache(provider, clock=lambda: T0),
+        listings=(listing,) if mapped else (),
+        # Missing calendar must not mask mapping/rejected-quote reasons.
+        calendars={"FRA": _sample_calendar()} if history_code is not None else {},
+        clock=lambda: T0,
+    )
+    return coordinator.load(), provider
+
+
+@pytest.mark.parametrize("sheet_price", ["100", None])
+def test_missing_listing_is_named_even_with_identity_and_without_a_sheet_value(sheet_price):
+    bundle, provider = _course_status_bundle(mapped=False, sheet_price=sheet_price)
+    assert bundle.available
+    assert provider.quote_calls == 0
+    for period in ("Heute", "Woche", "Monat", "Jahr"):
+        assert bundle.reasons_for("Kursentwicklung", period) == ("unverified_instrument",)
+        rows = build_table_rows(
+            bundle.valuation, bundle.performances_for("Kursentwicklung", period),
+            period_reasons=bundle.reasons_for("Kursentwicklung", period),
+        )
+        assert "Keine Kurszuordnung" in rows[0].status
+        assert "Kursabruf fehlgeschlagen" not in rows[0].status
+        assert "Keine Kurszuordnung" in " ".join(build_position_details(rows)[0])
+        assert "Keine Kurszuordnung" in " ".join(build_status_notes(
+            bundle.valuation, bundle.performances_for("Kursentwicklung", period),
+            period_reasons=bundle.reasons_for("Kursentwicklung", period),
+        ))
+    assert "Keine Kurszuordnung" in build_table_rows(
+        bundle.valuation, (Performance(None),), is_personal_view=True
+    )[0].status
+
+
+@pytest.mark.parametrize("sheet_price", ["100", None])
+@pytest.mark.parametrize(("code", "reason"), [
+    ("instrument_metadata_mismatch", "Instrument oder Handelsplatz weicht ab"),
+    ("provider_failure", "Kursanbieter nicht erreichbar"),
+    ("unknown_or_conflicting_unit", "Währung oder Kurseinheit unklar"),
+    ("provider_backoff", "Abruf vorübergehend pausiert"),
+    ("SYNTHETIC-UNKNOWN-CODE", "Kurs nicht verfügbar"),
+])
+def test_failed_listing_retains_codes_and_shows_only_safe_german_causes(code, reason, sheet_price):
+    bundle, provider = _course_status_bundle(
+        mapped=True, failure_code=code, sheet_price=sheet_price
+    )
+    assert bundle.available
+    assert provider.quote_calls == 1
+    assert code in {w.code for w in bundle.snapshot.positions[0].valuation.warnings}
+    for period in ("Heute", "Woche", "Monat", "Jahr"):
+        assert bundle.reasons_for("Kursentwicklung", period) == ("quote_unavailable",)
+    perfs = bundle.performances_for("Kursentwicklung", "Heute")
+    reasons = bundle.reasons_for("Kursentwicklung", "Heute")
+    rows = build_table_rows(bundle.valuation, perfs, period_reasons=reasons)
+    expected = f"Kursabruf fehlgeschlagen ({reason})"
+    details = build_position_details(rows)
+    notes = build_status_notes(bundle.valuation, perfs, period_reasons=reasons)
+    for text in (rows[0].status, " ".join(details[0]), " ".join(notes)):
+        assert expected in text
+        assert "Keine Kurszuordnung" not in text
+        assert code not in text
+        assert "SYNTHETIC PRIVATE DETAIL" not in text
+        assert "Keine Kurshistorie bei Sheet-Bewertung" not in text
+    assert expected in build_table_rows(
+        bundle.valuation, perfs, is_personal_view=True
+    )[0].status
+
+
+@pytest.mark.parametrize(("code", "reason"), [
+    ("invalid_price", "Kurs ungültig"),
+    ("provider_failure", "Kursanbieter nicht erreichbar"),
+    ("SYNTHETIC-UNKNOWN-HISTORY", "Keine geprüften Tageskurse"),
+])
+def test_rejected_history_retains_safe_cause_in_all_status_surfaces(code, reason):
+    bundle, provider = _course_status_bundle(mapped=True, history_code=code)
+    assert bundle.available
+    assert provider.quote_calls == 1
+    assert bundle.snapshot.positions[0].valuation.provenance.source is ValuationSource.PROVIDER
+    for period in ("Heute", "Woche", "Monat", "Jahr"):
+        perfs = bundle.performances_for("Kursentwicklung", period)
+        reasons = bundle.reasons_for("Kursentwicklung", period)
+        assert reasons == ("history_unavailable",)
+        assert perfs[0].percent is None
+        assert code in {warning.code for warning in perfs[0].warnings}
+        rows = build_table_rows(bundle.valuation, perfs, period_reasons=reasons)
+        details = build_position_details(rows)
+        notes = build_status_notes(bundle.valuation, perfs, period_reasons=reasons)
+        for text in (rows[0].status, " ".join(details[0]), " ".join(notes)):
+            assert f"Kurshistorie nicht verfügbar ({reason})" in text
+            assert "Kursabruf fehlgeschlagen" not in text
+            assert code not in text
+            assert "SYNTHETIC PRIVATE HISTORY" not in text
 
 
 def test_refresh_failure_retains_previous_atomic_bundle_with_age_or_shows_unavailable():

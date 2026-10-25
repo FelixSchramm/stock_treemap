@@ -13,7 +13,7 @@ abgerufen; Formeln liefern ihre berechneten Werte. JSON-Dezimalzahlen gehen als
 Der Host übergibt `SourceConfig` mit `kind=SourceKind.GOOGLE_SHEETS`, privater
 Spreadsheet-ID und endlichem A1-Bereich, beispielsweise dem **synthetischen**
 `'Synthetic tab'!A7:M1000`. Der Bereich muss ein ausdrücklich benanntes Blatt,
-Spalten A bis zu einer Endspalte zwischen M und T und beide Zeilengrenzen enthalten (Endspalte T liest auch die optionalen Hinweisspalten). Die erste Bereichszeile enthält die
+Spalten A bis zu einer Endspalte zwischen M und X und beide Zeilengrenzen enthalten (Endspalte T liest die bisherigen Hinweisspalten, X zusätzlich die optionalen Yahoo-Ersatzangaben). Die erste Bereichszeile enthält die
 dreizehn Pflichtüberschriften; die tatsächlichen Quellenzeilen bleiben erhalten. Die
 Anzahl zurückgegebener Zeilen und Spalten darf den Bereich nicht überschreiten.
 Nicht unterstützte Bereiche werden vor einem Abruf mit neutraler Meldung
