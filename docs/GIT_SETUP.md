@@ -7,7 +7,7 @@ Git ist lokal auf `main` eingerichtet; `origin` verweist auf `FelixSchramm/stock
 Quellcode, Architektur, allgemeines Importschema und synthetische Beispieldaten gehören ins Repository. Persönliche Dokumentlinks, Sheet-IDs, konkrete Depotbefunde, Tickerlisten, Exporte, Caches und Credentials bleiben in ignorierten lokalen Dateien bzw. der Secret-Verwaltung.
 
 - `docs/private/`: persönliche Quellen und konkrete Datenprüfungen.
-- `tickers.txt`: lokale Liste; `tickers.example.txt` ist die öffentliche Vorlage.
+- `tickers.txt`: lokale Tickerliste des früheren Prototyps (bleibt ignoriert).
 - `.env`, `.env.*`, `.streamlit/secrets.toml`, Credentials-Dateien und Schlüssel: lokale Secrets.
 - `data/`, `exports/`, `cache/`, `.cache/`, `logs/`: Laufzeitdaten.
 - `*.local.*`: zusätzliche lokale Konfigurationsdateien.

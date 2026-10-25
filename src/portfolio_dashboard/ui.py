@@ -44,14 +44,15 @@ from portfolio_dashboard.valuations import PortfolioValuation
 COURSE_VIEW = "Kursentwicklung"
 PERSONAL_VIEW = "Meine Entwicklung"
 COURSE_PERIODS = ("Heute", "Woche", "Monat", "Jahr")
+SINCE_PURCHASE = "Seit Kauf"
 TYPE_FILTER_OPTIONS = (ALL_FILTER, "Aktie", "ETF", "Derivat")
 SORT_DIRECTION_DESC = "Absteigend"
 SORT_DIRECTION_ASC = "Aufsteigend"
 SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
 
-# Public keys are the retained session state; the hidden widget may be removed
-# by Streamlit when switching views, so it has its own temporary key.
-VIEW_KEY = "dashboard.view"
+# Public keys are the retained session state. COURSE_PERIOD_KEY holds the
+# selected Zeitraum (a course period or "Seit Kauf"); the radio keeps its own
+# widget key and is re-seeded from it on every run.
 COURSE_PERIOD_KEY = "dashboard.course_period"
 _PERIOD_WIDGET_KEY = "_dashboard.course_period"
 FILTER_QUERY_KEY = "dashboard.filter_query"
@@ -104,32 +105,25 @@ def render_accessibility_styles() -> None:
 
 
 def _remember_course_period() -> None:
-    """Persist the selected course period across view switches."""
+    """Persist the selected Zeitraum in the public session key."""
     st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
 
 
 def render_view_controls() -> tuple[str, str]:
-    """Return the view and period, preserving course periods across hidden runs.
+    """Render the Zeitraum radio and derive the view from the selection.
 
-    :return: Tuple of (selected view, selected period or ``"Seit Kauf"``).
+    :return: Tuple of (derived view, selected course period or ``"Seit Kauf"``).
     """
-    st.session_state.setdefault(VIEW_KEY, COURSE_VIEW)
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
-    view = st.radio(
-        "Ansicht", (COURSE_VIEW, PERSONAL_VIEW), key=VIEW_KEY, horizontal=True
-    )
-    if view == PERSONAL_VIEW:
-        st.caption("Zeitraum: Seit Kauf")
-        return view, "Seit Kauf"
-
     st.session_state[_PERIOD_WIDGET_KEY] = st.session_state[COURSE_PERIOD_KEY]
     period = st.radio(
-        "Kursperiode",
-        COURSE_PERIODS,
+        "Zeitraum",
+        (*COURSE_PERIODS, SINCE_PURCHASE),
         key=_PERIOD_WIDGET_KEY,
         on_change=_remember_course_period,
         horizontal=True,
     )
+    view = PERSONAL_VIEW if period == SINCE_PURCHASE else COURSE_VIEW
     return view, period
 
 
@@ -155,9 +149,23 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
             delta_color="off",
         )
     with cols[2]:
-        st.metric("Größter Gewinner", kpis.winner_label)
+        st.metric(
+            "Größter Gewinner",
+            kpis.winner_label,
+            delta=kpis.winner_note,
+            delta_color="off",
+            delta_arrow="off",
+            help=kpis.winner.name if kpis.winner is not None else None,
+        )
     with cols[3]:
-        st.metric("Größter Verlierer", kpis.loser_label)
+        st.metric(
+            "Größter Verlierer",
+            kpis.loser_label,
+            delta=kpis.loser_note,
+            delta_color="off",
+            delta_arrow="off",
+            help=kpis.loser.name if kpis.loser is not None else None,
+        )
     st.caption(
         f"Depotkennzahlen (ungefilterter Gesamtbestand) · {kpis.total_status_note} · "
         f"{kpis.performance_reference_label}."

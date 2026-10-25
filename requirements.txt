@@ -1,4 +1,0 @@
-# Legacy heatmap.py prototype only; the dashboard uses pyproject.toml and uv.lock.
-yfinance>=0.2.40
-plotly>=5.20
-pandas>=2.0

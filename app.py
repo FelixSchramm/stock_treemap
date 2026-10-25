@@ -9,7 +9,12 @@ from datetime import UTC, datetime
 import streamlit as st
 
 from portfolio_dashboard.auth import require_owner
-from portfolio_dashboard.config import ConfigurationError, Mode, load_config
+from portfolio_dashboard.config import (
+    LOOPBACK_ADDRESSES,
+    ConfigurationError,
+    Mode,
+    load_config,
+)
 from portfolio_dashboard.demo import (
     demo_course_performances,
     demo_personal_performances,
@@ -28,7 +33,6 @@ from portfolio_dashboard.sheets_session import SheetsCredentialError
 from portfolio_dashboard.ui import COURSE_VIEW, render_dashboard
 from portfolio_dashboard.valuations import value_portfolio
 
-LOOPBACK_ADDRESSES = {"127.0.0.1", "localhost", "::1"}
 OWN_COORDINATOR_KEY = "own.coordinator"
 
 mode_setting = os.environ.get("PORTFOLIO_MODE", "demo").strip()

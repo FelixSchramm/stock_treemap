@@ -571,7 +571,6 @@ requires-dist = [
     { name = "streamlit", extras = ["auth"], specifier = ">=1.49" },
     { name = "yfinance", specifier = "==1.7.0" },
 ]
-provides-extras = ["prototype"]
 
 [package.metadata.requires-dev]
 dev = [

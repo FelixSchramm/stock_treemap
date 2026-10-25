@@ -31,3 +31,16 @@ docs/private
 .github-import-state.json
 tests
 agent_architecture
+# Private persistent state must only be mounted at runtime, outside /app.
+**/private
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
+**/*.bak
+**/*.backup
+**/*watchlist*.json
+**/*watchlist*.csv
+**/*watchlist*.txt

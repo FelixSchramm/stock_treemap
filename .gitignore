@@ -38,3 +38,17 @@ docs/private/
 
 # Local publication state
 .github-import-state.json
+
+# Private persistent state, SQLite sidecars and owner backups
+private/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.bak
+*.backup
+*watchlist*.json
+*watchlist*.csv
+*watchlist*.txt

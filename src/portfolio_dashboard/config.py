@@ -67,6 +67,7 @@ class AppConfig:
     provider: Provider
     ttls: CacheTTLs
     login: LoginConfig
+    private_data_dir: str | None = field(default=None, repr=False)
 
 
 def _text(values: Mapping[str, object], name: str, default: str = "") -> str:
@@ -91,6 +92,9 @@ def _positive_seconds(values: Mapping[str, str], name: str, default: int) -> int
     if value <= 0:
         raise ConfigurationError(f"Positive ganze Sekunden erforderlich: {name}.")
     return value
+
+
+LOOPBACK_ADDRESSES = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
@@ -121,6 +125,12 @@ def load_config(
     if mode is Mode.DEMO:
         return AppConfig(mode, SourceConfig(), Provider.SYNTHETIC, ttls, LoginConfig())
 
+    private_data_dir = _text(values, "PORTFOLIO_PRIVATE_DATA_DIR") or None
+    if private_data_dir is not None and (
+        private_data_dir.startswith("<") or private_data_dir == "CHANGE_ME"
+    ):
+        raise ConfigurationError("Konfiguration ungültig: PORTFOLIO_PRIVATE_DATA_DIR.")
+
     # Supported implementations are explicit; no automatic provider selection.
     if _text(values, "PORTFOLIO_SOURCE", SourceKind.GOOGLE_SHEETS) != SourceKind.GOOGLE_SHEETS:
         raise ConfigurationError("Nicht unterstützte Quelle: PORTFOLIO_SOURCE.")
@@ -145,7 +155,7 @@ def load_config(
         source = replace(
             source, credentials_file=credentials_file, listings_file=listings_file
         )
-        return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig())
+        return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig(), private_data_dir)
 
     if _text(values, "PORTFOLIO_LOGIN_PROVIDER", "google") != "google":
         raise ConfigurationError("Nicht unterstützter Login: PORTFOLIO_LOGIN_PROVIDER.")
@@ -182,4 +192,4 @@ def load_config(
         or not redirect.path.endswith("/oauth2callback")
     ):
         raise ConfigurationError("HTTPS-Callback erforderlich: auth.redirect_uri.")
-    return AppConfig(mode, source, Provider.YFINANCE, ttls, login)
+    return AppConfig(mode, source, Provider.YFINANCE, ttls, login, private_data_dir)

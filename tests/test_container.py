@@ -44,3 +44,37 @@ def test_dockerignore_excludes_private_material():
 def test_dockerfile_hides_streamlit_welcome_message():
     # Otherwise headless Streamlit looks up the external IP at startup (third-party call, IP in log).
     assert "STREAMLIT_LOGGER_HIDE_WELCOME_MESSAGE=true" in DOCKERFILE
+
+
+def test_container_context_excludes_sqlite_sidecars_backups_and_watchlists():
+    required = {
+        "**/private", "**/*.db", "**/*.db-*", "**/*.sqlite", "**/*.sqlite-*",
+        "**/*.sqlite3", "**/*.sqlite3-*", "**/*.bak", "**/*.backup",
+        "**/*watchlist*.json", "**/*watchlist*.csv", "**/*watchlist*.txt",
+    }
+    assert required <= set(DOCKERIGNORE)
+    assert "PORTFOLIO_PRIVATE_DATA_DIR" not in DOCKERFILE
+
+
+def test_git_ignores_private_database_sidecars_backups_and_lists():
+    import subprocess
+
+    paths = [
+        "private/synthetic-record.json",
+        "src/portfolio_dashboard/synthetic.sqlite3",
+        "src/portfolio_dashboard/synthetic.sqlite3-journal",
+        "src/portfolio_dashboard/synthetic.sqlite3-wal",
+        "src/portfolio_dashboard/synthetic.sqlite3-shm",
+        "src/portfolio_dashboard/synthetic.db",
+        "src/portfolio_dashboard/synthetic.sqlite",
+        "src/portfolio_dashboard/synthetic.bak",
+        "src/portfolio_dashboard/synthetic.backup",
+        "src/portfolio_dashboard/synthetic-watchlist.json",
+        "src/portfolio_dashboard/synthetic-watchlist.csv",
+        "src/portfolio_dashboard/synthetic-watchlist.txt",
+    ]
+    result = subprocess.run(
+        ["git", "check-ignore", "--no-index", "--stdin"], input="\n".join(paths) + "\n",
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    assert set(result.stdout.splitlines()) == set(paths)
