@@ -16,8 +16,8 @@ stehen. Ausnahme sind die optionalen Hinweisspalten *ISIN*, *Handelsplatz* und
 *Kursdatum…* in N–T (siehe [DATA_SOURCE.md](DATA_SOURCE.md)): ISIN und Handelsplatz
 landen als `source_isin`/`source_venue` ohne jede Identitäts- oder Providerwirkung,
 eine ungültige ISIN wird mit `invalid_isin` verworfen. Das Kursdatum (`dd.mm.yyyy`,
-ISO oder Sheets-Seriennummer) setzt den Kursstand der Zeile; ungültig ergibt
-`invalid_price_date` und der Kursstand bleibt unbekannt. Zeilen wie
+ISO oder Sheets-Seriennummer, nicht nach `imported_at`) setzt den Kursstand der
+Zeile; ungültig ergibt `invalid_price_date` und der Kursstand bleibt unbekannt. Zeilen wie
 „Brokerage-Gesamtwert…“ oder „Differenz zu…“ ohne Typ zählen als Summenzeilen. Kurze Datenzeilen erhalten fehlende Zellen; `header_row` bestimmt den
 tatsächlichen Zeilenbezug eines konfigurierten Ausschnitts.
 
@@ -54,8 +54,12 @@ einzelnen `EUR`-/`€`-Zusatz. Leere Zellen, `None` und `k. A.` bleiben unbekann
   Haupt-/Untereinheitenfaktor ist unbekannt. Fehlende Währungen werden nicht als
   EUR interpretiert; uneindeutige Bezeichnungen wie `GBp` bleiben unbekannt.
   `imported_at` ist der übergebene Abruf-/Importzeitpunkt, niemals der Kursstand.
-  Nur explizites `sheet_price_observed_at` darf einen tatsächlichen Kursstand
-  liefern; sonst bleibt dieser unbekannt und der Ersatzkurs trägt eine Warnung.
+  Einen tatsächlichen Kursstand liefern nur ein gültiges Zeilen-Kursdatum (nicht
+  nach `imported_at`) oder explizites `sheet_price_observed_at`: Das
+  Zeilen-Kursdatum hat Vorrang vor `sheet_price_observed_at`; ist die Zelle leer,
+  `None` oder `k. A.`, gilt `sheet_price_observed_at`; ist das Zeilen-Kursdatum
+  ungültig (einschließlich Zukunftsdatum), bleibt `observed_at=None`, das
+  Metadatum wird nicht übernommen und der Ersatzkurs trägt eine Warnung.
 - Eingelesene Einstände sind standardmäßig `UNVERIFIED`. Nur die explizite
   Quellenfeststellung `cost_basis_verified_remaining=True` bestätigt die Bedeutung
   als Einstand verbleibender Stücke. Diese Feststellung ist für die tatsächliche
