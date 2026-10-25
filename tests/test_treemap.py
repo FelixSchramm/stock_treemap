@@ -231,7 +231,7 @@ def test_dashboard_renders_same_tile_areas_in_both_views():
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception
     course = json.loads(app.get("plotly_chart")[0].proto.spec)["data"][0]
-    app.radio(key=VIEW_KEY).set_value(PERSONAL_VIEW).run()
+    app.radio[0].set_value("Seit Kauf").run()
     assert not app.exception
     personal = json.loads(app.get("plotly_chart")[0].proto.spec)["data"][0]
     assert course["values"] == personal["values"] == [1200.0, 800.0]

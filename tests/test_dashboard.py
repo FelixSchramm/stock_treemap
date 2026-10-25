@@ -55,9 +55,9 @@ def offline_demo(monkeypatch):
 def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline_demo):
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception
-    assert app.radio(key=VIEW_KEY).value == COURSE_VIEW
-    assert app.radio[1].options == list(COURSE_PERIODS)
-    assert app.radio[1].value == "Heute"
+    assert app.session_state[VIEW_KEY] == COURSE_VIEW
+    assert app.radio[0].options == [*COURSE_PERIODS, "Seit Kauf"]
+    assert app.radio[0].value == "Heute"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
     assert "Demo-Depot · 2 Beispielpositionen" in [item.value for item in app.caption]
     assert "Datenstand (synthetisch): 23.10.2026, 12:00 UTC" in [
@@ -67,43 +67,41 @@ def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline
 
 
 @pytest.mark.parametrize("period", COURSE_PERIODS)
-def test_personal_view_hides_periods_and_retains_last_course_choice(offline_demo, period):
+def test_since_purchase_period_switches_to_personal_view_and_back(offline_demo, period):
     app = AppTest.from_file(str(APP_PATH)).run()
-    app.radio[1].set_value(period).run()
+    app.radio[0].set_value(period).run()
     assert not app.exception
     assert app.session_state[COURSE_PERIOD_KEY] == period
     assert app.subheader[0].value == f"Kursentwicklung · {period}"
     course_rows = app.dataframe[0].value.copy()
 
-    app.radio(key=VIEW_KEY).set_value(PERSONAL_VIEW).run()
+    app.radio[0].set_value("Seit Kauf").run()
     # A second hidden rerun exercises Streamlit's widget-state cleanup.
     app.run()
     assert not app.exception
-    assert len(app.radio) == 1
     assert app.subheader[0].value == "Meine Entwicklung · Seit Kauf"
-    assert "Zeitraum: Seit Kauf" in [item.value for item in app.caption]
     assert "n. v." in app.info[1].value
     personal_df = app.dataframe[0].value
     invariant_cols = ["Instrument", "Wert (EUR)", WEIGHT_COLUMN_LABEL]
     assert personal_df[invariant_cols].equals(course_rows[invariant_cols])
     assert personal_df["Entwicklung (%)"].tolist() == ["n. v.", "n. v."]
 
-    app.radio(key=VIEW_KEY).set_value(COURSE_VIEW).run()
+    app.radio[0].set_value(period).run()
     assert not app.exception
-    assert app.radio[1].value == period
+    assert app.radio[0].value == period
     assert app.subheader[0].value == f"Kursentwicklung · {period}"
     assert app.dataframe[0].value.equals(course_rows)
 
 
 def test_new_session_does_not_inherit_the_previous_view_or_period(offline_demo):
     previous = AppTest.from_file(str(APP_PATH)).run()
-    previous.radio[1].set_value("Jahr").run()
-    previous.radio(key=VIEW_KEY).set_value(PERSONAL_VIEW).run()
+    previous.radio[0].set_value("Jahr").run()
+    previous.radio[0].set_value("Seit Kauf").run()
 
     fresh = AppTest.from_file(str(APP_PATH)).run()
     assert not fresh.exception
-    assert fresh.radio(key=VIEW_KEY).value == COURSE_VIEW
-    assert fresh.radio[1].value == "Heute"
+    assert fresh.session_state[VIEW_KEY] == COURSE_VIEW
+    assert fresh.radio[0].value == "Heute"
 
 
 def test_demo_snapshot_cannot_claim_verified_cost_or_provider_quotes():

@@ -44,6 +44,7 @@ from portfolio_dashboard.valuations import PortfolioValuation
 COURSE_VIEW = "Kursentwicklung"
 PERSONAL_VIEW = "Meine Entwicklung"
 COURSE_PERIODS = ("Heute", "Woche", "Monat", "Jahr")
+SINCE_PURCHASE = "Seit Kauf"
 TYPE_FILTER_OPTIONS = (ALL_FILTER, "Aktie", "ETF", "Derivat")
 SORT_DIRECTION_DESC = "Absteigend"
 SORT_DIRECTION_ASC = "Aufsteigend"
@@ -113,23 +114,17 @@ def render_view_controls() -> tuple[str, str]:
 
     :return: Tuple of (selected view, selected period or ``"Seit Kauf"``).
     """
-    st.session_state.setdefault(VIEW_KEY, COURSE_VIEW)
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
-    view = st.radio(
-        "Ansicht", (COURSE_VIEW, PERSONAL_VIEW), key=VIEW_KEY, horizontal=True
-    )
-    if view == PERSONAL_VIEW:
-        st.caption("Zeitraum: Seit Kauf")
-        return view, "Seit Kauf"
-
     st.session_state[_PERIOD_WIDGET_KEY] = st.session_state[COURSE_PERIOD_KEY]
     period = st.radio(
         "Kursperiode",
-        COURSE_PERIODS,
+        (*COURSE_PERIODS, SINCE_PURCHASE),
         key=_PERIOD_WIDGET_KEY,
         on_change=_remember_course_period,
         horizontal=True,
     )
+    view = PERSONAL_VIEW if period == SINCE_PURCHASE else COURSE_VIEW
+    st.session_state[VIEW_KEY] = view
     return view, period
 
 
