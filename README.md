@@ -136,3 +136,7 @@ Das Skript erzeugt `heatmap.html` und oeffnet sie im Browser.
 
 
 Sheet-ID und Dokumentlinks gehören in lokale Konfiguration oder `docs/private/`, nicht in das Repository. `docs/DATA_SOURCE.md` beschreibt ausschließlich das allgemeine Importschema.
+
+Die Offline-Fachoperationen für eine private Watchlist und die explizit konfigurierte
+SQLite-Ablage sind in [PRIVATE_WATCHLIST.md](docs/PRIVATE_WATCHLIST.md) dokumentiert.
+Der Watchlist-Editor folgt separat; Demo verwendet ausschließlich temporäre synthetische Daten.
