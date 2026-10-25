@@ -420,6 +420,14 @@ def _active_members(group: ValuationGroup):
     ]
 
 
+def _short_label(name: str, ticker: str | None) -> str:
+    """Return the ticker for compact KPI tiles, else the first word of the name."""
+    if ticker:
+        return ticker
+    words = name.split()
+    return words[0] if words else name
+
+
 def _is_active_group(group: ValuationGroup) -> bool:
     """Check whether a valuation group has at least one active member.
 
@@ -758,7 +766,7 @@ def build_kpis(
             name=win_first.name,
             ticker=win_ticker,
             percent=win_perf.percent,
-            formatted=f"{win_first.name}: {win_pct}",
+            formatted=f"{_short_label(win_first.name, win_ticker)}: {win_pct}",
         )
 
     loser: PerformerSummary | None = None
@@ -778,7 +786,7 @@ def build_kpis(
             name=lose_first.name,
             ticker=lose_ticker,
             percent=lose_perf.percent,
-            formatted=f"{lose_first.name}: {lose_pct}",
+            formatted=f"{_short_label(lose_first.name, lose_ticker)}: {lose_pct}",
         )
 
     if winner is not None:
