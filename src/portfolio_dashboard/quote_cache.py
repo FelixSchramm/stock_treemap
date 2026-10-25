@@ -11,8 +11,9 @@ provider_failure, including provider-rejected symbols) a provider-wide backoff
 stops further fetches (quotes, FX, history; not holdings). Missing mappings and
 validation failures do not count. Bundled quotes try keys with fewer failures
 first, so permanently rejected symbols cannot keep taking the recovery probe.
-A key already in its own failure streak counts only while a provider-wide
-outage is active, so rejected symbols cannot block FX, history or other keys.
+A key already in its own failure streak is ignored only directly after a
+healthy key succeeded without any new failure, so rejected symbols cannot block
+FX, history or other keys while a partial recovery still rearms the breaker.
 """
 
 from collections.abc import Callable, Iterable
@@ -76,6 +77,7 @@ class QuoteCache:
     _entries: dict = field(default_factory=dict, init=False, repr=False)
     _provider_failures: int = field(default=0, init=False, repr=False)
     _provider_retry_after: datetime | None = field(default=None, init=False, repr=False)
+    _healthy_success: bool = field(default=False, init=False, repr=False)
 
     def _get(
         self,
@@ -106,20 +108,24 @@ class QuoteCache:
         ):
             fetched = fetch()
             if is_ok(fetched):
+                was_healthy = entry.failures == 0
                 self._entries[key] = _Entry(fetched, now)
                 if provider_wide:
                     self._provider_failures = 0
                     self._provider_retry_after = None
+                    self._healthy_success = was_healthy
                 return fetched
             if (
                 provider_wide
                 and _is_provider_outage(fetched)
                 and (
                     entry.failures == 0
-                    or self._provider_failures >= self.provider_failure_threshold
+                    or self._provider_failures > 0
+                    or not self._healthy_success
                 )
             ):
                 self._provider_failures += 1
+                self._healthy_success = False
                 excess = self._provider_failures - self.provider_failure_threshold
                 if excess >= 0:
                     self._provider_retry_after = now + timedelta(

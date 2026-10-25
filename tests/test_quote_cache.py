@@ -402,6 +402,50 @@ def test_rejected_symbols_do_not_block_fx_and_history_after_the_quote_bundle(env
         clock.advance(300)
 
 
+def test_provider_wide_backoff_rearms_after_partial_recovery(env):
+    clock, provider, cache = env
+    items = [instrument(str(n)) for n in range(10)]
+    provider.fail = True
+    for _ in range(8):  # all 10 keys accumulate failures == 1 during the outage
+        cache.quotes(items)
+        clock.advance(300)
+    assert provider.calls == 10
+
+    # Case 1: one probe succeeds in quotes(), then provider fails on remaining keys
+    provider.fail = False
+    provider.rejected = set(items[1:])
+    before = provider.calls
+    first_partial = cache.quotes(items)
+    assert provider.calls == before + 4  # 1 recovery probe + 3 failures -> backoff
+    assert first_partial[items[0]].valuation.status is ValueStatus.AVAILABLE
+    assert "provider_backoff" in codes(cache.fx(PAIR))
+    assert provider.calls == before + 4
+
+    # Case 2: all 10 keys have failures >= 1 again; one standalone probe succeeds
+    # (resets _provider_failures to 0 while items[1:] still have failures >= 1),
+    # then provider fails again on the next bundle
+    provider.rejected = set()
+    provider.fail = True
+    clock.advance(300)
+    cache.quotes(items)  # items[0] fails again, so all 10 keys have failures >= 1
+    clock.advance(300)
+    provider.fail = False
+    assert cache.quote(items[0]).valuation.status is ValueStatus.AVAILABLE
+    provider.fail = True
+    clock.advance(300)
+    before = provider.calls
+    cache.quotes(items)
+    assert provider.calls == before + 3  # breaker rearms after 3 failures, not 10
+    assert "provider_backoff" in codes(cache.fx(PAIR))
+    assert provider.calls == before + 3
+
+    # Subsequent cycles stay bounded to a single recovery probe per window
+    clock.advance(300)
+    before = provider.calls
+    cache.quotes(items)
+    assert provider.calls == before + 1
+
+
 def test_unmapped_instruments_do_not_trigger_provider_backoff(env):
     clock, provider, cache = env
     unmapped = [instrument(name) for name in "UVW"]
