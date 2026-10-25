@@ -145,7 +145,7 @@ Anbieterauswahl und Produktkennungen werden nicht durch Vermutungen ersetzt. Ein
 
 - Online-Zugriff über HTTPS funktioniert am Mac und iPhone ohne laufenden lokalen Rechner.
 - Anonyme Besucher und nicht zugelassene Konten sehen keine Depotdaten; auch Downloads und alternative Datenpfade sind geschützt.
-- Neuaufruf startet mit „Kursentwicklung / Heute“; alle vier Zeiträume aktualisieren die relevanten Werte konsistent.
+- Neuaufruf startet mit „Kursentwicklung / Heute“; alle vier Kursperioden aktualisieren die relevanten Werte konsistent.
 - „Seit Kauf“ (Meine Entwicklung) zeigt Gewinn/Verlust seit Kauf in Prozent mit EUR-Einstand.
 - Flächen bilden eigene Positionswerte ab. Aktien und darauf bezogene Derivate bleiben eigenständig.
 - Treemap, Tabelle und Summen verwenden dieselbe Bewertungslogik und denselben Datenstand; Teilabdeckung ist sichtbar.

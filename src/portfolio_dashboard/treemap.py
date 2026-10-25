@@ -138,7 +138,7 @@ class PerformerSummary:
     name: str
     ticker: str | None
     percent: Decimal
-    formatted: str
+    label: str  # Unique ticker, otherwise the full name.
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,8 +158,10 @@ class PortfolioKpis:
     performance_reference_label: str
     winner: PerformerSummary | None
     loser: PerformerSummary | None
-    winner_label: str
+    winner_label: str  # Metric value: the percentage, or "n. v.".
     loser_label: str
+    winner_note: str | None  # Small line below: ticker/name or why "n. v.".
+    loser_note: str | None
     personal_eligible_group_count: int | None = None
     personal_eligible_row_count: int | None = None
     personal_market_value_eur: Decimal | None = None
@@ -768,12 +770,11 @@ def build_kpis(
         )
         win_first = win_group.members[0].position
         win_ticker = win_first.instrument.display_ticker
-        win_pct = format_percent(win_perf.percent)
         winner = PerformerSummary(
             name=win_first.name,
             ticker=win_ticker,
             percent=win_perf.percent,
-            formatted=f"{_kpi_label(win_first.name, win_ticker, ticker_counts)}: {win_pct}",
+            label=_kpi_label(win_first.name, win_ticker, ticker_counts),
         )
 
     loser: PerformerSummary | None = None
@@ -788,27 +789,25 @@ def build_kpis(
         )
         lose_first = lose_group.members[0].position
         lose_ticker = lose_first.instrument.display_ticker
-        lose_pct = format_percent(lose_perf.percent)
         loser = PerformerSummary(
             name=lose_first.name,
             ticker=lose_ticker,
             percent=lose_perf.percent,
-            formatted=f"{_kpi_label(lose_first.name, lose_ticker, ticker_counts)}: {lose_pct}",
+            label=_kpi_label(lose_first.name, lose_ticker, ticker_counts),
         )
 
+    # The percentage is the metric value so a long name can never hide it.
     if winner is not None:
-        winner_label = winner.formatted
-    elif measured_group_count > 0:
-        winner_label = f"{NOT_AVAILABLE} (keine > 0 %)"
+        winner_label, winner_note = format_percent(winner.percent), winner.label
     else:
         winner_label = NOT_AVAILABLE
+        winner_note = "keine > 0 %" if measured_group_count > 0 else None
 
     if loser is not None:
-        loser_label = loser.formatted
-    elif measured_group_count > 0:
-        loser_label = f"{NOT_AVAILABLE} (keine < 0 %)"
+        loser_label, loser_note = format_percent(loser.percent), loser.label
     else:
         loser_label = NOT_AVAILABLE
+        loser_note = "keine < 0 %" if measured_group_count > 0 else None
 
     valued_active_members = [
         member
@@ -874,6 +873,8 @@ def build_kpis(
             loser=loser,
             winner_label=winner_label,
             loser_label=loser_label,
+            winner_note=winner_note,
+            loser_note=loser_note,
             is_partial_total=is_partial_total,
             total_status_note=total_status_note,
         )
@@ -929,6 +930,8 @@ def build_kpis(
         loser=loser,
         winner_label=winner_label,
         loser_label=loser_label,
+        winner_note=winner_note,
+        loser_note=loser_note,
         personal_eligible_group_count=personal_eligible_group_count,
         personal_eligible_row_count=personal_eligible_row_count,
         personal_market_value_eur=market_eur,

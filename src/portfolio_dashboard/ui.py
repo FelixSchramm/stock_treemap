@@ -152,12 +152,18 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
         st.metric(
             "Größter Gewinner",
             kpis.winner_label,
+            delta=kpis.winner_note,
+            delta_color="off",
+            delta_arrow="off",
             help=kpis.winner.name if kpis.winner is not None else None,
         )
     with cols[3]:
         st.metric(
             "Größter Verlierer",
             kpis.loser_label,
+            delta=kpis.loser_note,
+            delta_color="off",
+            delta_arrow="off",
             help=kpis.loser.name if kpis.loser is not None else None,
         )
     st.caption(

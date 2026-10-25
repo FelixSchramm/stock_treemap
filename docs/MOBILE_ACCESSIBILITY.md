@@ -6,13 +6,13 @@ Dieses Dokument beschreibt die geprüften Bildschirmgrößen, Browser, Bedienabl
 
 | Gerätekategorie / Viewport | Auflösung (CSS-Pixel) | Geprüfte Browser / Engines | Geprüfte Abläufe |
 | --- | --- | --- | --- |
-| **iPhone SE / Mini (Hochformat)** | `375 × 667 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Zeitraumwahl, Suche/Filter, Aktualisieren, Positionsdetails ohne Hover |
-| **iPhone 15 / 16 (Hoch- & Querformat)** | `390 × 844 px` / `393 × 852 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Treemap-Legende mit Umbruch, Kennzahlen-Umbruch, Sortierung, kleine Positionen (`< 0,1 %`) |
+| **iPhone SE / Mini (Hochformat)** | `375 × 667 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Suche/Filter, Aktualisieren, Positionsdetails ohne Hover; Zeitraumwahl (5 Optionen): offen, siehe unten |
+| **iPhone 15 / 16 (Hoch- & Querformat)** | `390 × 844 px` / `393 × 852 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Treemap-Legende mit Umbruch, Sortierung, kleine Positionen (`< 0,1 %`); Kennzahlen-Umbruch: offen, siehe unten |
 | **iPhone Plus / Pro Max** | `430 × 932 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Vollständiger Bedienablauf inkl. Datenstatus-Expander und Positionsübersicht |
 | **Tablet / schmales Fenster** | `768 × 1024 px` | macOS Safari, Google Chrome | Spaltenumbruch der Filterleiste und Kennzahlen |
 | **Mac Desktop** | `1280 × 800 px`, `1440 × 900 px` | macOS Safari, Google Chrome | Mehrspaltige Darstellung, Tastaturnavigation (`Tab`, `Shift+Tab`, `Enter`, `Space`, Pfeiltasten) |
 
-Zusätzlich sichern deterministische Offline-Tests in [`tests/test_mobile_accessibility.py`](../tests/test_mobile_accessibility.py) den kompletten Bedienablauf ohne Hover, die Vollständigkeit aller Tooltip-Informationen außerhalb der Treemap sowie die WCAG-AA-Kontraste automatisiert ab. Die Zeitraumauswahl mit fünf Optionen (Heute bis Seit Kauf, seit PR #98) ist bisher nur per Streamlit-AppTest geprüft; die Prüfung im Browser auf dem iPhone steht noch aus.
+Zusätzlich sichern deterministische Offline-Tests in [`tests/test_mobile_accessibility.py`](../tests/test_mobile_accessibility.py) den kompletten Bedienablauf ohne Hover, die Vollständigkeit aller Tooltip-Informationen außerhalb der Treemap sowie die WCAG-AA-Kontraste automatisiert ab. Offen ist die Prüfung in iOS Safari auf dem iPhone für die Zeitraumauswahl mit fünf Optionen (Heute bis Seit Kauf, seit PR #98) und für die Kennzahl-Kacheln „Größter Gewinner/Verlierer“ (Prozentwert groß, Ticker oder Name klein darunter, seit #102). Beides ist per Streamlit-AppTest geprüft. Die Kennzahl-Kacheln wurden zusätzlich mit synthetischen Daten in headless Chrome bei `1280 × 800` und `390 × 844 px` gerendert: Der Prozentwert blieb vollständig sichtbar, lange Namen wurden bei `1280 px` mit „…“ gekürzt.
 
 ## 2. Touch-Ziele, Umbruch und schmale Ansicht
 

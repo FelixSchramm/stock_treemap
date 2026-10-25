@@ -367,8 +367,8 @@ def test_kpis_report_coverage_winner_loser_and_personal_cost_comparison():
     assert kpis.coverage_label == "3 von 4 bewertet"
     assert kpis.measured_group_count == 2
     assert "2 von 4 aktiven Positionen mit Kennzahl" in kpis.performance_reference_label
-    assert kpis.winner_label == "Gewinner: +50,00 %"
-    assert kpis.loser_label == "Verlierer: -20,00 %"
+    assert (kpis.winner_label, kpis.winner_note) == ("+50,00 %", "Gewinner")
+    assert (kpis.loser_label, kpis.loser_note) == ("-20,00 %", "Verlierer")
     assert kpis.personal_eligible_group_count == 2
     assert kpis.personal_cost_basis_eur == Decimal("200")
     assert kpis.personal_gain_eur == Decimal("30")
@@ -394,8 +394,8 @@ def test_kpi_labels_use_full_names_when_stock_and_derivative_share_a_ticker():
     )
     kpis = build_kpis(valuation, [Performance(Decimal("-3")), Performance(Decimal("8"))])
     assert len(valuation.groups) == 2
-    assert kpis.winner_label == "Turbo Long Alpha Synth: +8,00 %"
-    assert kpis.loser_label == "Alpha Synth AG: -3,00 %"
+    assert (kpis.winner_label, kpis.winner_note) == ("+8,00 %", "Turbo Long Alpha Synth")
+    assert (kpis.loser_label, kpis.loser_note) == ("-3,00 %", "Alpha Synth AG")
 
 
 def test_kpi_labels_keep_full_names_without_ticker_despite_a_shared_first_word():
@@ -404,8 +404,8 @@ def test_kpi_labels_keep_full_names_without_ticker_despite_a_shared_first_word()
         position("Synthfonds Schwellenländer", InstrumentType.ETF, "2", "50", row=2),
     )
     kpis = build_kpis(valuation, [Performance(Decimal("5")), Performance(Decimal("-2"))])
-    assert kpis.winner_label == "Synthfonds Core Welt: +5,00 %"
-    assert kpis.loser_label == "Synthfonds Schwellenländer: -2,00 %"
+    assert (kpis.winner_label, kpis.winner_note) == ("+5,00 %", "Synthfonds Core Welt")
+    assert (kpis.loser_label, kpis.loser_note) == ("-2,00 %", "Synthfonds Schwellenländer")
 
 
 def test_kpi_labels_use_a_unique_ticker_and_the_full_name_without_ticker():
@@ -414,9 +414,24 @@ def test_kpi_labels_use_a_unique_ticker_and_the_full_name_without_ticker():
         position("Gamma Synth AG", InstrumentType.STOCK, "1", "30", row=2),
     )
     kpis = build_kpis(valuation, [Performance(Decimal("7")), Performance(Decimal("-1.5"))])
-    assert kpis.winner_label == "SYN-B: +7,00 %"
+    assert (kpis.winner_label, kpis.winner_note) == ("+7,00 %", "SYN-B")
     assert kpis.winner.name == "Beta Synth AG"
-    assert kpis.loser_label == "Gamma Synth AG: -1,50 %"
+    assert (kpis.loser_label, kpis.loser_note) == ("-1,50 %", "Gamma Synth AG")
+
+
+def test_kpi_without_winner_or_loser_shows_n_v_with_a_short_reason():
+    valuation = valued(
+        position("Delta Synth AG", InstrumentType.STOCK, "1", "10", ticker="SYN-D", row=1),
+        position("Epsilon Synth AG", InstrumentType.STOCK, "1", "10", row=2),
+    )
+    only_losses = build_kpis(valuation, [Performance(Decimal("-4")), Performance(None)])
+    assert only_losses.winner is None
+    assert (only_losses.winner_label, only_losses.winner_note) == ("n. v.", "keine > 0 %")
+    assert (only_losses.loser_label, only_losses.loser_note) == ("-4,00 %", "SYN-D")
+
+    unmeasured = build_kpis(valuation, [Performance(None), Performance(None)])
+    assert (unmeasured.winner_label, unmeasured.winner_note) == ("n. v.", None)
+    assert (unmeasured.loser_label, unmeasured.loser_note) == ("n. v.", None)
 
 
 def test_sort_table_rows_always_places_missing_values_last_and_breaks_ties_by_name():

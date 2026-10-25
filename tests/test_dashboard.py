@@ -5,6 +5,7 @@ import socket
 from pathlib import Path
 
 import pytest
+from streamlit.proto.Metric_pb2 import Metric as MetricProto
 from streamlit.testing.v1 import AppTest
 
 from portfolio_dashboard.demo import DEMO_TIMESTAMP, demo_snapshot
@@ -56,9 +57,14 @@ def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline
     assert app.radio[0].options == [*COURSE_PERIODS, "Seit Kauf"]
     assert app.radio[0].value == "Heute"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
-    # Unique demo tickers stay compact; the full name is the metric's help text.
-    assert (app.metric[2].value, app.metric[2].help) == ("DEMO-A: +1,25 %", "Demo-Aktie A")
-    assert (app.metric[3].value, app.metric[3].help) == ("DEMO-B: -0,80 %", "Demo-Fonds B")
+    # The percentage is the value; the unique ticker sits below as a gray,
+    # arrowless note, and the full name is the metric's help text.
+    winner, loser = app.metric[2], app.metric[3]
+    assert (winner.value, winner.delta, winner.help) == ("+1,25 %", "DEMO-A", "Demo-Aktie A")
+    assert (loser.value, loser.delta, loser.help) == ("-0,80 %", "DEMO-B", "Demo-Fonds B")
+    for metric in (winner, loser):
+        assert metric.proto.direction == MetricProto.MetricDirection.NONE
+        assert metric.proto.color == MetricProto.MetricColor.GRAY
     assert "Demo-Depot · 2 Beispielpositionen" in [item.value for item in app.caption]
     assert "Datenstand (synthetisch): 23.10.2026, 12:00 UTC" in [
         item.value for item in app.caption
