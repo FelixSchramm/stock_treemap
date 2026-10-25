@@ -63,7 +63,6 @@ Am 24.10.2026 wurden der aktuelle offizielle Release **yfinance 1.7.0** und sein
 Quellcode geprüft (Tag-Commit `3d9d2f0cacb662bff689874cd6113bae3a30a885`).
 Die Laufzeitabhängigkeit ist exakt auf diese schon zuvor im Lock vorhandene
 Version festgelegt. Es wurden keine sonstigen Paketversionen aktualisiert.
-Das bisherige `prototype`-Extra bleibt als leeres Kompatibilitäts-Extra erhalten.
 
 - [`PriceHistory.history`](https://github.com/ranaroussi/yfinance/blob/1.7.0/yfinance/scrapers/history.py)
   hat standardmäßig `auto_adjust=True`, `back_adjust=False`, `repair=False`,

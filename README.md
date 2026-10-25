@@ -2,7 +2,7 @@
 
 ## Geplantes Depot-Dashboard
 
-Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschließlich synthetischen Beispieldaten. Fachmodule liegen unter `src/portfolio_dashboard` und importieren weder Streamlit noch externe Datenanbieter; die UI und die separate Zugriffssperre nutzen Streamlit. Der Produktiveinstieg verlangt eine native OIDC-Sitzung und eine explizite Besitzerfreigabe. Echte Datenquellen, Bewertung und die vollständige Dashboard-Oberfläche folgen in späteren Issues. Der frühere Heatmap-Prototyp bleibt separat erhalten.
+Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschließlich synthetischen Beispieldaten. Fachmodule liegen unter `src/portfolio_dashboard` und importieren weder Streamlit noch externe Datenanbieter; die UI und die separate Zugriffssperre nutzen Streamlit. Der Produktiveinstieg verlangt eine native OIDC-Sitzung und eine explizite Besitzerfreigabe. Echte Datenquellen, Bewertung und die vollständige Dashboard-Oberfläche folgen in späteren Issues.
 
 - [Umsetzungsplan](PROJECT_PLAN.md)
 - [Epics, Issues und Reihenfolge](docs/backlog/README.md)
@@ -108,36 +108,12 @@ uv run --locked ruff check .
 uv run --locked pytest
 ```
 
-Ruff prüft Python-Fehler, ungenutzte/undefinierte Namen und Importreihenfolge im gesamten Quellbaum einschließlich Legacy-Prototyp. Pytest führt die gezielten Tests unter `tests/` aus; ein fehlgeschlagener Test beendet den CI-Job mit Fehler. `pytest-socket` sperrt IP-Sockets standardmäßig über die Pytest-Konfiguration. Lokale Unix-Sockets bleiben für Streamlits asyncio-Ereignisschleife erlaubt; der separate Fachmodul-Importtest sperrt auch diese. Fixtures bleiben synthetisch. CI erhält keine Produktions-Secrets und benötigt weder echtes Sheet noch Kursanbieterzugang. Nur Checkout, Werkzeug- und Dependency-Installation benötigen Netzwerkzugriff.
+Ruff prüft Python-Fehler, ungenutzte/undefinierte Namen und Importreihenfolge im gesamten Quellbaum. Pytest führt die gezielten Tests unter `tests/` aus; ein fehlgeschlagener Test beendet den CI-Job mit Fehler. `pytest-socket` sperrt IP-Sockets standardmäßig über die Pytest-Konfiguration. Lokale Unix-Sockets bleiben für Streamlits asyncio-Ereignisschleife erlaubt; der separate Fachmodul-Importtest sperrt auch diese. Fixtures bleiben synthetisch. CI erhält keine Produktions-Secrets und benötigt weder echtes Sheet noch Kursanbieterzugang. Nur Checkout, Werkzeug- und Dependency-Installation benötigen Netzwerkzugriff.
 
 Für jede Aufgabe von `agents/integration` einen kurzen Issue-Branch anlegen und einen PR zurück nach `agents/integration` öffnen. Abhängige, noch offene PRs und deren Basis-Commit ausdrücklich im PR nennen. Vor dem Zusammenführen müssen der Check **Locked install, lint, tests (Python 3.12)** und die unabhängige fachliche Prüfung erfolgreich sein. Exakte Befehle, Commit-SHA und den tatsächlichen Actions-Lauf im PR dokumentieren; ein lokaler Erfolg ist kein CI-Nachweis. Diese Vorgabe konfiguriert keinen Branch-Schutz und erteilt keine Merge-Freigabe.
 
 Live-Prüfungen gehören in einen getrennten, ausdrücklich autorisierten Ablauf nach Auswahl der Hosting-Umgebung und ihrer Secret-Verwaltung: echte Sheet-/Kursabrufe, Login/Besitzerzugriff und geschützte HTTPS-URL gemäß [ADR 0009](docs/adr/0009-betrieb-und-qualitaet.md). Sie laufen nicht in diesem CI-Workflow; synthetische Tests belegen keine Provider-Verfügbarkeit. Private Antworten und Credentials dürfen weder Test-Fixtures noch Logs oder PR-Anhänge werden.
 
-## Vorhandener Prototyp (Legacy)
-
-Das bestehende `heatmap.py` erzeugt eine Aktien-Heatmap (Treemap): Kachelgroesse = Boersenwert, Farbe = Tagesveraenderung. `requirements.txt` gilt ausschließlich für diesen Legacy-Prototyp; es ist kein zweites Dependency-Set für das Dashboard. Alternativ lässt sich der Prototyp mit den gesperrten Projektversionen über `uv sync --locked --extra prototype` und `uv run --locked --extra prototype python heatmap.py` betreiben (persönliche `tickers.txt` und Yahoo-Netzwerkzugriff erforderlich).
-
-### Legacy-Nutzung
-
-```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp tickers.example.txt tickers.txt   # anschließend eigene Ticker eintragen
-python heatmap.py
-```
-
-Das Skript erzeugt `heatmap.html` und oeffnet sie im Browser.
-
-### Eigene Aktien im Legacy-Prototyp
-
-`tickers.example.txt` nach `tickers.txt` kopieren und eigene Ticker eintragen, ein Ticker pro Zeile. Die persönliche Liste bleibt lokal und wird nicht versioniert.
-
-### Hinweise zum Legacy-Prototyp
-
-- Datenquelle ist `yfinance` (inoffiziell, Kurse koennen verzoegert sein).
-- Keine Anlageberatung.
-
+Kursdaten stammen aus `yfinance` (inoffiziell, Kurse können verzögert sein). Keine Anlageberatung.
 
 Sheet-ID und Dokumentlinks gehören in lokale Konfiguration oder `docs/private/`, nicht in das Repository. `docs/DATA_SOURCE.md` beschreibt ausschließlich das allgemeine Importschema.
