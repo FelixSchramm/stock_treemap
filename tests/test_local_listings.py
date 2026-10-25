@@ -247,3 +247,64 @@ def test_local_coordinator_values_assigned_listings_with_provider_quotes(
     assert bundle.valuation.total_eur == Decimal("110")
     assert bundle.returns.total.return_percent == Decimal("37.5")
     assert bundle.period_reasons["Heute"] == ("history_unavailable",)
+
+
+def test_secret_entries_use_the_same_listing_rules_as_the_file(tmp_path):
+    entries = [
+        {"isin": "DE000SYN0001", "type": "stock", "symbol": "SYN.DE",
+         "venue": "GER", "equity_form": "share"},
+        {"isin": "LU000SYN0002", "type": "etf", "symbol": "SYNE.DE",
+         "venue": "GER", "share_class": "Acc"},
+    ]
+    assert local_source.parse_listings(entries) == local_source.load_listings(
+        listings_file(tmp_path, STOCK + ETF)
+    )
+    assert local_source.parse_listings([]) == ()
+    with pytest.raises(local_source.ListingsFileError, match=r"\[\[listing\]\]"):
+        local_source.parse_listings({"isin": "DE000SYN0001"})
+    with pytest.raises(local_source.ListingsFileError, match="Eintrag 1") as error:
+        local_source.parse_listings([entries[0] | {"venue": "XNYS"}])
+    assert "SYN" not in str(error.value)
+
+
+def test_production_coordinator_uses_secret_key_and_listings(monkeypatch):
+    settings = {
+        "PORTFOLIO_MODE": "production",
+        "PORTFOLIO_OWNER_ISSUER": "https://accounts.google.com",
+        "PORTFOLIO_OWNER_SUBJECT": "synthetic-owner-subject",
+        "PORTFOLIO_SHEET_ID": "synthetic-source-id",
+        "PORTFOLIO_SHEET_RANGE": "'Synthetic tab'!A1:N10",
+    }
+    auth = {
+        "client_id": "synthetic-client-id",
+        "client_secret": "synthetic-client-secret",
+        "cookie_secret": "synthetic-cookie-secret",
+        "redirect_uri": "https://dashboard.example.invalid/oauth2callback",
+        "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
+    }
+    key = {"type": "service_account", "synthetic": True}
+    seen = []
+
+    def session_from_info(info):
+        seen.append(info)
+        return SyntheticSession()
+
+    def no_file(path):
+        raise AssertionError("Production read a key file")
+
+    monkeypatch.setattr(local_source, "build_readonly_session", no_file)
+    monkeypatch.setattr(
+        local_source, "build_readonly_session_from_info", session_from_info
+    )
+    monkeypatch.setattr(local_source, "YFinanceProvider", EurProvider)
+    entries = [{"isin": "DE000SYN0001", "type": "stock", "symbol": "SYN.DE",
+                "venue": "GER", "equity_form": "share"}]
+    bundle = local_source.build_production_coordinator(
+        load_config(settings, auth_settings=auth), key, entries
+    ).load()
+
+    assert seen == [key]
+    assert bundle.available
+    (member,) = bundle.valuation.positions
+    assert member.position.valuation.provenance.source is ValuationSource.PROVIDER
+    assert bundle.valuation.total_eur == Decimal("110")

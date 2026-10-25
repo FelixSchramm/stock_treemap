@@ -176,6 +176,23 @@ def test_local_mode_renders_own_data_without_demo_notices(local_app, address):
     assert app.dataframe
 
 
+def test_local_mode_never_reads_hosted_secrets(local_app, monkeypatch):
+    make_app, calls = local_app
+
+    class Forbidden:
+        def __getattr__(self, name):
+            raise AssertionError("Local mode consulted st.secrets")
+
+        def __getitem__(self, key):
+            raise AssertionError("Local mode consulted st.secrets")
+
+    monkeypatch.setattr(st, "secrets", Forbidden())
+    app = make_app("127.0.0.1").run()
+    assert not app.exception
+    assert calls == [Mode.LOCAL]
+    assert app.dataframe
+
+
 def test_local_mode_builds_the_coordinator_once_per_session(local_app):
     make_app, calls = local_app
     app = make_app("127.0.0.1").run()

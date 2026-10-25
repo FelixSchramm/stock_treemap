@@ -25,7 +25,15 @@ def production_settings() -> dict[str, str]:
         "PORTFOLIO_OWNER_SUBJECT": "synthetic-owner-subject",
         "PORTFOLIO_SHEET_ID": "synthetic-source-id",
         "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
-        "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-file.json",
+    }
+
+
+def local_settings() -> dict[str, str]:
+    return {
+        "PORTFOLIO_MODE": "local",
+        "PORTFOLIO_SHEET_ID": "synthetic-source-id",
+        "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
+        "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-local-file.json",
     }
 
 
@@ -100,6 +108,16 @@ def test_production_requires_explicit_nonplaceholder_settings(field):
     values[field] = "<PLACEHOLDER>"
     with pytest.raises(ConfigurationError):
         load_config(values, auth_settings=production_auth())
+
+
+def test_production_never_takes_a_key_file_path():
+    # The Sheet key comes from the server-side [sheets_service_account] secret.
+    values = production_settings() | {
+        "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-file.json",
+    }
+    config = load_config(values, auth_settings=production_auth())
+    assert config.source.credentials_file is None
+    assert config.source.listings_file is None
 
 
 @pytest.mark.parametrize("field", ["PORTFOLIO_MODE", "PORTFOLIO_SOURCE", "PORTFOLIO_PROVIDER", "PORTFOLIO_LOGIN_PROVIDER", "PORTFOLIO_OWNER_ISSUER"])
@@ -216,5 +234,8 @@ def test_private_path_is_optional_and_hidden_in_production_configuration():
 
 
 def test_local_private_path_is_explicit_without_loading_it():
-    values = production_settings() | {"PORTFOLIO_MODE": "local", "PORTFOLIO_PRIVATE_DATA_DIR": "/synthetic-private-runtime"}
-    assert load_config(values).private_data_dir == "/synthetic-private-runtime"
+    values = local_settings() | {"PORTFOLIO_PRIVATE_DATA_DIR": "/synthetic-private-runtime"}
+    config = load_config(values)
+    assert config.private_data_dir == "/synthetic-private-runtime"
+    assert config.source.credentials_file == values["PORTFOLIO_SHEETS_CREDENTIALS_FILE"]
+    assert not config.login.enabled

@@ -177,6 +177,111 @@ def test_runtime_defaults_fetch_current_streamlit_identity_and_address(
         repo.list()
 
 
+@pytest.fixture
+def inline_production_runtime(tmp_path, monkeypatch):
+    # Exercise the real runtime_config/load_config chain, never host secrets.
+    for name in tuple(os.environ):
+        if name.startswith("PORTFOLIO_"):
+            monkeypatch.delenv(name)
+    settings = {
+        "PORTFOLIO_MODE": "production",
+        "PORTFOLIO_OWNER_ISSUER": LOGIN.owner_issuer,
+        "PORTFOLIO_OWNER_SUBJECT": LOGIN.owner_subject,
+        "PORTFOLIO_SHEET_ID": "synthetic-source-id",
+        "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
+        "PORTFOLIO_PRIVATE_DATA_DIR": str(tmp_path / "private"),
+    }
+    for name, value in settings.items():
+        monkeypatch.setenv(name, value)
+
+    class SyntheticSecrets(dict):
+        def get(self, key, default=None):
+            # The DB gate needs auth, never Sheet credentials or listings.
+            assert key == "auth"
+            return super().get(key, default)
+
+    secrets = SyntheticSecrets({
+        "auth": {
+            "client_id": LOGIN.client_id,
+            "client_secret": "synthetic-client-secret",
+            "cookie_secret": "synthetic-cookie-secret",
+            "redirect_uri": "https://dashboard.example.invalid/oauth2callback",
+            "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
+        },
+        "sheets_service_account": {"type": "service_account", "synthetic": True},
+        "listing": [],
+    })
+    monkeypatch.setattr(storage.st, "secrets", secrets)
+    monkeypatch.setattr(storage.st, "user", claims())
+    monkeypatch.setattr(auth.time, "time", lambda: NOW)
+    return tmp_path / "private"
+
+
+def test_runtime_inline_production_owner_persists_without_credential_file(
+    inline_production_runtime,
+):
+    current = storage.runtime_config()
+    assert current.source.credentials_file is None
+    assert current.private_data_dir == str(inline_production_runtime)
+    database = PrivateDatabase()
+    repo = WatchlistRepository(database)
+    record = WatchlistEntry("synthetic-inline-id", "Synthetische Beobachtung")
+    repo.add(record)
+    database.close()
+    reopened = PrivateDatabase()
+    try:
+        repo = WatchlistRepository(reopened)
+        assert repo.get(record.entry_id) == record
+        updated = repo.update(replace(record, label="Synthetische Änderung"))
+        assert repo.list() == (updated,)
+        repo.remove(updated.entry_id, expected_revision=updated.revision)
+        assert repo.list() == ()
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize(
+    "bad_claims",
+    [{}, {"sub": "synthetic-other"}, {"exp": NOW}, {"is_logged_in": False}],
+)
+@pytest.mark.parametrize("existing", [False, True])
+def test_runtime_inline_production_rechecks_owner_before_every_private_access(
+    inline_production_runtime, monkeypatch, bad_claims, existing
+):
+    repo = WatchlistRepository(PrivateDatabase())
+    if existing:
+        repo.add(WatchlistEntry("synthetic-id", "Synthetische Beobachtung"))
+    supplied = claims() | bad_claims if bad_claims else {}
+    monkeypatch.setattr(storage.st, "user", supplied)
+
+    def forbidden(*args):
+        raise AssertionError("unauthorized filesystem access")
+
+    monkeypatch.setattr(storage, "_database_path", forbidden)
+    for operation in operations(repo):
+        with pytest.raises(PrivateStorageError) as error:
+            operation()
+        assert error.value.code == "access"
+    assert inline_production_runtime.exists() is existing
+
+
+def test_runtime_inline_production_rechecks_owner_configuration(
+    inline_production_runtime, monkeypatch,
+):
+    repo = WatchlistRepository(PrivateDatabase())
+    assert repo.list() == ()
+    monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked")
+
+    def forbidden(*args):
+        raise AssertionError("revoked owner filesystem access")
+
+    monkeypatch.setattr(storage, "_database_path", forbidden)
+    for operation in operations(repo):
+        with pytest.raises(PrivateStorageError) as error:
+            operation()
+        assert error.value.code == "access"
+
+
 def test_demo_ignores_private_path_and_never_consults_identity(tmp_path):
     private = tmp_path / "synthetic-real-placeholder"
     private.mkdir(mode=0o700)

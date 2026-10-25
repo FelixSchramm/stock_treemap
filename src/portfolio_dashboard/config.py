@@ -140,17 +140,21 @@ def load_config(
         kind=SourceKind.GOOGLE_SHEETS,
         spreadsheet_id=_required(values, "PORTFOLIO_SHEET_ID"),
         worksheet_range=_required(values, "PORTFOLIO_SHEET_RANGE"),
-        credentials_file=_required(values, "PORTFOLIO_SHEETS_CREDENTIALS_FILE"),
     )
     if mode is Mode.LOCAL:
         # No login and no auth secrets; app.py refuses non-loopback addresses.
+        # Only local mode reads key/listings files; production uses server
+        # secrets, so a hosted run switched to local finds no key there.
         # Without a listings file the local mode stays Sheet-only.
+        credentials_file = _required(values, "PORTFOLIO_SHEETS_CREDENTIALS_FILE")
         listings_file = _text(values, "PORTFOLIO_LISTINGS_FILE") or None
         if listings_file is not None and (
             listings_file.startswith("<") or listings_file == "CHANGE_ME"
         ):
             raise ConfigurationError("Lokale Konfiguration ungültig: PORTFOLIO_LISTINGS_FILE.")
-        source = replace(source, listings_file=listings_file)
+        source = replace(
+            source, credentials_file=credentials_file, listings_file=listings_file
+        )
         return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig(), private_data_dir)
 
     if _text(values, "PORTFOLIO_LOGIN_PROVIDER", "google") != "google":

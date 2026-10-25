@@ -448,7 +448,7 @@ HINT_HEADERS = SHEET_HEADERS + (
 )
 
 
-def hinted_row(isin="DE0000000001", venue="Synthetic venue", price_date="23.10.2026"):
+def hinted_row(isin="DE0000000001", venue="Synthetic venue", price_date="05.01.2026"):
     return synthetic_row() + ["", "", "", "", isin, venue, price_date]
 
 
@@ -467,20 +467,30 @@ def test_optional_r_to_t_columns_carry_unverified_hints_and_row_price_date():
     assert position.instrument.trading_venue is None
     assert position.instrument.provider_mapping is None
     observed = position.valuation.provenance.observed_at
-    assert observed.date().isoformat() == "2026-10-23"
+    assert observed.date().isoformat() == "2026-01-05"
     assert observed.tzinfo is not None
     assert "unknown_price_time" not in {w.code for w in position.warnings}
 
 
 @pytest.mark.parametrize(
-    "price_date", [46318, 46318.0, Decimal("46318"), "2026-10-23", "23.10.2026"]
+    ("price_date", "expected_date"),
+    [
+        (46027, "2026-01-05"),
+        (46027.0, "2026-01-05"),
+        (Decimal("46027"), "2026-01-05"),
+        ("2026-01-05", "2026-01-05"),
+        ("05.01.2026", "2026-01-05"),
+        (1, "1899-12-31"),
+        ("1899-12-31", "1899-12-31"),
+        ("31.12.1899", "1899-12-31"),
+    ],
 )
-def test_price_date_accepts_serial_iso_and_german_dates(price_date):
+def test_price_date_accepts_serial_iso_and_german_dates(price_date, expected_date):
     metadata = replace(GERMAN, sheet_price_observed_at=IMPORTED - timedelta(hours=1))
     (position,) = parse_hinted(
         [hinted_row(price_date=price_date)], metadata
     ).active_positions
-    assert position.valuation.provenance.observed_at.date().isoformat() == "2026-10-23"
+    assert position.valuation.provenance.observed_at.date().isoformat() == expected_date
     assert not {"invalid_price_date", "unknown_price_time"} & {
         w.code for w in position.warnings
     }
@@ -492,11 +502,23 @@ def test_price_date_accepts_serial_iso_and_german_dates(price_date):
     [
         "gestern",
         "31.02.2026",
+        "01.01.0001",
+        "0001-01-01",
+        "30.12.1899",
+        "1899-12-30",
+        "06.01.2026",
+        "2026-01-06",
+        "23.10.2026",
+        "2026-10-23",
+        "23.10.2099",
         True,
         0,
+        46028,
+        46318,
+        99999,
         100000,
-        46318.5,
-        Decimal("46318.5"),
+        46027.5,
+        Decimal("46027.5"),
         float("nan"),
         float("inf"),
         float("-inf"),
@@ -525,7 +547,10 @@ def test_invalid_price_date_keeps_price_with_unknown_time(price_date, metadata_o
     assert {w.code for w in position.valuation.warnings} == {"unknown_price_time"}
     (warning,) = [w for w in result.snapshot.warnings if w.code == "invalid_price_date"]
     assert (warning.field, warning.source_row) == ("price_date", 2)
-    assert valid.valuation.provenance.observed_at.date().isoformat() == "2026-10-23"
+    if isinstance(price_date, str):
+        assert price_date not in repr(result.snapshot.warnings)
+        assert price_date not in repr(position.warnings)
+    assert valid.valuation.provenance.observed_at.date().isoformat() == "2026-01-05"
     assert not {"invalid_price_date", "unknown_price_time"} & {
         w.code for w in valid.warnings
     }

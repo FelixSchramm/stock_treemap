@@ -17,10 +17,14 @@ from streamlit.user_info import UserInfoProxy
 
 import portfolio_dashboard.auth as auth
 import portfolio_dashboard.demo as demo
+import portfolio_dashboard.local_source as local_source
 import portfolio_dashboard.ui as ui
 from portfolio_dashboard.config import LoginConfig
+from portfolio_dashboard.quote_cache import QuoteCache
+from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
+real_production_coordinator = local_source.build_production_coordinator
 NOW = 2_000_000_000
 LOGIN = LoginConfig(
     enabled=True, owner_issuer="https://accounts.google.com",
@@ -117,6 +121,22 @@ def protected_app(monkeypatch):
     monkeypatch.setattr(Path, "open", guard_path_open)
     monkeypatch.setattr(socket, "create_connection", unexpected)
     calls = []
+    snapshot = demo.demo_snapshot
+
+    class ForbiddenProvider:
+        def latest_quote(self, *args, **kwargs):
+            raise AssertionError("Synthetic positions without listings requested a quote")
+
+        history = fx = latest_quote
+
+    def own_coordinator(config, service_account, listing_entries):
+        # Synthetic stand-in for the owner's Sheet; real builders stay unreached.
+        calls.append("build_production_coordinator")
+        return PortfolioRefreshCoordinator(
+            lambda attempted_at: snapshot(), QuoteCache(ForbiddenProvider())
+        )
+
+    monkeypatch.setattr(local_source, "build_production_coordinator", own_coordinator)
     for module, name in (
         (demo, "demo_snapshot"),
         (demo, "demo_valuation"),
@@ -140,6 +160,8 @@ def protected_app(monkeypatch):
             "redirect_uri": "https://dashboard.example.invalid/oauth2callback",
             "server_metadata_url": "https://accounts.google.com/.well-known/openid-configuration",
         }
+        app.secrets["sheets_service_account"] = {"type": "service_account", "synthetic": True}
+        app.secrets["listing"] = []
         return app
 
     return make_app, calls
@@ -165,8 +187,10 @@ def test_owner_access_and_revocation_are_checked_on_each_run(protected_app, monk
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
     assert not app.exception
-    assert calls == ["demo_snapshot", "demo_valuation", "demo_rows", "render_dashboard"]
-    assert app.dataframe[0].value["Instrument"].tolist() == ["Demo-Aktie A", "Demo-Fonds B"]
+    assert calls == ["build_production_coordinator", "render_dashboard"]
+    assert app.dataframe
+    assert any(caption.value.startswith("Eigenes Depot") for caption in app.caption)
+    assert not any("synthetische" in info.value for info in app.info)
     calls.clear()
     monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
     app.run()
@@ -182,7 +206,60 @@ def test_native_streamlit_user_mapping_reaches_the_same_owner_gate(protected_app
     monkeypatch.setattr(st, "user", UserInfoProxy())
     app.run()
     assert not app.exception and app.dataframe
-    assert calls == ["demo_snapshot", "demo_valuation", "demo_rows", "render_dashboard"]
+    assert calls == ["build_production_coordinator", "render_dashboard"]
+
+
+def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    seen = []
+
+    def record(config, service_account, listing_entries):
+        seen.append((dict(service_account), list(listing_entries)))
+        return own(config, service_account, listing_entries)
+
+    own = local_source.build_production_coordinator
+    monkeypatch.setattr(local_source, "build_production_coordinator", record)
+    app = make_app(owner_claims())
+    app.secrets["listing"] = [{"isin": "DE000SYN0001"}]
+    app.run()
+    app.run()
+    assert not app.exception and app.dataframe
+    assert calls == ["build_production_coordinator", "render_dashboard", "render_dashboard"]
+    assert seen == [({"type": "service_account", "synthetic": True}, [{"isin": "DE000SYN0001"}])]
+
+
+@pytest.mark.parametrize("section", [None, {"type": "authorized_user", "secret": "synthetic-secret"}])
+def test_missing_or_invalid_sheet_key_secret_shows_only_the_safe_message(protected_app, monkeypatch, section):
+    make_app, calls = protected_app
+    monkeypatch.setattr(
+        local_source, "build_production_coordinator", real_production_coordinator
+    )
+    app = make_app(owner_claims())
+    if section is None:
+        del app.secrets["sheets_service_account"]
+    else:
+        app.secrets["sheets_service_account"] = section
+    app.run()
+    assert not app.exception
+    # str(app) would include AppTest's own secret store; check the rendered output.
+    assert [error.value for error in app.error] == [
+        "Service-Account-Schlüssel fehlt oder ist ungültig."
+    ]
+    assert calls == [] and not app.dataframe and not app.title
+
+
+def test_invalid_listing_secret_shows_only_the_safe_message(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    monkeypatch.setattr(
+        local_source, "build_production_coordinator", real_production_coordinator
+    )
+    app = make_app(owner_claims())
+    app.secrets["listing"] = [{"isin": "DE000SYN0001", "symbol": "SYN.DE"}]
+    app.run()
+    assert not app.exception
+    assert "Eintrag 1" in app.error[0].value
+    assert "SYN" not in app.error[0].value
+    assert calls == [] and not app.dataframe
 
 
 @pytest.mark.parametrize("missing", ["PORTFOLIO_OWNER_SUBJECT", "PORTFOLIO_SHEET_ID", "auth"])

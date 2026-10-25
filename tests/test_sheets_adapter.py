@@ -435,12 +435,12 @@ def test_requests_session_uses_only_one_synthetic_get(status, caplog):
 def test_range_up_to_column_t_reads_optional_hint_columns():
     source = replace(SOURCE, worksheet_range="'Synthetic private tab'!A1:T30")
     hint_headers = list(SHEET_HEADERS) + [""] * 4 + ["ISIN", "Handelsplatz", "Kursdatum"]
-    data = row() + [""] * 4 + ["DE0000000001", "Synthetic venue", 46318]
+    data = row() + [""] * 4 + ["DE0000000001", "Synthetic venue", 46027]
     reader = SheetsAdapter(source, METADATA, SyntheticSession(response([hint_headers, data])))
     result = reader.read(attempted_at=ATTEMPT)
     (position,) = result.snapshot.positions
     assert position.instrument.source_isin == "DE0000000001"
-    assert position.valuation.provenance.observed_at.date().isoformat() == "2026-10-23"
+    assert position.valuation.provenance.observed_at.date().isoformat() == "2026-01-05"
 
 
 def test_rows_wider_than_the_configured_end_column_fail_atomically():
