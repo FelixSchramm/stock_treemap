@@ -34,17 +34,14 @@ from portfolio_dashboard.treemap import (
     sort_table_rows,
 )
 from portfolio_dashboard.ui import (
-    COURSE_VIEW,
     FILTER_CATEGORY_KEY,
     FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
     MOBILE_ACCESSIBILITY_CSS,
-    PERSONAL_VIEW,
     REFRESH_BUTTON_KEY,
     SORT_DIRECTION_ASC,
     SORT_FIELD_KEY,
     SORT_ORDER_KEY,
-    VIEW_KEY,
 )
 from portfolio_dashboard.valuations import value_portfolio
 

@@ -17,7 +17,6 @@ from portfolio_dashboard.ui import (
     FILTER_CATEGORY_KEY,
     FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
-    PERSONAL_VIEW,
     SORT_DIRECTION_ASC,
     SORT_FIELD_KEY,
     SORT_ORDER_KEY,
