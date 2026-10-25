@@ -4,7 +4,9 @@ M8-03 (#72) setzt die typisierten Verträge aus
 [INTRINSIC_VALUE.md](INTRINSIC_VALUE.md) und [ADR 0010](adr/0010-innerer-wert-fcff.md)
 um. `fundamentals` und `intrinsic_models` verwenden ausschließlich die
 Standardbibliothek und bestehende reine Instrumentmodelle. Es gibt hier keinen
-Providerabruf, Cache, Speicherpfad, Editor oder DCF-Rechner. `models.Valuation`
+Providerabruf, Cache, Speicherpfad, Editor oder DCF-Rechner. Die getrennte
+[private Szenarioablage](PRIVATE_SCENARIOS.md) (#76) persistiert diese Verträge
+über den gemeinsamen geschützten SQLite-Zugriff. `models.Valuation`
 bleibt die vorhandene Marktpreisbeobachtung.
 
 ## Identität und gemeinsamer Datenstand
