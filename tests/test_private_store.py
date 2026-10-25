@@ -503,7 +503,10 @@ def test_committed_schema_is_versioned_and_domain_failure_rolls_back(tmp_path):
             raise ValueError("synthetic rollback")
     assert repo.list() == ()
     with sqlite3.connect(directory / "private.sqlite3") as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert (
+            connection.execute("PRAGMA user_version").fetchone()[0]
+            == storage.SCHEMA_VERSION
+        )
         assert (
             connection.execute("PRAGMA application_id").fetchone()[0] == APPLICATION_ID
         )

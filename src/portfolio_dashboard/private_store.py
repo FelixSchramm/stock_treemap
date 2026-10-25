@@ -28,14 +28,26 @@ from portfolio_dashboard.config import (
 )
 
 APPLICATION_ID = 0x50574442
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 WATCHLIST_SCHEMA = (
     "CREATE TABLE watchlist (entry_id TEXT PRIMARY KEY NOT NULL, "
     "payload TEXT NOT NULL, instrument_id TEXT UNIQUE, "
     "revision INTEGER NOT NULL CHECK (revision >= 1))"
 )
 # Each migration runs inside the same transaction as its version marker.
-MIGRATIONS = {1: (WATCHLIST_SCHEMA,)}
+SCENARIO_SCHEMA = (
+    "CREATE TABLE scenario_versions (instrument_id TEXT NOT NULL, "
+    "revision INTEGER NOT NULL CHECK (revision >= 1), payload TEXT NOT NULL, "
+    "PRIMARY KEY (instrument_id, revision))"
+)
+MIGRATIONS = {1: (WATCHLIST_SCHEMA,), 2: (SCENARIO_SCHEMA,)}
+SCHEMAS = {
+    1: [("table", "watchlist", WATCHLIST_SCHEMA)],
+    2: [
+        ("table", "scenario_versions", SCENARIO_SCHEMA),
+        ("table", "watchlist", WATCHLIST_SCHEMA),
+    ],
+}
 
 ERRORS = {
     "access": "Kein Besitzerzugriff auf die private Ablage; Sitzung und Freigabe prüfen.",
@@ -174,6 +186,8 @@ def _schema(connection: sqlite3.Connection, *, created: bool) -> None:
             raise PrivateStorageError("incompatible")
     elif application != APPLICATION_ID or not 1 <= version <= SCHEMA_VERSION:
         raise PrivateStorageError("incompatible")
+    elif schema != SCHEMAS[version]:
+        raise PrivateStorageError("incompatible")
     for target in range(version + 1, SCHEMA_VERSION + 1):
         for statement in MIGRATIONS[target]:
             connection.execute(statement)
@@ -182,7 +196,7 @@ def _schema(connection: sqlite3.Connection, *, created: bool) -> None:
         connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
     if connection.execute(
         "SELECT type, name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name"
-    ).fetchall() != [("table", "watchlist", WATCHLIST_SCHEMA)]:
+    ).fetchall() != SCHEMAS[SCHEMA_VERSION]:
         raise PrivateStorageError("incompatible")
 
 

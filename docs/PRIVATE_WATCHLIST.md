@@ -1,8 +1,9 @@
 # Private Watchlist und SQLite-Ablage
 
 M8-06 (#75) stellt Fachoperationen bereit. Die Oberfläche folgt in #79/#80;
-Szenarien und manuelle Ergänzungen in #76. Kein DCF, Provider- oder Sheetabruf
-wird durch die Watchlist ausgelöst. Depotimport, Mengen, Einstand und
+Szenarien und manuelle Ergänzungen sind separat in
+[PRIVATE_SCENARIOS.md](PRIVATE_SCENARIOS.md) (#76) beschrieben. Kein DCF, Provider-
+oder Sheetabruf wird durch die Watchlist ausgelöst. Depotimport, Mengen, Einstand und
 bestehende Marktpreisbewertungen bleiben unverändert.
 
 ## Fachschnittstelle
@@ -80,15 +81,17 @@ verwenden. Beim erfolgreichen Verlassen wird committet, bei Fehlern zurückgerol
 und die Verbindung geschlossen. Verbindungen oder private Ergebnisse gehören
 nicht in globale Streamlit-Caches. Die Konfiguration wird je Aufruf neu gelesen.
 
-`APPLICATION_ID`, `SCHEMA_VERSION = 1` und `MIGRATIONS` in `private_store.py`
-kennzeichnen das Format. Version 1 enthält ausschließlich `watchlist` mit
-versioniertem JSON-Payload, bestätigter Instrument-ID und Datensatzrevision.
+`APPLICATION_ID`, `SCHEMA_VERSION = 2`, `MIGRATIONS` und `SCHEMAS` in
+`private_store.py` kennzeichnen und prüfen das Format. Version 1 enthält
+ausschließlich `watchlist` mit versioniertem JSON-Payload, bestätigter
+Instrument-ID und Datensatzrevision.
 Die erste Schemaanlage wird atomar vor der ersten Fachänderung committet;
 ein abgelehnter Eintrag beschädigt keinen neuen Store. Jede weitere Migration
 muss Version, SQL und die explizite erwartete Schemaprüfung gemeinsam ergänzen.
-#76 darf eigene Tabellen/Codecs ergänzen, verwendet denselben Transaktions-
-und Zugriffspfad und implementiert seine fachlichen Versionen selbst. Hier
-existieren keine Szenariotabellen, Annahmen, Defaults oder generischen KV-Daten.
+Version 2 ergänzt `scenario_versions` für #76 ohne Änderung der Watchlist-Tabelle
+und erhält deren Daten. Die private Szenarioablage verwendet denselben
+Transaktions- und Zugriffspfad und eigene fachliche Versionen und JSON-Codecs.
+Die Watchlist selbst enthält weiterhin keine Szenarien oder Finanzannahmen.
 
 `BEGIN IMMEDIATE` serialisiert kurze Operationen aus unabhängigen Sitzungen und
 Prozessen. Schreibende Sitzungen warten höchstens zwei Sekunden auf SQLite;
