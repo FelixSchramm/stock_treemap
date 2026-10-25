@@ -1,10 +1,12 @@
-"""Host-side construction of the read-only Sheets session from a key file.
+"""Host-side construction of the read-only Sheets session.
 
-The path comes from PORTFOLIO_SHEETS_CREDENTIALS_FILE via SourceConfig. The
-file content, its parse errors and the path never appear in raised messages.
+Local mode reads the key file named by PORTFOLIO_SHEETS_CREDENTIALS_FILE;
+production passes the server-side [sheets_service_account] secret section.
+Key content, parse errors and the path never appear in raised messages.
 """
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from google.auth.transport.requests import AuthorizedSession
@@ -17,17 +19,27 @@ class SheetsCredentialError(ValueError):
     pass
 
 
+def _credential_error() -> SheetsCredentialError:
+    return SheetsCredentialError("Service-Account-Schlüssel fehlt oder ist ungültig.")
+
+
 def build_readonly_session(credentials_file: str) -> AuthorizedSession:
-    """Authorize a session as the service account, limited to the readonly scope."""
+    """Authorize a session from a key file, limited to the readonly scope."""
     try:
         info = json.loads(Path(credentials_file).read_text(encoding="utf-8"))
-        if not isinstance(info, dict) or info.get("type") != "service_account":
+    except Exception:  # noqa: BLE001 - never expose key material or its path
+        raise _credential_error() from None
+    return build_readonly_session_from_info(info)
+
+
+def build_readonly_session_from_info(info: object) -> AuthorizedSession:
+    """Authorize a session from key fields, limited to the readonly scope."""
+    try:
+        if not isinstance(info, Mapping) or info.get("type") != "service_account":
             raise ValueError
         credentials = service_account.Credentials.from_service_account_info(
-            info, scopes=[SHEETS_READONLY_SCOPE]
+            dict(info), scopes=[SHEETS_READONLY_SCOPE]
         )
-    except Exception:  # noqa: BLE001 - never expose key material or its path
-        raise SheetsCredentialError(
-            "Service-Account-Schlüssel fehlt oder ist ungültig."
-        ) from None
+    except Exception:  # noqa: BLE001 - never expose key material
+        raise _credential_error() from None
     return AuthorizedSession(credentials)
