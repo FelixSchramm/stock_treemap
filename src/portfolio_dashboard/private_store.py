@@ -107,6 +107,17 @@ def _database_path(directory: str | Path) -> tuple[Path, bool]:
         for base in forbidden
     ):
         raise PrivateStorageError("path")
+    # A wheel's __file__ identifies site-packages, not the application checkout.
+    # Inspect target ancestors on the server, independent of cwd. Git metadata
+    # has HEAD, worktrees use .git files, and unpacked apps have both app files.
+    for parent in (resolved, *resolved.parents):
+        git = parent / ".git"
+        if (
+            git.is_file()
+            or (git / "HEAD").is_file()
+            or ((parent / "app.py").is_file() and (parent / "pyproject.toml").is_file())
+        ):
+            raise PrivateStorageError("path")
     for part in (*reversed(path.parents), path):
         if part.is_symlink():
             raise PrivateStorageError("permissions")

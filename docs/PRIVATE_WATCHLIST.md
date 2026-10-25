@@ -44,6 +44,10 @@ sein; die Modellgrenzen aus ADR 0010 gelten unverändert.
 Für Local/Produktion `PORTFOLIO_PRIVATE_DATA_DIR` ausdrücklich auf ein eigenes
 absolutes Verzeichnis außerhalb von Checkout, Python-Installation und `/app`
 setzen. Es gibt keinen privaten Standardpfad und keinen Speicherfallback.
+Auch bei einer Wheel-Installation prüft der Dienst die serverseitigen Vorfahren
+des Datenpfads auf Git-Checkouts (einschließlich `.git`-Dateien bei Worktrees)
+und entpackte App-Wurzeln mit `app.py` und `pyproject.toml`. Die Prüfung hängt
+nicht vom aktuellen Arbeitsverzeichnis oder Browserangaben ab.
 Ohne Pfad funktionieren die übrigen App-Funktionen weiter; jede angeforderte
 private Speicheroperation meldet einen Fehler statt Erfolg. Der Elternordner
 muss bestehen. Der Dienst erstellt das Blattverzeichnis mit `0700` und
