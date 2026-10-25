@@ -17,7 +17,11 @@ from portfolio_dashboard.demo import (
     demo_snapshot,
     demo_valuation,
 )
-from portfolio_dashboard.local_source import ListingsFileError, build_local_coordinator
+from portfolio_dashboard.local_source import (
+    ListingsFileError,
+    build_local_coordinator,
+    build_production_coordinator,
+)
 from portfolio_dashboard.models import PortfolioSnapshot, SnapshotStatus
 from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
@@ -25,11 +29,15 @@ from portfolio_dashboard.ui import COURSE_VIEW, render_dashboard
 from portfolio_dashboard.valuations import value_portfolio
 
 LOOPBACK_ADDRESSES = {"127.0.0.1", "localhost", "::1"}
-LOCAL_COORDINATOR_KEY = "local.coordinator"
+OWN_COORDINATOR_KEY = "own.coordinator"
 
 mode_setting = os.environ.get("PORTFOLIO_MODE", "demo").strip()
 st.set_page_config(
-    page_title="Depot-Dashboard" if mode_setting == Mode.LOCAL else "Depot-Dashboard – Demo",
+    page_title=(
+        "Depot-Dashboard"
+        if mode_setting in (Mode.LOCAL, Mode.PRODUCTION)
+        else "Depot-Dashboard – Demo"
+    ),
     layout="wide",
 )
 try:
@@ -46,14 +54,12 @@ except ConfigurationError as exc:
     st.error(str(exc))
     st.stop()
 
-if config.mode is Mode.LOCAL:
-    # Without login, the owner's data must never be reachable from the network.
-    if st.get_option("server.address") not in LOOPBACK_ADDRESSES:
-        st.error("Lokaler Modus nur mit --server.address 127.0.0.1.")
-        st.stop()
-    if LOCAL_COORDINATOR_KEY not in st.session_state:
+
+def render_own_portfolio(build_coordinator) -> None:
+    """Build the owner's coordinator once per session, then render and stop."""
+    if OWN_COORDINATOR_KEY not in st.session_state:
         try:
-            st.session_state[LOCAL_COORDINATOR_KEY] = build_local_coordinator(config)
+            st.session_state[OWN_COORDINATOR_KEY] = build_coordinator()
         except (ListingsFileError, SheetsConfigurationError, SheetsCredentialError) as exc:
             st.error(str(exc))
             st.stop()
@@ -64,17 +70,33 @@ if config.mode is Mode.LOCAL:
         None,
         value_portfolio(empty, ()),
         lambda view, period: (),
-        coordinator=st.session_state[LOCAL_COORDINATOR_KEY],
+        coordinator=st.session_state[OWN_COORDINATOR_KEY],
         demo=False,
     )
     st.stop()
 
-if config.mode is Mode.PRODUCTION:
-    require_owner(config.login)
-    st.info("Besitzerzugriff freigegeben. Echte Daten sind noch nicht verfügbar; es folgt nur die Demo.")
 
-# All loaders and output (including future real-data/export paths) belong below
-# the production owner gate. Never cache an authorization decision.
+if config.mode is Mode.LOCAL:
+    # Without login, the owner's data must never be reachable from the network.
+    # Local mode never reads st.secrets, so hosted secrets cannot feed it.
+    if st.get_option("server.address") not in LOOPBACK_ADDRESSES:
+        st.error("Lokaler Modus nur mit --server.address 127.0.0.1.")
+        st.stop()
+    render_own_portfolio(lambda: build_local_coordinator(config))
+
+if config.mode is Mode.PRODUCTION:
+    # Every run passes the owner gate before secrets, loaders and output.
+    # Never cache an authorization decision.
+    require_owner(config.login)
+    render_own_portfolio(
+        lambda: build_production_coordinator(
+            config,
+            st.secrets.get("sheets_service_account"),
+            st.secrets.get("listing", []),
+        )
+    )
+
+# Only demo reaches this point: synthetic data without secrets or login.
 demo_data = demo_snapshot()
 demo_values = demo_valuation(demo_data)
 render_dashboard(
