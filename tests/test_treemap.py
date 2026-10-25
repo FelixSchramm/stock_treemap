@@ -24,16 +24,30 @@ from portfolio_dashboard.models import (
 )
 from portfolio_dashboard.returns import portfolio_returns
 from portfolio_dashboard.treemap import (
+    ALL_FILTER,
     COLOR_CAP_PERCENT,
     MISSING_COLOR,
     NEGATIVE_COLOR,
     NEUTRAL_COLOR,
+    NO_CATEGORY_LABEL,
     POSITIVE_COLOR,
+    SHEET_UNKNOWN_QUOTE_STATUS,
+    SORT_BY_NAME,
+    SORT_BY_PERFORMANCE,
+    SORT_BY_VALUE,
+    WEIGHT_COLUMN_LABEL,
+    FilterCriteria,
     Performance,
+    available_categories,
+    build_kpis,
+    build_table_rows,
     build_treemap,
     color_for,
+    filter_groups,
+    format_eur,
     format_percent,
     personal_performances,
+    sort_table_rows,
 )
 from portfolio_dashboard.ui import PERSONAL_VIEW, VIEW_KEY, treemap_figure
 from portfolio_dashboard.valuations import FxRate, value_portfolio
@@ -259,3 +273,166 @@ def test_legend_and_note_texts_are_visible():
     assert "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %." in [
         c.value for c in app.caption
     ]
+
+
+def test_unvaluable_positions_remain_visible_in_table_with_status_and_inactive_excluded():
+    valuation = valued(
+        position("Bewertet", InstrumentType.STOCK, "10", "20", ticker="VAL-1", row=1),
+        position("Ohne Kurs", InstrumentType.ETF, "5", None, ticker="MISS-1", row=2),
+        position(
+            "Fremdwährung ohne FX",
+            InstrumentType.DERIVATIVE,
+            "3",
+            "15",
+            unit=USD,
+            ticker="FX-1",
+            row=3,
+        ),
+        position("Verkauft", InstrumentType.STOCK, "0", "50", ticker="ZERO-1", row=4),
+    )
+    perfs = [
+        Performance(Decimal("3.5"), date(2026, 1, 2)),
+        Performance(None),
+        Performance(None),
+        Performance(None),
+    ]
+    rows = build_table_rows(valuation, perfs)
+    assert [r.name for r in rows] == [
+        "Bewertet",
+        "Ohne Kurs",
+        "Fremdwährung ohne FX",
+    ]
+    assert rows[0].amount_eur == Decimal("200")
+    assert rows[0].weight_percent == Decimal("100")
+    assert rows[0].status == SHEET_UNKNOWN_QUOTE_STATUS
+    assert rows[1].amount_eur is None
+    assert rows[1].amount_eur_label == "n. v."
+    assert rows[1].weight_label == "n. v."
+    assert rows[1].status == "Kurs fehlt"
+    assert rows[2].amount_eur is None
+    assert rows[2].status == "FX-Kurs fehlt"
+
+
+def test_weight_column_refers_to_full_portfolio_even_when_filtered():
+    p1 = Position(
+        name="Alpha Aktie",
+        quantity=Decimal("10"),
+        instrument=Instrument(InstrumentType.STOCK, display_ticker="ALP"),
+        category="Tech",
+        source_row=1,
+        imported_at=STAMP,
+        valuation=Valuation(Decimal("30"), ValueStatus.AVAILABLE, SHEET, EUR),
+    )
+    p2 = Position(
+        name="Beta ETF",
+        quantity=Decimal("10"),
+        instrument=Instrument(InstrumentType.ETF, display_ticker="BET"),
+        category="Welt",
+        source_row=2,
+        imported_at=STAMP,
+        valuation=Valuation(Decimal("70"), ValueStatus.AVAILABLE, SHEET, EUR),
+    )
+    valuation = valued(p1, p2)
+    perfs = [Performance(Decimal("1")), Performance(Decimal("2"))]
+
+    criteria = FilterCriteria(instrument_type="Aktie", category="Tech", query="alp")
+    filtered_groups, filtered_perfs = filter_groups(valuation, perfs, criteria)
+    treemap = build_treemap(valuation, filtered_perfs, groups=filtered_groups)
+    table_rows = build_table_rows(valuation, perfs, criteria=criteria)
+
+    assert len(treemap.tiles) == 1
+    assert "Anteil am bewerteten Depot: 30,00 %" in treemap.tiles[0].tooltip
+    assert len(table_rows) == 1
+    assert table_rows[0].weight_percent == Decimal("30")
+    assert table_rows[0].to_display_dict()[WEIGHT_COLUMN_LABEL] == 30.0
+
+
+def test_kpis_report_coverage_winner_loser_and_personal_cost_comparison():
+    valuation = valued(
+        position("Gewinner", InstrumentType.STOCK, "1", "150", cost="100", row=1),
+        position("Verlierer", InstrumentType.ETF, "1", "80", cost="100", row=2),
+        position("Ohne Einstand", InstrumentType.STOCK, "1", "70", row=3),
+        position("Ohne Kurs", InstrumentType.DERIVATIVE, "2", None, row=4),
+    )
+    returns = portfolio_returns(valuation)
+    perfs = personal_performances(returns)
+    kpis = build_kpis(
+        valuation, perfs, is_personal_view=True, returns=returns
+    )
+
+    assert kpis.total_eur == Decimal("300")
+    assert kpis.total_eur_label == "300,00 EUR"
+    assert kpis.active_group_count == 4
+    assert kpis.valued_group_count == 3
+    assert kpis.coverage_label == "3 von 4 bewertet"
+    assert kpis.measured_group_count == 2
+    assert "2 von 4 aktiven Positionen mit Kennzahl" in kpis.performance_reference_label
+    assert kpis.winner_label == "Gewinner: +50,00 %"
+    assert kpis.loser_label == "Verlierer: -20,00 %"
+    assert kpis.personal_eligible_group_count == 2
+    assert kpis.personal_cost_basis_eur == Decimal("200")
+    assert kpis.personal_gain_eur == Decimal("30")
+    assert kpis.personal_gain_label == "+30,00 EUR"
+    assert kpis.personal_return_label == "+15,00 %"
+    assert (
+        kpis.personal_coverage_label
+        == "2 von 4 Positionen mit vollständigem Einstand"
+    )
+
+
+def test_sort_table_rows_always_places_missing_values_last_and_breaks_ties_by_name():
+    valuation = valued(
+        position("Zeta", InstrumentType.STOCK, "1", "100", row=1),
+        position("Alpha", InstrumentType.STOCK, "1", "100", row=2),
+        position("Lücke", InstrumentType.ETF, "1", None, row=3),
+    )
+    perfs = [
+        Performance(Decimal("-5")),
+        Performance(Decimal("10")),
+        Performance(None),
+    ]
+    rows = build_table_rows(valuation, perfs)
+
+    desc_val = sort_table_rows(rows, SORT_BY_VALUE, descending=True)
+    assert [r.name for r in desc_val] == ["Alpha", "Zeta", "Lücke"]
+
+    asc_val = sort_table_rows(rows, SORT_BY_VALUE, descending=False)
+    assert [r.name for r in asc_val] == ["Alpha", "Zeta", "Lücke"]
+
+    asc_perf = sort_table_rows(rows, SORT_BY_PERFORMANCE, descending=False)
+    assert [r.name for r in asc_perf] == ["Zeta", "Alpha", "Lücke"]
+
+    by_name_desc = sort_table_rows(rows, SORT_BY_NAME, descending=True)
+    assert [r.name for r in by_name_desc] == ["Zeta", "Lücke", "Alpha"]
+
+
+def test_available_categories_includes_uncategorized_option_when_mixed():
+    p1 = Position(
+        name="Kat A",
+        quantity=Decimal("1"),
+        instrument=Instrument(InstrumentType.STOCK),
+        category="Dividende",
+        source_row=1,
+        imported_at=STAMP,
+    )
+    p2 = Position(
+        name="Ohne Kat",
+        quantity=Decimal("1"),
+        instrument=Instrument(InstrumentType.ETF),
+        category=None,
+        source_row=2,
+        imported_at=STAMP,
+    )
+    valuation = valued(p1, p2)
+    cats = available_categories(valuation)
+    assert cats == (ALL_FILTER, "Dividende", NO_CATEGORY_LABEL)
+    filtered, _ = filter_groups(
+        valuation,
+        [Performance(None), Performance(None)],
+        FilterCriteria(category=NO_CATEGORY_LABEL),
+    )
+    assert len(filtered) == 1
+    assert filtered[0].members[0].position.name == "Ohne Kat"
+    assert format_eur(None) == "n. v."
+    assert format_eur(Decimal("12.5"), signed=True) == "+12,50 EUR"
+

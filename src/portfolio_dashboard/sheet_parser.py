@@ -249,10 +249,11 @@ def _optional_columns(headers: Sequence[object]) -> dict[str, int]:
     return found
 
 
-def _price_date(cell: object) -> datetime | None:
+def _price_date(cell: object, imported_at: datetime) -> datetime | None:
     """Read a date-only cell; day precision, so use the start of the Berlin day.
 
-    Accepts dd.mm.yyyy, ISO text or a Sheets serial number (UNFORMATTED_VALUE).
+    Accepts dd.mm.yyyy, ISO text or a Sheets serial number (UNFORMATTED_VALUE)
+    after the 1899-12-30 epoch and not after imported_at.
     """
     day: date | None = None
     if isinstance(cell, bool):
@@ -271,7 +272,10 @@ def _price_date(cell: object) -> datetime | None:
                 break
             except ValueError:
                 continue
-    return None if day is None else datetime(day.year, day.month, day.day, tzinfo=_BERLIN)
+    if day is None or day <= _SERIAL_EPOCH:
+        return None
+    observed = datetime(day.year, day.month, day.day, tzinfo=_BERLIN)
+    return observed if observed <= imported_at else None
 
 
 def _is_summary(cells: dict[str, object]) -> bool:
@@ -451,7 +455,7 @@ def parse_sheet_rows(
             )
         row_provenance = provenance
         if "price_date" in extra and not _missing(extra["price_date"]):
-            observed = _price_date(extra["price_date"])
+            observed = _price_date(extra["price_date"], imported_at)
             row_provenance = Provenance(ValuationSource.SHEET, imported_at, observed)
             if observed is None:
                 row_warnings.append(
