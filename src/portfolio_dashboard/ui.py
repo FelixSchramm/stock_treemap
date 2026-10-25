@@ -384,6 +384,7 @@ def render_dashboard(
     returns: PortfolioReturns | None = None,
     coordinator: PortfolioRefreshCoordinator | None = None,
     period_reasons: Callable[[str, str], Sequence[str | None]] | None = None,
+    demo: bool = True,
 ) -> None:
     """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
 
@@ -399,12 +400,13 @@ def render_dashboard(
     :param returns: Optional precomputed PortfolioReturns for the personal view.
     :param coordinator: Optional PortfolioRefreshCoordinator for live/cached refreshes.
     :param period_reasons: Optional callback returning period reason codes per group.
+    :param demo: False when ``coordinator`` delivers the owner's own data.
     """
     _ = rows
     render_accessibility_styles()
     header_cols = st.columns((4, 1))
     with header_cols[0]:
-        st.title("Depot-Dashboard – Demo")
+        st.title("Depot-Dashboard – Demo" if demo else "Depot-Dashboard")
     with header_cols[1]:
         refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
 
@@ -423,14 +425,18 @@ def render_dashboard(
         performances = active_bundle.performances_for
         period_reasons = active_bundle.reasons_for
 
-    st.caption(f"Demo-Depot · {len(snapshot.positions)} Beispielpositionen")
+    if demo:
+        st.caption(f"Demo-Depot · {len(snapshot.positions)} Beispielpositionen")
+    else:
+        st.caption(f"Eigenes Depot · {len(snapshot.positions)} Positionen")
     timestamp = snapshot.attempted_at.strftime("%d.%m.%Y, %H:%M %Z")
     if active_bundle is not None:
         st.caption(f"Datenstand: {active_bundle.age_label()}")
     else:
         st.caption(f"Datenstand (synthetisch): {timestamp}")
 
-    st.info("Nur synthetische Beispieldaten. Kein Zugriff auf echte Depot- oder Kursdaten.")
+    if demo:
+        st.info("Nur synthetische Beispieldaten. Kein Zugriff auf echte Depot- oder Kursdaten.")
 
     if active_bundle is not None:
         if not active_bundle.available or snapshot.status is SnapshotStatus.FAILED:
@@ -465,9 +471,9 @@ def render_dashboard(
     )
 
     st.subheader(f"{view} · {period}")
-    if is_personal:
+    if demo and is_personal:
         st.info("Rendite seit Kauf: n. v. – die Demo berechnet keine persönliche Rendite.")
-    else:
+    elif demo:
         st.caption("Die Demo zeigt feste, erfundene Beispielwerte für die Kursentwicklung.")
 
     kpis = build_kpis(

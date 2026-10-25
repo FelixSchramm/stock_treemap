@@ -3,11 +3,12 @@
 Demo is the default and deliberately discards all real source/login settings.
 Reading configuration is not authentication. Production also requires the
 SDK-validated session and explicit owner authorization on every app run.
+Local reads the real source without login; the app serves it on loopback only.
 """
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from urllib.parse import urlsplit
 
@@ -18,6 +19,7 @@ class ConfigurationError(ValueError):
 
 class Mode(StrEnum):
     DEMO = "demo"
+    LOCAL = "local"
     PRODUCTION = "production"
 
 
@@ -44,6 +46,7 @@ class SourceConfig:
     spreadsheet_id: str | None = field(default=None, repr=False)
     worksheet_range: str | None = field(default=None, repr=False)
     credentials_file: str | None = field(default=None, repr=False)
+    listings_file: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +126,23 @@ def load_config(
         raise ConfigurationError("Nicht unterstützte Quelle: PORTFOLIO_SOURCE.")
     if _text(values, "PORTFOLIO_PROVIDER", Provider.YFINANCE) != Provider.YFINANCE:
         raise ConfigurationError("Nicht unterstützter Provider: PORTFOLIO_PROVIDER.")
+    source = SourceConfig(
+        kind=SourceKind.GOOGLE_SHEETS,
+        spreadsheet_id=_required(values, "PORTFOLIO_SHEET_ID"),
+        worksheet_range=_required(values, "PORTFOLIO_SHEET_RANGE"),
+        credentials_file=_required(values, "PORTFOLIO_SHEETS_CREDENTIALS_FILE"),
+    )
+    if mode is Mode.LOCAL:
+        # No login and no auth secrets; app.py refuses non-loopback addresses.
+        # Without a listings file the local mode stays Sheet-only.
+        listings_file = _text(values, "PORTFOLIO_LISTINGS_FILE") or None
+        if listings_file is not None and (
+            listings_file.startswith("<") or listings_file == "CHANGE_ME"
+        ):
+            raise ConfigurationError("Lokale Konfiguration ungültig: PORTFOLIO_LISTINGS_FILE.")
+        source = replace(source, listings_file=listings_file)
+        return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig())
+
     if _text(values, "PORTFOLIO_LOGIN_PROVIDER", "google") != "google":
         raise ConfigurationError("Nicht unterstützter Login: PORTFOLIO_LOGIN_PROVIDER.")
 
@@ -158,10 +178,4 @@ def load_config(
         or not redirect.path.endswith("/oauth2callback")
     ):
         raise ConfigurationError("HTTPS-Callback erforderlich: auth.redirect_uri.")
-    source = SourceConfig(
-        kind=SourceKind.GOOGLE_SHEETS,
-        spreadsheet_id=_required(values, "PORTFOLIO_SHEET_ID"),
-        worksheet_range=_required(values, "PORTFOLIO_SHEET_RANGE"),
-        credentials_file=_required(values, "PORTFOLIO_SHEETS_CREDENTIALS_FILE"),
-    )
     return AppConfig(mode, source, Provider.YFINANCE, ttls, login)

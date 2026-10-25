@@ -26,6 +26,10 @@ Produktivbetrieb verwendet HTTPS. Client-Secret, Cookie-Secret und Freigabekonfi
 
 Konkrete Besitzeridentität, OIDC-Client und Callback-URL werden noch eingerichtet; kein Konto wird aus dem Sheet-Namen abgeleitet. Login-Credentials bleiben vom Sheet-Service-Account getrennt, siehe [0004](0004-google-sheets.md).
 
+## Nachtrag 2026-10-25: Lokaler Modus ohne Login
+
+Auf Wunsch des Besitzers zeigt `PORTFOLIO_MODE=local` die eigenen Sheet-Daten auf dem eigenen Rechner ohne OIDC-Login. Der Netzwerkzugang ersetzt hier die Anmeldung: Die App lädt nur, wenn Streamlit ausschließlich auf `127.0.0.1`, `localhost` oder `::1` lauscht, und sperrt sonst vor dem ersten Sheet-Abruf. Der Modus liest keine Auth-Secrets und ist nicht für Container oder Hosting vorgesehen; jeder erreichbare Betrieb bleibt beim Produktivmodus mit Besitzerprüfung.
+
 ## Referenzen
 
 - [Streamlit: OIDC, Login und Session-Verhalten](https://docs.streamlit.io/develop/concepts/connections/authentication)
