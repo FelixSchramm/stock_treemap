@@ -14,9 +14,13 @@ first, so permanently rejected symbols cannot keep taking the recovery probe.
 A key already in its own failure streak is ignored only directly after a
 healthy key succeeded without any new failure, so rejected symbols cannot block
 FX, history or other keys while a partial recovery still rearms the breaker.
+A failing listing is not yet a provider outage: quotes() accepts replacement
+listings and tries them directly after the failed primary, so a healthy
+replacement resets the failure streak before further primaries are probed. If
+the replacements fail too, the provider-wide backoff opens as before.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Generic, TypeVar
@@ -168,15 +172,31 @@ class QuoteCache:
         )
 
     def quotes(
-        self, instruments: Iterable[Instrument], *, refresh: bool = False
+        self,
+        instruments: Iterable[Instrument],
+        *,
+        refresh: bool = False,
+        replacements: Mapping[Instrument, Iterable[Instrument]] | None = None,
     ) -> dict[Instrument, PriceObservation]:
-        """Fetch due keys with fewer failures first; return in input order."""
+        """Fetch due keys with fewer failures first; return in input order.
+
+        A replacement listing is fetched directly after its primary only if the
+        primary quote is unavailable; replacements are appended after the inputs.
+        """
         items = list(instruments)
         ordered = sorted(
             items, key=lambda item: self._entries.get(("quote", item), _Entry()).failures
         )
-        results = {item: self.quote(item, refresh=refresh) for item in ordered}
-        return {item: results[item] for item in items}
+        results = {}
+        for item in ordered:
+            results[item] = self.quote(item, refresh=refresh)
+            if results[item].valuation.status is ValueStatus.AVAILABLE:
+                continue
+            for replacement in (replacements or {}).get(item, ()):
+                if replacement not in results and replacement not in items:
+                    results[replacement] = self.quote(replacement, refresh=refresh)
+        extras = {key: value for key, value in results.items() if key not in items}
+        return {item: results[item] for item in items} | extras
 
     def fx(self, pair: VerifiedFxPair, *, refresh: bool = False) -> FxObservation:
         return self._get(

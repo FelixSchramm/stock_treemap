@@ -107,7 +107,10 @@ class SyntheticMarket:
 
 
 def loader(monkeypatch, tmp_path, *, primary=True, rows=None, cases=None, mode="local"):
-    entries = [primary if isinstance(primary, dict) else PRIMARY] if primary else []
+    if isinstance(primary, list):
+        entries = primary
+    else:
+        entries = [primary if isinstance(primary, dict) else PRIMARY] if primary else []
     session = MutableSession([HEADERS, sheet_row()] if rows is None else rows)
     market = SyntheticMarket(cases or {})
     monkeypatch.setattr(local_source, "build_readonly_session", lambda path: session)
@@ -367,3 +370,56 @@ def test_duplicate_yahoo_header_is_a_safe_optional_error(monkeypatch, tmp_path):
     assert bundle.available and bundle.valuation.total_eur == Decimal(100)
     assert not market.calls
     assert any(w.code == "duplicate_yahoo_column" for w in bundle.snapshot.warnings)
+
+
+def three_listing_setup(monkeypatch, tmp_path, cases):
+    """Three synthetic holdings, each with an app listing and a Sheet replacement."""
+    primaries, rows = [], [HEADERS]
+    for index in range(1, 4):
+        isin = f"DE000SYN000{index}"
+        primaries.append(PRIMARY | {"isin": isin, "symbol": f"PRIMARY{index}.DE"})
+        rows.append(sheet_row(symbol=f"ALTERNATIVE{index}.DE", isin=isin,
+                              name=f"Synthetische Position {index}"))
+    return loader(monkeypatch, tmp_path, primary=primaries, rows=rows, cases=cases, mode="production")
+
+
+def set_time(coordinator, moment):
+    coordinator._clock = lambda: moment
+    coordinator._cache.clock = lambda: moment
+
+
+def quote_attempts(market):
+    return [symbol for symbol, kind in market.calls if kind == "quote"]
+
+
+def test_healthy_replacements_are_not_starved_by_three_failing_app_listings(monkeypatch, tmp_path):
+    cases = {f"PRIMARY{i}.DE": {"quote_error": True} for i in (1, 2, 3)}
+    cases |= {f"ALTERNATIVE{i}.DE": {"price": 220.0, "close": 200.0} for i in (1, 2, 3)}
+    coordinator, _, market = three_listing_setup(monkeypatch, tmp_path, cases)
+    for minutes in (0, 10, 20):  # first load plus two refreshes after the backoff has expired
+        set_time(coordinator, NOW + timedelta(minutes=minutes))
+        bundle = coordinator.load(refresh=minutes > 0)
+        assert [p.instrument.provider_mapping.symbol for p in bundle.snapshot.positions] == [
+            "ALTERNATIVE1.DE", "ALTERNATIVE2.DE", "ALTERNATIVE3.DE"]
+        assert bundle.valuation.total_eur == Decimal(1320)
+        for perfs in bundle.course_performances.values():
+            assert [perf.percent for perf in perfs] == [Decimal(10)] * 3
+    assert {s for s in quote_attempts(market) if s.startswith("ALTERNATIVE")} == {
+        "ALTERNATIVE1.DE", "ALTERNATIVE2.DE", "ALTERNATIVE3.DE"}
+
+
+def test_real_provider_outage_still_triggers_and_respects_provider_wide_backoff(monkeypatch, tmp_path):
+    cases = {f"{kind}{i}.DE": {"quote_error": True}
+             for kind in ("PRIMARY", "ALTERNATIVE") for i in (1, 2, 3)}
+    coordinator, _, market = three_listing_setup(monkeypatch, tmp_path, cases)
+    bundle = coordinator.load()
+    assert bundle.available
+    # Three consecutive provider failures open the breaker; nothing is fetched afterwards.
+    assert quote_attempts(market) == ["PRIMARY1.DE", "ALTERNATIVE1.DE", "PRIMARY2.DE"]
+    set_time(coordinator, NOW + timedelta(seconds=5))
+    assert coordinator.load(refresh=True).available
+    assert len(market.calls) == 3
+    # After the backoff, fetching resumes (and reopens the breaker while the outage lasts).
+    set_time(coordinator, NOW + timedelta(minutes=10))
+    assert coordinator.load(refresh=True).available
+    assert len(market.calls) > 3

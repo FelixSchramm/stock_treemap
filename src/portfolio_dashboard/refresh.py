@@ -425,8 +425,22 @@ class PortfolioRefreshCoordinator:
                     seen_instruments.add(listing.instrument)
                     mapped_instruments.append(listing.instrument)
 
-            quote_map = self._cache.quotes(mapped_instruments, refresh=refresh)
             fallback_listings = dict(self._fallback_listings()) if self._fallback_listings else {}
+            replacements: dict[Instrument, list[Instrument]] = {}
+            for pos in raw_snapshot.positions:
+                alternative = fallback_listings.get(pos.source_row)
+                if pos.activity is not PositionActivity.ACTIVE or alternative is None:
+                    continue
+                primary = resolve_listing(pos.instrument, self._listings)
+                if primary is None or primary.instrument.provider_mapping is None:
+                    if alternative.instrument not in seen_instruments:
+                        seen_instruments.add(alternative.instrument)
+                        mapped_instruments.append(alternative.instrument)
+                elif alternative.instrument not in replacements.setdefault(primary.instrument, []):
+                    replacements[primary.instrument].append(alternative.instrument)
+            quote_map = self._cache.quotes(
+                mapped_instruments, refresh=refresh, replacements=replacements
+            )
             prepared_periods: dict[Instrument, PeriodResults] = {}
             active_listings: dict[tuple[str, str], VerifiedListing] = {}
 
