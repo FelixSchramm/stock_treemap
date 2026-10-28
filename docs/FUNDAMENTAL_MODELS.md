@@ -85,7 +85,7 @@ ergänzt, unbestätigte Annahmen und nicht unterstützt. `blocking` kennzeichnet
 Sperrgründe; manuelle Herkunft, Buchwertnäherung und unbekannte Publikation
 sind Hinweise. Keine strukturellen Sperrgründe bedeutet noch keinen bewiesenen
 positiven FCFF: finanzielle Eignung, Reinvestition, Claims und alle Gleichungen
-prüft der spätere Rechner in #77.
+prüft der Rechner aus #77 (siehe [DCF_CALCULATION.md](DCF_CALCULATION.md)).
 
 ## Prognose und Resultat
 

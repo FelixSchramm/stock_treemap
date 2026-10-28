@@ -22,6 +22,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Container und Betriebsparameter](docs/CONTAINER.md)
 - [Betrieb auf Streamlit Community Cloud](docs/COMMUNITY_CLOUD.md)
 - [Treemap-Wertmodell](docs/TREEMAP.md)
+- [FCFF-DCF-Rechner (innerer Wert)](docs/DCF_CALCULATION.md)
 - [Mobile Bedienung und Barrierefreiheit](docs/MOBILE_ACCESSIBILITY.md)
 
 ## Dashboard entwickeln und prüfen
