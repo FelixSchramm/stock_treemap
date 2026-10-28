@@ -42,6 +42,23 @@ eindeutig, damit die Oberfläche kein Vorzeichen deuten muss. Es sind weder Kauf
 noch Verkaufsurteile. Die Werte bleiben ungerundet (50 Stellen, `ROUND_HALF_EVEN`);
 gerundet wird erst bei der Anzeige, z. B. mit `treemap.format_percent`.
 
+## Abschlag, Sicherheitsabschlag und Abstand: drei verschiedene Größen
+
+* **Kurs-Abschlag** (`discount_to_model_percent`): wie weit der Kurs unter dem Modellwert
+  liegt, bezogen auf den Modellwert: `(1 − Kurs / Modellwert) × 100`.
+* **Sicherheitsabschlag `s`**: die persönliche Vorgabe aus
+  [ADR 0010](adr/0010-innerer-wert-fcff.md), keine Messgröße des Marktes. Der Zielpreis ist
+  `Zielpreis = Modellwert × (1 − s)` (`target_price`). `s` wird hier nicht verändert.
+* **Abstand** (`distance_to_model_percent`): wie weit der Modellwert über dem Kurs liegt,
+  bezogen auf den Kurs: `(Modellwert / Kurs − 1) × 100`.
+
+Zusammenhang: `Kurs ≤ Zielpreis` gilt genau dann, wenn der Kurs-Abschlag `≥ s` ist
+(`Kurs ≤ Modellwert × (1 − s)` ⇔ `1 − Kurs / Modellwert ≥ s`). Beispiel: Modellwert 100,
+`s` = 20 % → Zielpreis 80; Kurs 80 hat 20 % Kurs-Abschlag (= `s`, Kurs auf dem Zielpreis)
+und 25 % Abstand. Abschlag und Abstand sind nur dasselbe Verhältnis mit anderer
+Bezugsgröße und dürfen nicht verwechselt oder gegen `s` vermischt werden: `s` wird nur mit
+dem Kurs-Abschlag verglichen, nie mit dem Abstand.
+
 ## Währung, Einheit und FX
 
 * Modellwert: Berichtswährung, Haupteinheit je Aktie (`model_value`, `reporting_currency`).
@@ -98,7 +115,21 @@ Abrufzeit des Kurses sowie sein Alter (unbekannt bleibt `None`). `notes`:
 `PRICE_TIME_UNKNOWN`, `PRICE_OLDER_THAN_LIMIT` (älter als `max_price_age`, nur
 Hinweis), `FX_CACHED`. `warnings` enthält die `DataWarning` von Kurs und genutztem FX.
 Ein Kurs oder Modellstichtag nach `as_of` ist ein Sperrgrund
-(`PRICE_TIME_AFTER_AS_OF`, `MODEL_VALUATION_AFTER_AS_OF`). Alle Szenarien einer
+(`PRICE_TIME_AFTER_AS_OF`, `MODEL_VALUATION_AFTER_AS_OF`). Beim Kurs sperrt sowohl eine
+Beobachtungszeit als auch ein Abrufzeitpunkt nach `as_of`, jeweils unabhängig
+voneinander: Auch ein Kurs ohne bekannte Beobachtungszeit (z. B. EUR-Sheet-Ersatzpreis)
+wird gesperrt, wenn er nach `as_of` abgerufen wurde; `PRICE_TIME_UNKNOWN` bleibt dann
+zusätzlich als Hinweis stehen. Genau `as_of` (Beobachtung, Abruf, Modellstichtag) ist
+zulässig. Beim FX gilt dasselbe (`FX_TIME_AFTER_AS_OF`); ein FX ohne Beobachtungszeit
+sperrt ohnehin.
+
+**Sichtbarkeit eines Kurses nach `as_of`:** Bei `PRICE_TIME_AFTER_AS_OF` bleiben `price`,
+`price_major` und `eur.price` als Information sichtbar, der Sperrgrund steht in
+`comparison_reasons`. Alle Vergleichskennzahlen sind dann `None` bzw. nicht gesetzt
+(`discount_to_model_percent`, `distance_to_model_percent`, `comparison_currency`,
+`compared_model_value`, `compared_price`, `position`; `snapshot.price_age` bleibt `None`).
+Die Oberfläche darf den Kurs also zeigen, aber nicht als Vergleichsgrundlage verwenden.
+Alle Szenarien einer
 `ScenarioPriceComparisons` teilen denselben Kurs, dieselbe FX-Auswahl und dasselbe
 `as_of`.
 

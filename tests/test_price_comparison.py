@@ -735,6 +735,155 @@ def test_future_dated_price_or_model_blocks_the_snapshot():
     assert blocked_model.model_value == D(100)
 
 
+def sheet_price(value="80", *, retrieved):
+    """A Sheet EUR replacement price: the observation time is unknown by contract."""
+    return Valuation(
+        D(value),
+        ValueStatus.AVAILABLE,
+        Provenance(ValuationSource.SHEET, retrieved),
+        EUR,
+    )
+
+
+def assert_blocked_future_price(comparison):
+    """Blocked for retrieval after as_of; price stays visible, no key figure is set."""
+    assert comparison.comparison_reasons == (ComparisonReason.PRICE_TIME_AFTER_AS_OF,)
+    assert not comparison.comparable
+    assert comparison.price is not None
+    assert comparison.price_major == D(80)
+    assert comparison.eur.price == D(80)
+    assert comparison.model_value == D(100)
+    assert comparison.discount_to_model_percent is None
+    assert comparison.distance_to_model_percent is None
+    assert comparison.compared_price is None
+    assert comparison.compared_model_value is None
+    assert comparison.comparison_currency is None
+    assert comparison.position is None
+    assert comparison.snapshot.price_age is None
+
+
+def test_sheet_price_retrieved_after_as_of_is_blocked_although_observation_is_unknown():
+    verified = listing()
+    quote = sheet_price(retrieved=AS_OF + DAY)
+    comparison = compare_to_price(
+        model("100"), verified.instrument, quote, (verified,), None, POLICY
+    )
+
+    assert_blocked_future_price(comparison)
+    assert ComparisonNote.PRICE_TIME_UNKNOWN in comparison.notes
+    assert ComparisonNote.PRICE_SHEET_REPLACEMENT in comparison.notes
+    assert comparison.snapshot.price_observed_at is None
+    assert comparison.snapshot.price_retrieved_at == AS_OF + DAY
+
+
+def test_provider_price_without_observation_time_retrieved_after_as_of_is_blocked():
+    verified = listing()
+    quote = provider_price("80", observed=None, retrieved=AS_OF + DAY)
+    comparison = compare_to_price(
+        model("100"), verified.instrument, quote, (verified,), None, POLICY
+    )
+
+    assert_blocked_future_price(comparison)
+    assert ComparisonNote.PRICE_TIME_UNKNOWN in comparison.notes
+
+
+def test_price_observed_before_but_retrieved_after_as_of_is_blocked():
+    verified = listing()
+    quote = provider_price("80", observed=AS_OF - HOUR, retrieved=AS_OF + HOUR)
+    comparison = compare_to_price(
+        model("100"), verified.instrument, quote, (verified,), None, POLICY
+    )
+
+    assert_blocked_future_price(comparison)
+    assert ComparisonNote.PRICE_TIME_UNKNOWN not in comparison.notes
+    assert comparison.snapshot.price_observed_at == AS_OF - HOUR
+
+
+def test_future_retrieval_is_blocked_for_every_price_source():
+    verified = listing()
+    for source in (ValuationSource.PROVIDER, ValuationSource.CACHED_PROVIDER):
+        for observed in (None, AS_OF - HOUR):
+            quote = provider_price(
+                "80", observed=observed, retrieved=AS_OF + HOUR, source=source
+            )
+            comparison = compare_to_price(
+                model("100"), verified.instrument, quote, (verified,), None, POLICY
+            )
+            assert_blocked_future_price(comparison)
+
+
+def test_future_price_stays_visible_but_has_no_comparison_figures_in_foreign_currency():
+    calc = model("100", currency="USD")
+    verified = listing(USD)
+    quote = provider_price("80", USD, observed=None, retrieved=AS_OF + DAY)
+    comparison = compare_to_price(
+        calc, verified.instrument, quote, (verified,), {"USD": fx("USD", "0.5")}, POLICY
+    )
+
+    assert comparison.comparison_reasons == (ComparisonReason.PRICE_TIME_AFTER_AS_OF,)
+    assert comparison.price is quote
+    assert comparison.eur.price == D(40)
+    assert comparison.eur.model_value == D(50)
+    assert comparison.compared_price is None
+    assert comparison.discount_to_model_percent is None
+    assert comparison.distance_to_model_percent is None
+    assert comparison.position is None
+
+
+@pytest.mark.parametrize("observed", [None, AS_OF - HOUR, AS_OF])
+def test_price_retrieved_exactly_at_as_of_is_still_comparable(observed):
+    verified = listing()
+    quote = provider_price("80", observed=observed, retrieved=AS_OF)
+    comparison = compare_to_price(
+        model("100"), verified.instrument, quote, (verified,), None, POLICY
+    )
+
+    assert comparison.comparable
+    assert comparison.discount_to_model_percent == D(20)
+    assert comparison.distance_to_model_percent == D(25)
+
+
+def test_price_observed_exactly_at_as_of_is_still_comparable():
+    verified = listing()
+    quote = provider_price("80", observed=AS_OF, retrieved=AS_OF - timedelta(seconds=1))
+    comparison = compare_to_price(
+        model("100"), verified.instrument, quote, (verified,), None, POLICY
+    )
+
+    assert comparison.comparable
+    assert comparison.snapshot.price_age == timedelta(0)
+    assert comparison.discount_to_model_percent == D(20)
+
+
+def test_model_valuation_exactly_at_as_of_is_still_comparable():
+    assert compare(model("100", valuation_at=AS_OF), price="80").comparable
+
+
+def test_fx_retrieved_after_as_of_blocks_even_with_a_past_observation():
+    calc = model("100", currency="USD")
+    late = FxRate(
+        "USD",
+        "EUR",
+        D("0.8"),
+        Provenance(
+            ValuationSource.PROVIDER,
+            AS_OF + timedelta(seconds=1),
+            AS_OF - HOUR,
+            "synthetic-fx",
+        ),
+    )
+    comparison = compare(calc, price="70", rates={"USD": late})
+    on_time = FxRate(
+        "USD",
+        "EUR",
+        D("0.8"),
+        Provenance(ValuationSource.PROVIDER, AS_OF, AS_OF - HOUR, "synthetic-fx"),
+    )
+
+    assert comparison.comparison_reasons == (ComparisonReason.FX_TIME_AFTER_AS_OF,)
+    assert compare(calc, price="70", rates={"USD": on_time}).comparable
+
+
 def test_model_age_and_per_share_scope_are_stated_as_limitations():
     comparison = compare(model("100"), price="80")
 

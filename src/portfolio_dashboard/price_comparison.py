@@ -369,9 +369,13 @@ def compare_to_price(
                 notes.append(ComparisonNote.PRICE_SHEET_REPLACEMENT)
             if price_observed is None:
                 notes.append(ComparisonNote.PRICE_TIME_UNKNOWN)
-            elif price_observed > policy.as_of or price_retrieved > policy.as_of:
+            # Evidence retrieved or observed after the snapshot never enters it, also
+            # when the observation time is unknown (Sheet replacement prices).
+            if price_retrieved > policy.as_of or (
+                price_observed is not None and price_observed > policy.as_of
+            ):
                 reasons.append(ComparisonReason.PRICE_TIME_AFTER_AS_OF)
-            else:
+            elif price_observed is not None:
                 price_age = policy.as_of - price_observed
                 if price_age > policy.max_price_age:
                     notes.append(ComparisonNote.PRICE_OLDER_THAN_LIMIT)
