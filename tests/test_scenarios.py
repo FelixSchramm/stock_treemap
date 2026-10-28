@@ -28,7 +28,7 @@ from portfolio_dashboard.fundamentals import (
     WeightedSharesPeriod,
 )
 from portfolio_dashboard.intrinsic_models import InputReference, Scenario
-from portfolio_dashboard.models import ValueStatus
+from portfolio_dashboard.models import Position, ProviderMapping, QuoteUnit, ValueStatus
 from portfolio_dashboard.private_store import PrivateDatabase, PrivateStorageError
 from portfolio_dashboard.scenario_codec import decode_document, encode_document
 from portfolio_dashboard.scenarios import (
@@ -39,7 +39,13 @@ from portfolio_dashboard.scenarios import (
     ScenarioDocument,
     ScenarioRepository,
 )
-from portfolio_dashboard.watchlist import WatchlistEntry, WatchlistRepository
+from portfolio_dashboard.sheet_parser import NumberLocale
+from portfolio_dashboard.watchlist import link_portfolio
+from portfolio_dashboard.watchlist_sheet import (
+    BASIC_HEADERS,
+    OPTIONAL_HEADERS,
+    parse_watchlist_rows,
+)
 
 D = Decimal
 
@@ -411,7 +417,7 @@ def test_unchanged_original_refresh_does_not_overwrite_a_confirmed_manual_value(
     assert "assumptions_input_mismatch" in codes(refreshed)
 
 
-def test_registry_portfolio_and_watchlist_share_one_document_other_classes_stay_separate(
+def test_registry_portfolio_and_sheet_watchlist_share_one_document_other_classes_stay_separate(
     tmp_path,
 ):
     doc = with_plan(document())
@@ -421,21 +427,36 @@ def test_registry_portfolio_and_watchlist_share_one_document_other_classes_stay_
             doc.originals.identity.listing,
             instrument=replace(
                 doc.originals.identity.listing.instrument,
-                trading_venue="synthetic-other-venue",
+                trading_venue="FRA",
+                quote_unit=QuoteUnit("EUR", D(1)),
+                provider_mapping=ProviderMapping("yfinance", "SYNA.F"),
             ),
         ),
     )
     registry = FundamentalRegistry(
         (doc.originals.identity, other_listing), (doc.originals,)
     )
-    watch = WatchlistEntry("synthetic-watch", "Synthetisch", other_listing.listing)
+    held = doc.originals.identity.listing
+    position = Position(
+        name="Synthetische Position",
+        quantity=D(3),
+        instrument=held.instrument,
+        category=None,
+        source_row=2,
+        imported_at=AT,
+    )
+    sheet = parse_watchlist_rows(
+        (*BASIC_HEADERS, *OPTIONAL_HEADERS),
+        [["Synthetik AG", "1,0", "0", "0", "SYNA", "Aktie", "SYNA.F", "FRA", "EUR", ""]],
+        imported_at=AT,
+        number_locale=NumberLocale.GERMAN,
+    ).snapshot
+    [watch] = link_portfolio(sheet.items, (position,), (held, other_listing.listing))
+    assert watch.in_portfolio and watch.valuation_key == held.instrument.instrument_id
     db = database(tmp_path / "private")
-    WatchlistRepository(db).add(watch)
     repo = ScenarioRepository(db)
     saved = repo.save(doc)
-    assert registry.resolve(watch.instrument) is registry.resolve(
-        doc.originals.identity.listing.instrument
-    )
+    assert registry.resolve(watch.instrument) is registry.resolve(held.instrument)
     assert repo.get(other_listing) == saved
     other_identity = replace(
         doc.originals.identity,
@@ -699,17 +720,22 @@ def legacy_database(directory):
     return path
 
 
-def test_v1_migration_preserves_existing_watchlist_and_adds_versioned_scenarios(
+def stored_watchlist(path):
+    with sqlite3.connect(path) as connection:
+        return connection.execute("SELECT * FROM watchlist ORDER BY entry_id").fetchall()
+
+
+def test_v1_migration_keeps_orphaned_watchlist_rows_and_adds_versioned_scenarios(
     tmp_path,
 ):
     directory = tmp_path / "private"
     path = legacy_database(directory)
+    before = stored_watchlist(path)
+    assert len(before) == 1
     repo = repository(directory)
     saved = repo.save(with_plan(document()))
     assert repo.get(saved.originals.identity) == saved
-    assert WatchlistRepository(database(directory)).list() == (
-        WatchlistEntry("synthetic-legacy", "Synthetisch erhalten"),
-    )
+    assert stored_watchlist(path) == before
     with sqlite3.connect(path) as connection:
         assert (
             connection.execute("PRAGMA user_version").fetchone()[0]
@@ -723,6 +749,33 @@ def test_v1_migration_preserves_existing_watchlist_and_adds_versioned_scenarios(
         assert connection.execute(
             "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name"
         ).fetchall() == [("scenario_versions",), ("watchlist",)]
+
+
+def test_orphaned_watchlist_table_is_never_read_written_or_dropped(tmp_path):
+    # The Sheet tab is the only watchlist (#95). A table left by #75 must neither
+    # break the start (even with unreadable rows) nor be changed or deleted.
+    directory = tmp_path / "private"
+    path = legacy_database(directory)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO watchlist VALUES ('synthetic-garbage', 'not-json', 'synthetic-id', 7)"
+        )
+    before = stored_watchlist(path)
+    repo = repository(directory)
+    first = repo.save(with_plan(document()))
+    second = repo.save(first.refresh(first.originals, data_version="synthetic-v2", changed_at=AT))
+    assert repository(directory).get(second.originals.identity) == second
+    assert second.revision == first.revision + 1
+    assert stored_watchlist(path) == before
+
+
+def test_new_database_has_an_empty_unused_watchlist_table_that_scenarios_never_touch(
+    tmp_path,
+):
+    directory = tmp_path / "private"
+    repo = repository(directory)
+    repo.save(with_plan(document()))
+    assert stored_watchlist(directory / "private.sqlite3") == []
 
 
 def test_legacy_migration_failure_leaves_all_prior_data_and_version_untouched(

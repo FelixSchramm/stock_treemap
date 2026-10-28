@@ -1,44 +1,85 @@
-# Private Watchlist und SQLite-Ablage
+# Watchlist-Zuordnung und private SQLite-Ablage
 
-M8-06 (#75) stellt Fachoperationen bereit. Die Oberfläche folgt in #79/#80;
-Szenarien und manuelle Ergänzungen sind separat in
-[PRIVATE_SCENARIOS.md](PRIVATE_SCENARIOS.md) (#76) beschrieben. Kein DCF, Provider-
-oder Sheetabruf wird durch die Watchlist ausgelöst. Depotimport, Mengen, Einstand und
-bestehende Marktpreisbewertungen bleiben unverändert.
+Es gibt genau eine Watchlist: das Watchlist-Blatt im Google Sheet
+([ADR 0011](adr/0011-watchlist.md), [Blattschema](DATA_SOURCE.md#watchlist-blatt),
+[Parser](SHEET_PARSER.md#watchlist-parser)). Hinzufügen, Ändern und Entfernen
+erfolgen ausschließlich dort; die App pflegt keine zweite Liste (#95, Besitzer-
+entscheid vom 25.10.2026). Die private SQLite-Ablage dient nur noch Szenarien und
+manuellen Ergänzungen ([PRIVATE_SCENARIOS.md](PRIVATE_SCENARIOS.md), #76). Weder
+Watchlist noch Zuordnung lösen DCF, Provider- oder Sheetabruf aus; Depotimport,
+Mengen, Einstand und Marktpreisbewertungen bleiben unverändert.
 
-## Fachschnittstelle
+## Zuordnung zu Portfolio und Bewertungsschlüssel
 
-`WatchlistEntry(entry_id, label, listing=None, revision=1)` enthält weder
-Stückzahl noch Einstand. `entry_id` ist eine vom aufrufenden Dienst vergebene
-stabile Datensatz-ID, kein Ticker. Ohne `VerifiedListing` bleibt nur die
-Bezeichnung sichtbar, `instrument` und `provider_mapping` sind `None`.
-`mapping_status` und `mapping_explanation` erklären ungeprüfte Identität bzw.
-fehlende Providerabdeckung. Bezeichnungen werden niemals als Providerinput
-verwendet. Eine konstruierte `VerifiedListing` behauptet die vorherige externe
-Prüfung gemäß dem vorhandenen Instrumentvertrag; die Ablage verifiziert keine
-realen Zuordnungen und leitet keine fehlenden Identitäten her.
+`portfolio_dashboard.watchlist` ist rein, offline und ohne Speicherzugriff.
+`link_portfolio(items, positions, listings)` erhält die geparsten Zeilen
+(`WatchlistSnapshot.items`, ein Tuple von `WatchlistItem`), die Depotpositionen
+und die Registry geprüfter `VerifiedListing`-Einträge ([INSTRUMENT_MAPPING.md](INSTRUMENT_MAPPING.md))
+und liefert je Zeile genau eine `WatchlistMembership` in Blattreihenfolge; keine
+Zeile entfällt. Sie enthält `item`, `in_portfolio`, `valuation_key`, `status`
+(`IdentityStatus`), `explanation`, bei geprüften Zeilen `listing`/`instrument`
+der Registry. Weder Name, Ticker, Zeilennummer noch eine Zelle des Blatts wird je
+zur `instrument_id`. Mengen, Einstand und Positionen werden nicht verändert.
 
-`WatchlistRepository(PrivateDatabase())` bietet `add(entry)`, `get(entry_id)`,
-`list()`, `update(entry)` und `remove(entry_id, expected_revision=...)`.
-Speichererfolg wird erst nach Commit zurückgegeben. `update` liefert eine neue
-Revision; veraltetes Ändern oder Löschen wirft `WatchlistConflict`. Nach einem
-Konflikt erneut laden. Auch zwei Sitzungen können dieselbe bestätigte Aktie
-nicht doppelt anlegen: eine SQLite-Unique-Bedingung schützt deren verifizierte
-Instrument-ID unabhängig vom Handelsplatz. Unterschiedliche Anteilsklassen
-brauchen weiterhin unterschiedliche bestätigte Instrument-IDs; gleiche Namen,
-Ticker oder Emittenten führen keine Klassen zusammen. Ungeprüfte Kandidaten
-werden nicht anhand ihrer Bezeichnung dedupliziert.
+**Regel für eine geprüfte Zeile.** Das Blatt liefert nur einen Kandidaten
+(`Yahoo-Symbol`, `Handelsplatz`, `Währung`; Parserstatus `MAPPED`). Er gilt erst als
+geprüfte Identität, wenn er **genau** mit einem Eintrag der bereits geprüften
+Registry übereinstimmt:
 
-`link_portfolio(entries, positions, listings)` liefert `WatchlistMembership`
-mit `in_portfolio` und `valuation_key`. Die gemeinsame bestätigte
-Instrument-ID kann vor einer Bewertung dedupliziert werden; andere Klassen
-behalten eigene Schlüssel. Widersprüchliche Registry-Zuordnungen werden
-abgelehnt. Die unveränderte `FundamentalRegistry.resolve(entry.instrument)`
-liefert denselben Berichtssatz wie für genau dieselbe geprüfte Portfolioaktie.
-Die Watchlist speichert keine Kopie der Unternehmensbewertung. Ungeprüfte
-Einträge haben keinen Bewertungsschlüssel. Eine gespeicherte geprüfte Aktie
-kann fachlich weiterhin etwa als ADR oder Mehrklassenemittent ausgeschlossen
-sein; die Modellgrenzen aus ADR 0010 gelten unverändert.
+- `provider_mapping` ist `yfinance` mit demselben Symbol,
+- `trading_venue` ist derselbe Yahoo-`exchangeName`,
+- `quote_unit` hat dieselbe Währung und den Faktor 1,
+- eine angegebene `Typ`-Spalte widerspricht dem geprüften Typ nicht (leer ist erlaubt).
+
+Der Bewertungsschlüssel ist die `instrument_id` des **Registryeintrags**, nicht
+ein Wert aus dem Blatt. Dieselbe geprüfte Aktie hat daher in Portfolio und Watchlist
+denselben Schlüssel, auch auf einem anderen geprüften Handelsplatz; die unveränderte
+`FundamentalRegistry.resolve(membership.instrument)` liefert denselben Berichtssatz
+wie für die Portfolioaktie. Andere Anteilsklassen, ADRs und andere Papiere behalten
+eigene Schlüssel. `in_portfolio` ist wahr, wenn eine Position zur selben geprüften
+`instrument_id` auflöst.
+
+Alle anderen Zeilen bleiben sichtbar, erhalten aber **keinen** Bewertungsschlüssel:
+
+| `IdentityStatus` | Bedeutung | Schlüssel |
+| --- | --- | --- |
+| `VERIFIED` | Kandidat entspricht einer geprüften Aktie der Registry | ja |
+| `VERIFIED_NOT_STOCK` | entspricht einem geprüften Nicht-Aktien-Listing (ETF) | nein (kein Bewertungsmodell) |
+| `UNMATCHED` | Kandidat fehlt in der Registry oder widerspricht ihr (Symbol, Platz, Währung, Einheit, Typ) | nein |
+| `NO_CANDIDATE` | Zeile nur A–D, unvollständige/widersprüchliche Angabe, Derivat (Parser `SHEET_ONLY`/`FALLBACK`) | nein |
+
+Ein Schlüssel macht aus einer Zeile weder eine Bewertung noch einen Kurs. Eine
+geprüfte Aktie kann fachlich weiterhin ausgeschlossen sein (ADR 0010).
+
+**Offene Besitzerfrage (#95).** ADR 0011 hat nicht entschieden, ob eine Blattzeile
+*allein* (ohne Eintrag in der geprüften Registry) für die Bewertung nach ADR 0010
+als Identität gilt, etwa über zusätzliche Spalten wie ISIN oder Anteilsklasse.
+Bis zur Entscheidung gilt die enge Regel oben: Blatt-Kandidaten werden nur gegen
+bereits geprüfte Registryeinträge bestätigt und nehmen keine Identitätsentscheidung
+vorweg. Um eine Watchlist-Aktie ohne Depotposition zu bewerten, ist ihr Listing in
+die geprüfte Registry (`listings.toml`/`[[listing]]`) aufzunehmen.
+
+## Entfernte SQLite-Watchlist und Altbestand
+
+`WatchlistRepository`, `WatchlistEntry`, `WatchlistConflict` und `MappingStatus`
+(#75) sind entfernt. Die App liest oder schreibt die SQLite-Tabelle `watchlist`
+nicht mehr und migriert, verschiebt oder löscht ihre Zeilen nicht.
+
+Behandlung bestehender privater Datenbanken (Entscheidung zu #95):
+
+- Schema und `SCHEMA_VERSION = 2` bleiben unverändert; die Tabelle `watchlist` ist
+  weiterhin Teil der erwarteten Struktur. Eine alte Datenbank (Schema 1 oder 2) mit
+  Zeilen startet daher wie bisher, wird bei Schema 1 nur um `scenario_versions`
+  ergänzt und bleibt für Szenarien voll funktionsfähig.
+- Die Zeilen werden nie gelesen oder geparst. Auch ungültige alte Nutzdaten können
+  den Start oder Szenarien nicht mehr stören; sie werden aber auch nicht angezeigt.
+- Keine stille Datenvernichtung: weder `DROP`, `DELETE` noch Umbenennung. Neue
+  Datenbanken legen die Tabelle leer an (ein einheitliches Schema; keine Weiche
+  zwischen alten und neuen Stores) und nichts schreibt hinein.
+- Wer die alten Einträge noch braucht, überträgt sie selbst in das Watchlist-Blatt
+  und sichert die Datenbank wie unten beschrieben. Das Entfernen der leeren oder
+  veralteten Tabelle wäre eine eigene Migration (neue Schemaversion mit
+  ausdrücklicher Besitzerfreigabe) und ist nicht Teil von #95.
 
 ## Datenpfad und Zugriff
 
@@ -83,15 +124,13 @@ nicht in globale Streamlit-Caches. Die Konfiguration wird je Aufruf neu gelesen.
 
 `APPLICATION_ID`, `SCHEMA_VERSION = 2`, `MIGRATIONS` und `SCHEMAS` in
 `private_store.py` kennzeichnen und prüfen das Format. Version 1 enthält
-ausschließlich `watchlist` mit versioniertem JSON-Payload, bestätigter
-Instrument-ID und Datensatzrevision.
+ausschließlich die seit #95 ungenutzte Tabelle `watchlist` (siehe oben).
 Die erste Schemaanlage wird atomar vor der ersten Fachänderung committet;
 ein abgelehnter Eintrag beschädigt keinen neuen Store. Jede weitere Migration
 muss Version, SQL und die explizite erwartete Schemaprüfung gemeinsam ergänzen.
 Version 2 ergänzt `scenario_versions` für #76 ohne Änderung der Watchlist-Tabelle
 und erhält deren Daten. Die private Szenarioablage verwendet denselben
 Transaktions- und Zugriffspfad und eigene fachliche Versionen und JSON-Codecs.
-Die Watchlist selbst enthält weiterhin keine Szenarien oder Finanzannahmen.
 
 `BEGIN IMMEDIATE` serialisiert kurze Operationen aus unabhängigen Sitzungen und
 Prozessen. Schreibende Sitzungen warten höchstens zwei Sekunden auf SQLite;
@@ -111,7 +150,7 @@ verschlüsselt**; Dateirechte ersetzen keine geschützte Host-/Backupsicherung.
 `quick_check`, App-Kennung, Schemafassung und erwartete Tabellenstruktur werden
 vor Zugriff geprüft. Beschädigte, leere/trunkierte vorhandene, fremde oder
 zukünftige Datenbanken werden niemals still überschrieben oder als leere
-Watchlist angezeigt. Ein unterbrochener erster Schemaaufbau kann eine leere
+Liste angezeigt. Ein unterbrochener erster Schemaaufbau kann eine leere
 Datei hinterlassen; auch diese muss ausdrücklich geprüft werden.
 
 Für eine Sicherung App/Schreibzugriffe stoppen und die vollständige Datenbank

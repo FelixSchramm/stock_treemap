@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from private_probe import RECORD, ProbeStore
 
 import portfolio_dashboard.auth as auth
 import portfolio_dashboard.private_store as storage
@@ -24,7 +25,6 @@ from portfolio_dashboard.private_store import (
     PrivateDatabase,
     PrivateStorageError,
 )
-from portfolio_dashboard.watchlist import WatchlistEntry, WatchlistRepository
 
 NOW = 2_000_000_000
 LOGIN = LoginConfig(
@@ -58,19 +58,19 @@ def claims():
 
 
 def repo_for(directory):
-    return WatchlistRepository(
+    return ProbeStore(
         PrivateDatabase(lambda: config(directory), server_address=lambda: "127.0.0.1")
     )
 
 
 def operations(repo):
-    record = WatchlistEntry("synthetic-id", "Synthetische Beobachtung")
+    record = RECORD
     return [
         lambda: repo.list(),
-        lambda: repo.get(record.entry_id),
+        lambda: repo.get(record[0]),
         lambda: repo.add(record),
         lambda: repo.update(record),
-        lambda: repo.remove(record.entry_id, expected_revision=1),
+        lambda: repo.remove(record[0]),
     ]
 
 
@@ -86,7 +86,7 @@ def test_every_private_operation_denies_before_filesystem(
     database = PrivateDatabase(
         lambda: config(tmp_path / "private", Mode.PRODUCTION), user=lambda: supplied
     )
-    repo = WatchlistRepository(database)
+    repo = ProbeStore(database)
 
     def forbidden(*args):
         raise AssertionError("unauthorized filesystem access")
@@ -106,8 +106,8 @@ def test_expiry_revocation_and_current_config_are_rechecked_each_operation(
     current = config(tmp_path / "private", Mode.PRODUCTION)
     user = claims()
     database = PrivateDatabase(lambda: current, user=lambda: user)
-    repo = WatchlistRepository(database)
-    record = WatchlistEntry("synthetic-id", "Synthetische Beobachtung")
+    repo = ProbeStore(database)
+    record = RECORD
     repo.add(record)
     assert repo.list() == (record,)
     user["exp"] = NOW
@@ -120,7 +120,7 @@ def test_expiry_revocation_and_current_config_are_rechecked_each_operation(
         with pytest.raises(PrivateStorageError, match="Besitzerzugriff"):
             operation()
     current = replace(current, login=LOGIN)
-    assert repo.get(record.entry_id) == record
+    assert repo.get(record[0]) == record
 
 
 @pytest.mark.parametrize("address", [None, "", "0.0.0.0", "192.0.2.4"])
@@ -133,7 +133,7 @@ def test_local_boundary_precedes_all_storage_operations(tmp_path, address, monke
         raise AssertionError("non-loopback filesystem access")
 
     monkeypatch.setattr(storage, "_database_path", forbidden)
-    for operation in operations(WatchlistRepository(database)):
+    for operation in operations(ProbeStore(database)):
         with pytest.raises(PrivateStorageError) as error:
             operation()
         assert error.value.code == "local"
@@ -151,7 +151,7 @@ def test_local_loopback_is_rechecked_without_consulting_login(tmp_path, address)
         user=forbidden,
         server_address=lambda: current_address,
     )
-    repo = WatchlistRepository(database)
+    repo = ProbeStore(database)
     assert repo.list() == ()
     current_address = "0.0.0.0"
     with pytest.raises(PrivateStorageError) as error:
@@ -170,7 +170,7 @@ def test_runtime_defaults_fetch_current_streamlit_identity_and_address(
     monkeypatch.setattr(storage, "load_config", lambda **kwargs: current)
     monkeypatch.setattr(storage.st, "secrets", {"auth": {}})
     monkeypatch.setattr(storage.st, "user", claims())
-    repo = WatchlistRepository(PrivateDatabase())
+    repo = ProbeStore(PrivateDatabase())
     assert repo.list() == ()
     monkeypatch.setattr(storage.st, "user", {})
     with pytest.raises(PrivateStorageError, match="Besitzerzugriff"):
@@ -224,17 +224,17 @@ def test_runtime_inline_production_owner_persists_without_credential_file(
     assert current.source.credentials_file is None
     assert current.private_data_dir == str(inline_production_runtime)
     database = PrivateDatabase()
-    repo = WatchlistRepository(database)
-    record = WatchlistEntry("synthetic-inline-id", "Synthetische Beobachtung")
+    repo = ProbeStore(database)
+    record = ("synthetic-inline-id", "Synthetische Beobachtung")
     repo.add(record)
     database.close()
     reopened = PrivateDatabase()
     try:
-        repo = WatchlistRepository(reopened)
-        assert repo.get(record.entry_id) == record
-        updated = repo.update(replace(record, label="Synthetische Änderung"))
+        repo = ProbeStore(reopened)
+        assert repo.get(record[0]) == record
+        updated = repo.update((record[0], "Synthetische Änderung"))
         assert repo.list() == (updated,)
-        repo.remove(updated.entry_id, expected_revision=updated.revision)
+        repo.remove(updated[0])
         assert repo.list() == ()
     finally:
         reopened.close()
@@ -248,9 +248,9 @@ def test_runtime_inline_production_owner_persists_without_credential_file(
 def test_runtime_inline_production_rechecks_owner_before_every_private_access(
     inline_production_runtime, monkeypatch, bad_claims, existing
 ):
-    repo = WatchlistRepository(PrivateDatabase())
+    repo = ProbeStore(PrivateDatabase())
     if existing:
-        repo.add(WatchlistEntry("synthetic-id", "Synthetische Beobachtung"))
+        repo.add(RECORD)
     supplied = claims() | bad_claims if bad_claims else {}
     monkeypatch.setattr(storage.st, "user", supplied)
 
@@ -268,7 +268,7 @@ def test_runtime_inline_production_rechecks_owner_before_every_private_access(
 def test_runtime_inline_production_rechecks_owner_configuration(
     inline_production_runtime, monkeypatch,
 ):
-    repo = WatchlistRepository(PrivateDatabase())
+    repo = ProbeStore(PrivateDatabase())
     assert repo.list() == ()
     monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked")
 
@@ -293,13 +293,13 @@ def test_demo_ignores_private_path_and_never_consults_identity(tmp_path):
 
     demo = replace(config(private, Mode.DEMO), private_data_dir=str(private))
     first = PrivateDatabase(lambda: demo, user=forbidden, server_address=forbidden)
-    first_repo = WatchlistRepository(first)
-    first_repo.add(WatchlistEntry("synthetic-demo", "Synthetische Demo"))
+    first_repo = ProbeStore(first)
+    first_repo.add(("synthetic-demo", "Synthetische Demo"))
     temporary = Path(first._temporary.name)
     second = PrivateDatabase(lambda: demo, user=forbidden, server_address=forbidden)
-    assert WatchlistRepository(second).list() == ()
+    assert ProbeStore(second).list() == ()
     assert marker.read_bytes() == b"synthetic-do-not-open"
-    assert first_repo.list()[0].label == "Synthetische Demo"
+    assert first_repo.list()[0][1] == "Synthetische Demo"
     first.close()
     second.close()
     assert not temporary.exists()
@@ -358,7 +358,7 @@ def test_private_directory_database_and_journal_have_restrictive_permissions(tmp
     )
     with database.transaction() as connection:
         connection.execute(
-            "INSERT INTO watchlist VALUES ('synthetic-id', '{}', NULL, 1)"
+            "INSERT INTO scenario_versions VALUES ('synthetic-id', 1, '{}')"
         )
         if os.name == "posix":
             assert stat.S_IMODE(directory.stat().st_mode) == 0o700
@@ -419,7 +419,7 @@ def test_unsafe_existing_permissions_are_refused(tmp_path, what):
 def test_corrupt_or_truncated_database_is_never_recreated(tmp_path, contents):
     directory = tmp_path / "private"
     repo = repo_for(directory)
-    repo.add(WatchlistEntry("synthetic-id", "Synthetisch"))
+    repo.add(RECORD)
     path = directory / "private.sqlite3"
     path.write_bytes(contents)
     with pytest.raises(PrivateStorageError) as error:
@@ -464,13 +464,13 @@ def test_schema_migration_failure_is_atomic_and_not_silently_recreated(
         storage, "MIGRATIONS", {1: (storage.WATCHLIST_SCHEMA, "synthetic invalid SQL")}
     )
     with pytest.raises(PrivateStorageError):
-        WatchlistRepository(database).list()
+        ProbeStore(database).list()
     with sqlite3.connect(directory / "private.sqlite3") as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 0
         assert connection.execute("SELECT name FROM sqlite_schema").fetchall() == []
     monkeypatch.setattr(storage, "MIGRATIONS", {1: (storage.WATCHLIST_SCHEMA,)})
     with pytest.raises(PrivateStorageError) as error:
-        WatchlistRepository(database).list()
+        ProbeStore(database).list()
     assert error.value.code == "incompatible"
 
 
@@ -482,10 +482,10 @@ def test_rejected_first_domain_change_leaves_usable_empty_schema(tmp_path):
     with pytest.raises(ValueError, match="synthetic rollback"):
         with database.transaction() as connection:
             connection.execute(
-                "INSERT INTO watchlist VALUES ('synthetic-id', '{}', NULL, 1)"
+                "INSERT INTO scenario_versions VALUES ('synthetic-id', 1, '{}')"
             )
             raise ValueError("synthetic rollback")
-    assert WatchlistRepository(database).list() == ()
+    assert ProbeStore(database).list() == ()
 
 
 def test_committed_schema_is_versioned_and_domain_failure_rolls_back(tmp_path):
@@ -493,12 +493,12 @@ def test_committed_schema_is_versioned_and_domain_failure_rolls_back(tmp_path):
     database = PrivateDatabase(
         lambda: config(directory), server_address=lambda: "127.0.0.1"
     )
-    repo = WatchlistRepository(database)
+    repo = ProbeStore(database)
     assert repo.list() == ()
     with pytest.raises(ValueError):
         with database.transaction() as connection:
             connection.execute(
-                "INSERT INTO watchlist VALUES ('synthetic-id', '{}', NULL, 1)"
+                "INSERT INTO scenario_versions VALUES ('synthetic-id', 1, '{}')"
             )
             raise ValueError("synthetic rollback")
     assert repo.list() == ()

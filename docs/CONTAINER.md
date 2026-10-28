@@ -39,9 +39,9 @@ Es gibt keine Secrets im Image und keine im Build-Kontext. Der Host injiziert zu
 - Die Streamlit-Abschnitte `[auth]`, `[sheets_service_account]` und optional `[[listing]]` als schreibgeschützte Datei `/app/.streamlit/secrets.toml` (Vorlage: [`secrets.example.toml`](../.streamlit/secrets.example.toml)). Der Produktivmodus liest den Sheet-Schlüssel nur aus diesem Abschnitt, nicht aus `PORTFOLIO_SHEETS_CREDENTIALS_FILE`.
 
 Das Image enthält keine private Datenbank und erzeugt kein persistentes Volume. Für die
-optionale private Watchlist muss der Besitzer zur Laufzeit einen eigenen persistenten
+optionale private Ablage (Szenarien) muss der Besitzer zur Laufzeit einen eigenen persistenten
 Ordner außerhalb `/app` mit `PORTFOLIO_PRIVATE_DATA_DIR` konfigurieren und UID 10001
-Zugriff mit restriktiven Rechten geben; siehe [Private Watchlist](PRIVATE_WATCHLIST.md).
+Zugriff mit restriktiven Rechten geben; siehe [Watchlist-Zuordnung und private Ablage](PRIVATE_WATCHLIST.md).
 Demo ignoriert den privaten Pfad und verwendet nur temporäre synthetische Daten.
 Der Kurscache ist rekonstruierbar. Rollback: vorheriges funktionierendes Image-Tag
 behalten; bei späteren Datenbankmigrationen zusätzlich Schema-Kompatibilität prüfen.
