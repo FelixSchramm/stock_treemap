@@ -442,7 +442,13 @@ class PortfolioRefreshCoordinator:
                 mapped_instruments, refresh=refresh, replacements=replacements
             )
             prepared_periods: dict[Instrument, PeriodResults] = {}
-            active_listings: dict[tuple[str, str], VerifiedListing] = {}
+            # Verified identities without provider coverage stay in the registry so
+            # their partial holdings still group; selected listings replace by key.
+            active_listings: dict[tuple[str, str], VerifiedListing] = {
+                (listing.instrument.instrument_id, listing.instrument.trading_venue): listing
+                for listing in self._listings
+                if listing.instrument.provider_mapping is None
+            }
 
             def candidate_results(candidate):
                 instrument = candidate.instrument

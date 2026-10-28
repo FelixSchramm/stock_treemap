@@ -460,6 +460,34 @@ def test_missing_listing_is_named_even_with_identity_and_without_a_sheet_value(s
     )[0].status
 
 
+def test_verified_listing_without_provider_mapping_still_groups_partial_holdings():
+    instrument = Instrument(
+        InstrumentType.STOCK, instrument_id="SYNTHETIC-IDENTITY", trading_venue="FRA",
+        quote_unit=EUR,
+    )
+    listing = VerifiedListing(instrument=instrument, equity_form=EquityForm.SHARE)
+    positions = tuple(
+        Position(
+            name="Synthetische Position", quantity=Decimal(1), instrument=instrument,
+            category=None, source_row=row, imported_at=T0,
+            valuation=Valuation(Decimal(100), ValueStatus.AVAILABLE,
+                                Provenance(ValuationSource.SHEET, T0), EUR),
+        )
+        for row in (2, 3)
+    )
+    provider = _FakeMarketProvider()
+    coordinator = PortfolioRefreshCoordinator(
+        lambda _: PortfolioSnapshot(T0, SnapshotStatus.COMPLETE, positions),
+        QuoteCache(provider, clock=lambda: T0),
+        listings=(listing,),
+        clock=lambda: T0,
+    )
+    bundle = coordinator.load()
+    assert bundle.available and provider.quote_calls == 0
+    assert len(bundle.valuation.groups) == 1
+    assert bundle.valuation.total_eur == Decimal(200)
+
+
 @pytest.mark.parametrize("sheet_price", ["100", None])
 @pytest.mark.parametrize(("code", "reason"), [
     ("instrument_metadata_mismatch", "Instrument oder Handelsplatz weicht ab"),

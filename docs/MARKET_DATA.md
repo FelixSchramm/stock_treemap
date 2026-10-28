@@ -87,6 +87,20 @@ und Historie für alle vier Perioden:
    nutzbare Historie kann bei fehlender Primärzuordnung weiterhin bewerten;
    Kursperioden bleiben dann n. v. mit dem Historiengrund.
 
+Ein fehlgeschlagenes Listing ist noch kein Anbieterausfall: Der Cache wertet
+Fehler je **Position** (primäres Listing plus gepflegter Ersatz, der direkt
+danach abgerufen wird). Eine Position erhöht die anbieterweite Fehlerserie
+höchstens einmal und nur, wenn alle ihre Kandidaten fehlschlagen; jeder
+erfolgreiche Abruf setzt die Serie zurück. Gesunde Ersatzlistings bleiben so
+unabhängig von davor liegenden fehlerhaften Listings erreichbar, solange der
+Anbieter antwortet. Ein echter Ausfall (alle Kandidaten fehlerhaft) öffnet das
+anbieterweite Backoff unverändert. Die Wiederaufnahme prüft Positionen mit dem
+fehlerärmsten Kandidaten zuerst. Reine Ersatzpositionen ohne primäres
+App-Listing sowie Positionen ohne Ersatz zählen einzeln und können in einem
+ersten Durchgang nachfolgende gesunde Schlüssel sperren; das heilt sich über
+die Sortierung nach Fehlerzahl ab dem nächsten Durchgang nach Ablauf des
+Backoffs.
+
 Referenzkurs und aktueller Kurs werden nie zwischen Listings gemischt. Alle
 Provider-Metadaten-, Einheiten-, Kalender-, Split- und Historienprüfungen bleiben
 streng. Fehlerhafte/unvollständige optionale Zeilen oder widersprüchliche
@@ -204,9 +218,11 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
 - `refresh=True` (manuelles Aktualisieren) überspringt nur die TTL, nicht das Backoff.
 - Fehler erzeugen ein Backoff je Schlüssel (15 s, verdoppelt, höchstens 300 s;
   Konstruktorparameter). Solange es läuft, erfolgt kein Providerabruf. Ein Erfolg setzt es zurück.
-- `quotes(instruments)` bündelt einen Durchgang: nur fällige Schlüssel werden
-  abgerufen, Schlüssel mit weniger bisherigen Fehlern zuerst (bei Gleichstand
-  in Eingabereihenfolge). Die Rückgabe bleibt in Eingabereihenfolge. Dadurch
+- `quotes(instruments, replacements=...)` bündelt einen Durchgang: nur fällige
+  Schlüssel werden abgerufen, Positionen mit weniger bisherigen Fehlern zuerst
+  (Fehlerzahl des fehlerärmsten Kandidaten aus Primär- und Ersatzlisting; bei
+  Gleichstand in Eingabereihenfolge). Eine Position zählt höchstens einen
+  Providerfehler und nur, wenn auch ihre Ersatzlistings fehlschlagen. Die Rückgabe bleibt in Eingabereihenfolge. Dadurch
   belegen dauerhaft abgelehnte Symbole nicht immer die erste Erholungsprobe.
   Nach `provider_failure_threshold` (3) aufeinanderfolgenden Providerfehlern
   (Warncode `provider_failure`, auch bei vom Provider abgelehnten Symbolen;

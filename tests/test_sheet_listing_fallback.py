@@ -372,15 +372,19 @@ def test_duplicate_yahoo_header_is_a_safe_optional_error(monkeypatch, tmp_path):
     assert any(w.code == "duplicate_yahoo_column" for w in bundle.snapshot.warnings)
 
 
-def three_listing_setup(monkeypatch, tmp_path, cases):
-    """Three synthetic holdings, each with an app listing and a Sheet replacement."""
+def listing_setup(monkeypatch, tmp_path, cases, count=3):
+    """Synthetic holdings, each with an app listing and a Sheet replacement."""
     primaries, rows = [], [HEADERS]
-    for index in range(1, 4):
-        isin = f"DE000SYN000{index}"
+    for index in range(1, count + 1):
+        isin = f"DE000SYN{index:04d}"
         primaries.append(PRIMARY | {"isin": isin, "symbol": f"PRIMARY{index}.DE"})
         rows.append(sheet_row(symbol=f"ALTERNATIVE{index}.DE", isin=isin,
                               name=f"Synthetische Position {index}"))
     return loader(monkeypatch, tmp_path, primary=primaries, rows=rows, cases=cases, mode="production")
+
+
+def three_listing_setup(monkeypatch, tmp_path, cases):
+    return listing_setup(monkeypatch, tmp_path, cases, 3)
 
 
 def set_time(coordinator, moment):
@@ -408,18 +412,47 @@ def test_healthy_replacements_are_not_starved_by_three_failing_app_listings(monk
         "ALTERNATIVE1.DE", "ALTERNATIVE2.DE", "ALTERNATIVE3.DE"}
 
 
+@pytest.mark.parametrize("healthy", [
+    (False, True),
+    (True, False, True),
+    (False, False, True),
+    (False, True, True, True),
+])
+def test_failing_replacements_do_not_block_healthy_replacements(monkeypatch, tmp_path, healthy):
+    """Every app listing fails; a failing replacement must not hide later healthy ones."""
+    cases = {f"PRIMARY{i}.DE": {"quote_error": True} for i in range(1, len(healthy) + 1)}
+    cases |= {f"ALTERNATIVE{i}.DE": {"price": 220.0, "close": 200.0} if ok else {"quote_error": True}
+              for i, ok in enumerate(healthy, 1)}
+    coordinator, _, _ = listing_setup(monkeypatch, tmp_path, cases, len(healthy))
+    for minutes in (0, 1, 10, 20, 40, 80, 160):  # first load, then refreshes around backoff expiry
+        set_time(coordinator, NOW + timedelta(minutes=minutes))
+        bundle = coordinator.load(refresh=minutes > 0)
+        assert bundle.valuation.total_eur == Decimal(sum(440 if ok else 100 for ok in healthy))
+        for perfs in bundle.course_performances.values():
+            assert [perf.percent for perf in perfs] == [Decimal(10) if ok else None for ok in healthy]
+        symbols = [p.instrument.provider_mapping.symbol for p in bundle.snapshot.positions]
+        assert [s.startswith("ALTERNATIVE") for s in symbols] == list(healthy)
+
+
 def test_real_provider_outage_still_triggers_and_respects_provider_wide_backoff(monkeypatch, tmp_path):
     cases = {f"{kind}{i}.DE": {"quote_error": True}
              for kind in ("PRIMARY", "ALTERNATIVE") for i in (1, 2, 3)}
     coordinator, _, market = three_listing_setup(monkeypatch, tmp_path, cases)
     bundle = coordinator.load()
     assert bundle.available
-    # Three consecutive provider failures open the breaker; nothing is fetched afterwards.
-    assert quote_attempts(market) == ["PRIMARY1.DE", "ALTERNATIVE1.DE", "PRIMARY2.DE"]
+    # Three positions fail completely (primary and replacement) and open the breaker;
+    # nothing is fetched afterwards.
+    first = ["PRIMARY1.DE", "ALTERNATIVE1.DE", "PRIMARY2.DE", "ALTERNATIVE2.DE",
+             "PRIMARY3.DE", "ALTERNATIVE3.DE"]
+    assert quote_attempts(market) == first
     set_time(coordinator, NOW + timedelta(seconds=5))
     assert coordinator.load(refresh=True).available
-    assert len(market.calls) == 3
-    # After the backoff, fetching resumes (and reopens the breaker while the outage lasts).
+    assert len(market.calls) == 6
+    # After the backoff, exactly one position (its primary and replacement) is probed and
+    # reopens the breaker while the outage lasts.
     set_time(coordinator, NOW + timedelta(minutes=10))
     assert coordinator.load(refresh=True).available
-    assert len(market.calls) > 3
+    assert len(quote_attempts(market)) == 8
+    set_time(coordinator, NOW + timedelta(minutes=10, seconds=5))
+    assert coordinator.load(refresh=True).available
+    assert len(quote_attempts(market)) == 8
