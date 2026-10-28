@@ -48,4 +48,23 @@ Das Modell ergänzt eine geprüfte `instrument_id`, Provider-Zuordnung, Währung
 - Sheet-Zeitzone und Abrufzeit sind weder Börsenzeitzone noch tatsächlicher Kurszeitpunkt.
 - Vor Veröffentlichung Instrumentabdeckung, Einstandssemantik und eigenen Laufzeitzugang verifizieren. Konkrete Ergebnisse bleiben in der geschützten Laufzeitkonfiguration oder lokalen Dokumentation.
 
-Referenzen: [ADR 0004](adr/0004-google-sheets.md), [ADR 0005](adr/0005-instrumente-und-kursdaten.md), [ADR 0007](adr/0007-bewertung-und-einstand.md).
+## Watchlist-Blatt
+
+Die Watchlist liegt in einem eigenen Blatt derselben Datei und wird über `PORTFOLIO_WATCHLIST_RANGE` (`Blatt!A1:D300` bis `Blatt!A1:T…`, erste Zeile = Überschriften) ausgewählt; Entscheidung: [ADR 0011](adr/0011-watchlist.md). Sie enthält reine Kursentwicklung, keine Stückzahlen, keinen Einstand und keinen Zielkurs.
+
+| Spalte | Überschrift | Verwendung |
+| --- | --- | --- |
+| A–D (Grundspalten, je genau einmal) | `Position` | Name, **Pflicht** |
+| | `Letzter Kurs (EUR)` | optionaler Sheet-Kurs, gekennzeichneter Ersatzwert „Sheet-Wert, Kursstand unbekannt“ |
+| | `Veränd. (%)` | optionale Sheet-Tagesänderung in Prozentpunkten (20 = 20 %, nicht skaliert) |
+| | `Nettoveränd. (EUR)` | optionale Sheet-Tagesänderung in EUR |
+| ab E, über Überschrift (je höchstens einmal, bis Spalte T) | `Ticker` | Anzeige, keine ID |
+| | `Typ` | `Aktie`, `ETF`; `Derivat` erhält keine Zuordnung |
+| | `Yahoo-Symbol` | Kandidat für den yfinance-Abruf (Großschreibung wird vereinheitlicht) |
+| | `Handelsplatz` | Yahoo-`exchangeName`: `GER`, `FRA`, `STU`, `MUN`, `DUS` (Berlin) oder `NMS`, `NGM`, `NCM`, `NYQ`, `ASE`, `PCX` (New York) |
+| | `Währung` | dreibuchstabiger Code in Großbuchstaben, z. B. `EUR`, `USD` |
+| | `Kategorie` | Anzeige |
+
+Eine Zeile mit nur A–D ist gültig: `Heute` zeigt den Sheet-Wert als Ersatzwert, `Woche`, `Monat` und `Jahr` zeigen „n. v.“. Eine Zeile mit vollständiger und widerspruchsfreier Zuordnung (`Yahoo-Symbol`, `Handelsplatz`, `Währung`) erhält später alle vier Perioden; jede unvollständige, widersprüchliche, doppelte oder derivatbezogene Zuordnung ergibt eine Zeilenwarnung und den Sheet-Wert. Dies ist die bewusste Ausnahme zu ADR 0005 (Pflege im Blatt statt in `listings.toml`); der Laufzeitabgleich gegen die Yahoo-Metadaten bleibt Pflicht. Parser: [SHEET_PARSER.md](SHEET_PARSER.md#watchlist-parser).
+
+Referenzen: [ADR 0004](adr/0004-google-sheets.md), [ADR 0005](adr/0005-instrumente-und-kursdaten.md), [ADR 0007](adr/0007-bewertung-und-einstand.md), [ADR 0011](adr/0011-watchlist.md).
