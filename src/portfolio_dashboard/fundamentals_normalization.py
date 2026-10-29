@@ -568,6 +568,13 @@ class _Normalizer:
         if not self._metadata_ok() or not self._scale_ok():
             return self._result((), None, None, withheld=True)
         periods, opening = self._annual_periods()
+        while (
+            periods
+            and self._nwc([p.end for p in periods] + [opening])[opening][0] is None
+        ):
+            # A year without an opening NWC cannot yield its change: drop the oldest.
+            opening = periods.pop().end
+            self.notes.append("oldest_period_dropped_nwc_gap")
         shares_period = self._shares(periods)
         bridge_date = periods[0].end if periods else None
         if periods:
@@ -848,9 +855,11 @@ class _Normalizer:
                     )
                 )
 
-    def _working_capital(self, periods: list[FlowPeriod], opening: date) -> None:
+    def _nwc(
+        self, targets: list[date]
+    ) -> dict[date, tuple[Decimal | None, str | None]]:
+        """Operating NWC per balance date; one missing component voids that date."""
         balance = self.s.annual_balance
-        targets = [p.end for p in periods] + [opening]
         ends = balance.period_ends() if balance else ()
         columns = {t: _aligned_end(ends, t) for t in targets}
         if any(c is not None and c != t for t, c in columns.items()):
@@ -865,6 +874,8 @@ class _Normalizer:
                 ("debt", CURRENT_DEBT_ROWS),
             )
         }
+        reference = "+".join(r for r in rows.values() if r) or None
+        result = {}
         for target in targets:
             column = columns[target]
             parts = {
@@ -876,13 +887,19 @@ class _Normalizer:
                 nwc = (parts["assets"] - parts["cash"]) - (
                     parts["liabilities"] - parts["debt"]
                 )
+            result[target] = (nwc, None if nwc is None else reference)
+        return result
+
+    def _working_capital(self, periods: list[FlowPeriod], opening: date) -> None:
+        targets = [p.end for p in periods] + [opening]
+        for target, (nwc, reference) in self._nwc(targets).items():
             self.add(
                 FundamentalField.OPERATING_NWC,
                 nwc,
                 UnitKind.MONEY,
                 InstantPeriod(target),
                 "balance sheet",
-                None if nwc is None else "+".join(r for r in rows.values() if r),
+                reference,
                 "(current assets - cash) - (current liabilities - current debt)",
             )
 
