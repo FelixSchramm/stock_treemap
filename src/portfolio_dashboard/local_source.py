@@ -52,6 +52,24 @@ VENUE_HOURS = {
     "MUN": (time(8), time(22)),
     "DUS": (time(8), time(22)),
 }
+# US equity exchanges (Yahoo exchangeName) for the Watchlist (ADR 0011). They are
+# deliberately not part of VENUE_HOURS, which also validates the depot's listings.
+US_VENUE_HOURS = {
+    venue: (time(9, 30), time(16))  # America/New_York
+    for venue in ("NMS", "NGM", "NCM", "NYQ", "ASE", "PCX")
+}
+# Unscheduled full-day closures (national days of mourning, 9/11, storm).
+US_SPECIAL_CLOSURES = frozenset(
+    {
+        *(date(2001, 9, day) for day in range(11, 15)),
+        date(2004, 6, 11),
+        date(2007, 1, 2),
+        date(2012, 10, 29),
+        date(2012, 10, 30),
+        date(2018, 12, 5),
+        date(2025, 1, 9),
+    }
+)
 
 
 class ListingsFileError(ValueError):
@@ -73,18 +91,63 @@ def _holidays(year: int) -> set[date]:
     }
 
 
-def venue_calendars(today: date) -> dict[str, SessionCalendar]:
-    """Calendars spanning more than a year back and a year ahead of ``today``."""
-    first, last = today - timedelta(days=400), today + timedelta(days=366)
-    closed = set().union(
-        *(_holidays(year) for year in range(first.year, last.year + 1))
-    )
-    days = (first + timedelta(days=n) for n in range((last - first).days + 1))
-    sessions = [day for day in days if day.weekday() < 5 and day not in closed]
-    return {
-        venue: session_calendar(sessions, opens, closes, first, last)
-        for venue, (opens, closes) in VENUE_HOURS.items()
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    first = date(year, month, 1)
+    return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+
+
+def us_holidays(year: int) -> set[date]:
+    """Regular NYSE/Nasdaq weekday closures of one year, observed dates included.
+
+    A fixed-date holiday on Saturday closes the Friday before, on Sunday the
+    Monday after. New Year's Day is the exception: on a Saturday the exchanges
+    stay open on 31 December, so that year contributes no closure for it.
+    """
+    may_31 = date(year, 5, 31)
+    closed = {
+        _nth_weekday(year, 1, 0, 3),  # Martin Luther King Jr. Day
+        _nth_weekday(year, 2, 0, 3),  # Presidents' Day
+        easter(year) - timedelta(days=2),  # Good Friday
+        may_31 - timedelta(days=may_31.weekday()),  # Memorial Day (last Monday)
+        _nth_weekday(year, 9, 0, 1),  # Labor Day
+        _nth_weekday(year, 11, 3, 4),  # Thanksgiving
     }
+    fixed = [(date(year, 7, 4), True), (date(year, 12, 25), True)]
+    if year >= 2022:
+        fixed.append((date(year, 6, 19), True))  # Juneteenth
+    for day, friday_substitute in fixed:
+        if day.weekday() == 5 and friday_substitute:
+            closed.add(day - timedelta(days=1))
+        elif day.weekday() == 6:
+            closed.add(day + timedelta(days=1))
+        elif day.weekday() < 5:
+            closed.add(day)
+    new_year = date(year, 1, 1)
+    if new_year.weekday() < 5:
+        closed.add(new_year)
+    elif new_year.weekday() == 6:
+        closed.add(new_year + timedelta(days=1))
+    return closed
+
+
+def venue_calendars(today: date) -> dict[str, SessionCalendar]:
+    """Calendars spanning more than a year back and a year ahead of ``today``.
+
+    German venues use Europe/Berlin dates and hours, US venues America/New_York;
+    early closes are modelled for neither.
+    """
+    first, last = today - timedelta(days=400), today + timedelta(days=366)
+    years = range(first.year, last.year + 1)
+    german_closed = set().union(*(_holidays(year) for year in years))
+    us_closed = set().union(*(us_holidays(year) for year in years))
+    us_closed |= US_SPECIAL_CLOSURES
+    days = [first + timedelta(days=n) for n in range((last - first).days + 1)]
+    calendars = {}
+    for hours, closed in ((VENUE_HOURS, german_closed), (US_VENUE_HOURS, us_closed)):
+        sessions = [day for day in days if day.weekday() < 5 and day not in closed]
+        for venue, (opens, closes) in hours.items():
+            calendars[venue] = session_calendar(sessions, opens, closes, first, last)
+    return calendars
 
 
 def load_listings(path: str) -> tuple[VerifiedListing, ...]:

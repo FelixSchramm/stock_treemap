@@ -24,6 +24,9 @@ Quote-Gründe), bleiben `current_date` und `market_open` erhalten.
   Historie neuere Balken an Tagen, die der Kalender nicht führt, ergibt sich
   `calendar_incomplete` (kein Rückwärtsüberbrücken über einen abgelaufenen
   Kalender).
+  Die Kalender der deutschen und US-Handelsplätze (`local_source.venue_calendars`,
+  US-Feiertage inklusive Wochenend-Ersatzregel) beschreibt
+  [WATCHLIST_QUOTES.md](WATCHLIST_QUOTES.md#us-kalender).
 - `now`: zeitzonenbewusster Zeitpunkt (injiziert); die Börsenzeitzone stammt
   aus der Historie.
 
