@@ -23,6 +23,7 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Betrieb auf Streamlit Community Cloud](docs/COMMUNITY_CLOUD.md)
 - [Treemap-Wertmodell](docs/TREEMAP.md)
 - [FCFF-DCF-Rechner (innerer Wert)](docs/DCF_CALCULATION.md)
+- [Innerer Wert und Kurs vergleichen (Abschlag, Abstand, EUR-Anzeige)](docs/PRICE_COMPARISON.md)
 - [Mobile Bedienung und Barrierefreiheit](docs/MOBILE_ACCESSIBILITY.md)
 
 ## Dashboard entwickeln und prüfen

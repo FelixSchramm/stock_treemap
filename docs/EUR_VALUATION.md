@@ -79,6 +79,11 @@ behauptet keine Aktualität. Einstand wird weder umgedeutet noch ergänzt.
 Prüfung mit ausschließlich synthetischen Eingaben und gesperrtem IP-Netzwerk:
 `uv run --locked pytest tests/test_valuations.py`.
 
+Die Preisprüfung (Status, Einheit, Provider-/Listing-Abgleich) ist als
+`unit_price_status(quote, listing)` herausgelöst und wird vom
+[Pro-Aktie-Vergleich mit dem inneren Wert](PRICE_COMPARISON.md) wiederverwendet;
+`value_position` verhält sich unverändert.
+
 ## Preisquelle und Ersatzwerte
 
 Die Auswahl des anzuhängenden Preises (Providerpreis, gecachter Providerpreis mit

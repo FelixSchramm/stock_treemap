@@ -6,8 +6,11 @@ rein und deterministisch: Es verwendet nur `FundamentalReportSet`,
 `ScenarioAssumptions` (siehe [Verträge](FUNDAMENTAL_MODELS.md)) und die
 Standardbibliothek. Es gibt keine Abhängigkeit von Streamlit, Providern, Netzwerk,
 Systemzeit, Bestandsmenge oder Einstand. Bewertungsstichtag ist
-`ScenarioAssumptions.valuation_at`. Es gibt keine Standardannahmen; Kursvergleich,
-EUR-Umrechnung (#78) und Oberfläche (#80) gehören nicht dazu.
+`ScenarioAssumptions.valuation_at`. Es gibt keine Standardannahmen; Kursvergleich
+und EUR-Umrechnung (#78, siehe [PRICE_COMPARISON.md](PRICE_COMPARISON.md)) sowie
+Oberfläche (#80) gehören nicht dazu. Wer vergleicht, reicht die ganze
+`ScenarioCalculation` weiter, weil `terminal_value_dominant` und
+`negative_forecast_fcff` nur dort in `limitations` stehen.
 
 ## Öffentliche Funktionen
 
