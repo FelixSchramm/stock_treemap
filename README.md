@@ -49,7 +49,9 @@ Depotsummen verwenden für Wert und Einstand dieselbe Menge gültiger Positionen
 ```text
 FCFF_t  = EBIT_t × (1 − T_t) + Abschreibungen_t − Capex_t − ΔNWC_t          t = 1..5
 TV_5    = FCFF_6 / (WACC − g),   FCFF_6 = NOPAT_6 × (1 − g / ROIC)
-Wert je Aktie = (Σ PV(FCFF) + PV(TV) + Cash − Finanzschulden − sonstige Ansprüche) / verwässerte Aktien
+Stammaktionärswert = Σ PV(FCFF) + PV(TV) + überschüssiges Cash + nichtoperative Vermögenswerte
+                     − Finanzschulden − Vorzugsansprüche − Minderheitsansprüche
+Wert je Aktie = Stammaktionärswert / verwässerte Aktien
 ```
 
 Drei Szenarien (vorsichtig, Basis, optimistisch) und eine WACC-/Wachstums-Sensitivitätsmatrix. Gerechnet wird mit `Decimal` ohne Zwischenrundung. Ungültige Annahmen wie `g ≥ WACC` oder ein negativer nachhaltiger Cashflow sperren das Ergebnis mit einem expliziten Grund, statt eine Zahl auszugeben. Ein dominanter Terminalwert wird gekennzeichnet. Der Vergleich mit dem Börsenkurs weist Abschlag und Abstand zum Modellwert getrennt aus. Die Oberfläche dafür ist noch in Arbeit. Details: [ADR 0010](docs/adr/0010-innerer-wert-fcff.md), [DCF-Rechner](docs/DCF_CALCULATION.md), [Kursvergleich](docs/PRICE_COMPARISON.md).
