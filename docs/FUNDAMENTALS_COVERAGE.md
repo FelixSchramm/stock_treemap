@@ -22,7 +22,10 @@ Aussage zu 100 % Abdeckung und keine Zusage dauerhafter Kostenfreiheit.
 - **Werkzeug:** `scripts/fundamentals_coverage_probe.py` (manuell, nie in CI, nicht
   von `app.py` importiert) ruft je Instrument Jahres- und Quartals-GuV, -Bilanz und
   -Cashflow, Metadaten (`info`), die Aktienzahl-Zeitreihe und Ergebnistermine mit
-  Pausen ab. Die reine Auswertelogik (`fundamentals_coverage`) wird offline mit
+  Pausen ab und speichert die Rohantworten lokal als Pickle-Snapshots im privaten
+  Ordner (nur vom eigenen Runner auf demselben Rechner schreiben und lesen, nie fremde
+  Snapshots laden; ohne Abrufzeit und Paketversion, daher sagt das Alter bei
+  Wiederverwendung nichts über die Frische des Abrufs). Die reine Auswertelogik (`fundamentals_coverage`) wird offline mit
   ausschließlich erfundenen Frames getestet; `--confirm-live` und ein
   Ausgabepfad unterhalb eines `private`-Ordners sind Pflicht, die Standardausgabe
   zeigt nur Zählwerte.
@@ -30,6 +33,9 @@ Aussage zu 100 % Abdeckung und keine Zusage dauerhafter Kostenfreiheit.
   ausdrücklich gelieferter Wert 0 zählt als geliefert. **OK** heißt: Wert für die drei
   jüngsten Geschäftsjahre bzw. alle vier Bilanzstichtage vorhanden. Es heißt nicht,
   dass der Wert fachlich normalisiert oder für den Vertrag richtig abgegrenzt ist.
+  Stammt ein Wert aus einer Ausweichzeile (`fallback_row_used`) oder aus
+  unterschiedlichen Zeilen je Jahr (`mixed_row_labels`), bleibt der Status OK, der
+  Code wird aber im Aggregat ausgewiesen und ist unten genannt.
 - **Fälle:** 10 Aktien (Kapitalgesellschaften, Nichtfinanzunternehmen, jeweils nur
   eine Stammaktienklasse, laut Besitzerbestätigung). Läufe: ein Erstlauf und ein
   Wiederholungslauf nach Erweiterung des Werkzeugs (alle Prüfungen, die beide Läufe
@@ -65,7 +71,7 @@ Für die Hongkong-Klasse ist die Berichtswährung ein Einzelbeleg, kein Muster.
 | Capex | 9 | 0 | 1 | im fehlenden Fall drei Jahre leer, Provider-FCF dort gleich operativem Cashflow |
 | NWC-Komponenten, 4 Bilanzstichtage | 10 | 0 | 0 | Komponenten einzeln vorhanden; Ableitung im Adapter nötig |
 | Liquide Mittel (brutto) | 10 | 0 | 0 | kein *überschüssiges* Cash |
-| Finanzschulden inkl. Leasing (`Total Debt`) | 10 | 0 | 0 | Summenidentität mit kurz- und langfristigen Posten inkl. Leasing in 10 von 10 |
+| Finanzschulden inkl. Leasing (`Total Debt`) | 10 | 0 | 0 | Summe aus kurz- und langfristigen Posten inkl. Leasing stimmt (Code `debt_identity_holds`, Toleranz 0,5 %, bis zu vier Stichtage) in 10 von 10; Leasing-Behandlung nicht geprüft (Anforderung 12) |
 | Minderheitsansprüche | 8 | 0 | 2 | Zeile fehlt (nicht als 0 gewertet) |
 | Vorzugsansprüche | 2 | 0 | 8 | Zeile fehlt (nicht als 0 gewertet) |
 | Aktuelle Aktienzahl mit Stichtag ≤ 120 Tage | 8 | 2 | 0 | 2 Fälle: datierte Reihe veraltet; Zähler im Metadatensatz undatiert |
@@ -77,13 +83,29 @@ daher nicht durchgängig erreicht); Quartalshistorie mit mindestens vier
 lückenlosen Quartalen in allen drei Abschlüssen 6/10 (4 teilweise: Lücken oder leere
 Quartalsabschlüsse); Periodenenden passen zum bestätigten Geschäftsjahresende
 10/10; jüngster Jahresabschluss höchstens 550 Tage alt 10/10 (8 mit neuerer
-Zwischenbilanz); Capex-Vorzeichen einheitlich negativ (Abfluss) 9/9 vorhandene, mit
-bestandener Kontrolle gegen Provider-FCF; Skalen-/Einheitenkontrolle über
+Zwischenbilanz); Capex-Vorzeichen einheitlich negativ (Abfluss) 9/9 vorhandene, jeweils
+mit bestandener Kontrolle in allen drei Referenzjahren (Provider-FCF = operativer
+Cashflow + Capex, Toleranz 1 %, Code `fcf_identity_holds`, 3/3 Jahre; ohne mögliche
+Kontrolle würde der Status nur *teilweise* lauten); Skalen-/Einheitenkontrolle über
 EPS = Ergebnis / Aktienzahl 10/10; **Veröffentlichungsdatum je Bericht 0/10**
 (nur Ergebnistermine als Näherung in 9 Fällen, kein Berichtsfeld).
-Eine informelle Näherung des historischen FCFF aus diesen Feldern ergab in 6 von 10
-Fällen drei positive Jahre, in 2 mindestens ein Jahr ≤ 0, in 2 war sie nicht
-ableitbar; das ist keine Modellprüfung.
+Ausweichzeilen und Zeilenmischung (anhand der lokalen Snapshots geprüft): EBIT, D&A,
+Capex, Liquidität, NWC-Komponenten und Finanzschulden wurden in 10 von 10 Fällen in
+allen geprüften Jahren aus der bevorzugten Zeile gelesen (`fallback_row_used` und
+`mixed_row_labels` je 0; im Fall ohne Capex gibt es keine Zeile mit Wert). Einzige
+Ausweichzeile: der Vorzugsanspruch in 1 der 2 Fälle mit Vorzug (`fallback_row_used`,
+andere Zeilenbezeichnung).
+
+**Manuelle Diagnose außerhalb des committeten Werkzeugs** (Näherung des historischen
+FCFF, keine Modellprüfung): je Jahr der drei jüngsten Geschäftsjahre EBIT × (1 −
+effektive Steuerquote) + D&A + Capex (Abfluss negativ) − ΔNWC, mit NWC =
+(Umlaufvermögen − Liquidität) − (kurzfristige Verbindlichkeiten − kurzfristige
+Finanzschulden) an vier Bilanzstichtagen und Steuerquote = Steueraufwand /
+Vorsteuerergebnis nur bei positivem Vorsteuerergebnis. Eine fehlende Komponente oder
+undefinierte Steuerquote macht den Fall *nicht ableitbar*. Ergebnis: in 6 von 10
+Fällen drei positive Jahre, in 2 mindestens ein Jahr ≤ 0, in 2 nicht ableitbar (ein
+Fall ohne Capex; ein Fall mit nichtpositivem EBIT und negativem Vorsteuerergebnis im
+jüngsten Geschäftsjahr, dessen effektive Steuerquote undefiniert ist).
 
 ## Problemklassen
 
@@ -93,7 +115,8 @@ ableitbar; das ist keine Modellprüfung.
 3. **EBIT-Abgrenzung:** In den plausibilisierten Fällen stimmten 6 von 8 Werten
    innerhalb 1 % mit Originalquellen überein; 2 EBIT-Werte wichen um 2–3 % vom
    berichteten Betriebsergebnis ab. Provider-EBIT ist nicht automatisch das
-   normalisierte EBIT des Vertrags.
+   normalisierte EBIT des Vertrags. Ursache ist nicht eine Ausweichzeile: Alle 10
+   Fälle nutzten in allen Jahren die bevorzugte Zeile `Operating Income`.
 4. **Steuer:** nur effektive Quote aus Steueraufwand und Vorsteuerergebnis.
 5. **Aktienzahl:** Zähler ohne Stichtag oder Zeitreihe älter als 120 Tage; keine
    Aussage zu Aktienklassen und keine inkrementelle Verwässerung.
@@ -119,8 +142,14 @@ ableitbar; das ist keine Modellprüfung.
   Veröffentlichungsdatum, fehlendes Capex, undatierte Aktienzahl.
 - **Derzeit keine Bewertung:** Instrumente mit fehlender Pflichtgröße ohne bestätigte
   Ergänzung, nichtpositivem EBIT oder FCFF, nicht belegter Währung/Skala sowie die
-  bereits ausgeschlossenen Modellklassen. In dieser Stichprobe wären das mindestens
-  die Fälle mit fehlendem Capex und nichtpositivem EBIT, ohne Ergänzung also 2 von 10.
+  bereits ausgeschlossenen Modellklassen. In dieser Stichprobe ist **ohne manuelle
+  Ergänzung kein Fall bewertbar** (überschüssiges Cash, Verwässerung, Klassenanzahl und
+  operativer Steuersatz kommen nie aus dem Provider; Vorzug fehlt in 8, Minderheit in
+  2 von 10 Fällen). **Mit vollständiger Ergänzung sind mindestens 4 von 10 Fällen
+  ausgeschlossen:** 2 wegen FCFF ≤ 0 in mindestens einem Jahr und 2 wegen nicht
+  ableitbarem FCFF (Problemklassen: Capex fehlt; Verlustjahr mit nichtpositivem EBIT,
+  dessen effektive Steuerquote undefiniert ist). Höchstens 6 von 10 blieben bewertbar,
+  und nur nach Ergänzung und Bestätigung; die FCFF-Näherung ersetzt keine Modellprüfung.
 
 Die erste Version bleibt damit auch bei Teilabdeckung nutzbar: Lücken führen zu
 «Bewertung nicht verfügbar» oder zu belegter manueller Pflege, nicht zu 0.
@@ -129,7 +158,9 @@ Die erste Version bleibt damit auch bei Teilabdeckung nutzbar: Lücken führen z
 
 1. Providerzeilen als feste, geprüfte Präferenzliste lesen (z. B. `Operating Income`,
    `Depreciation And Amortization`, `Capital Expenditure`, `Total Debt`); anderes EBIT
-   (`EBIT`) nur als Kontrollgröße mit Hinweis «Definition weicht ab».
+   (`EBIT`) nur als Kontrollgröße mit Hinweis «Definition weicht ab». Werte aus
+   Ausweichzeilen oder aus verschiedenen Zeilen je Jahr kennzeichnen und nicht still
+   mischen (im Sample trat das nur beim Vorzugsanspruch in 1 Fall auf).
 2. Capex-Vorzeichen ausdrücklich normalisieren (Provider: negativ = Abfluss) und
    fehlende Werte nie als 0 behandeln; Provider-FCF nie als FCFF übernehmen und bei
    fehlendem Capex und FCF gleich operativem Cashflow als Qualitätsmerkmal melden.
@@ -153,6 +184,16 @@ Die erste Version bleibt damit auch bei Teilabdeckung nutzbar: Lücken führen z
     wiederholen und keine Zahlen daraus ableiten; Abrufe sparsam und mit Pausen.
 11. Vor Nutzung der Provider-EBIT-Werte die Abgrenzung je Emittent bestätigen lassen
     (Abweichungen von 2–3 % im Plausibilisierungstest).
+12. **Leasing-Konsistenz je Emittent bestätigen** (im Sample nicht geprüft): Die
+    Finanzschulden inkl. Leasing (`Total Debt`) und die Ergebnisgrößen müssen dieselbe
+    Leasing-Behandlung abbilden, sonst droht Doppelbelastung oder eine Lücke. Bei
+    IFRS 16 liegt der Zinsanteil unterhalb des EBIT und der Abschreibungsanteil im EBIT,
+    die Leasingschuld gehört in die Schuldenbrücke. Bei US-GAAP steht der
+    Aufwand aus Betriebsleasing (operating leases) im EBIT; wird zusätzlich die
+    Betriebsleasingschuld als Finanzschuld abgezogen, wird dasselbe doppelt belastet.
+    Vor Nutzung muss feststehen, welche Leasingposten in `Total Debt` stehen und wie
+    EBIT, D&A, Capex und Schuldenbrücke dazu passen; sichtbare Leasingzeilen
+    (`lease_row_visible`) belegen das nicht.
 
 ## Prüfung und Wiederholung
 

@@ -2,8 +2,9 @@
 
 M8-01 (#70), fachliche Spezifikation zu [ADR 0010](adr/0010-innerer-wert-fcff.md).
 Dies beschreibt den Vertrag. Der Rechner aus M8-08 (#77) ist in
-[DCF_CALCULATION.md](DCF_CALCULATION.md) beschrieben; es gibt weiterhin keinen
-Live-Adapter oder nachgewiesenen kostenlosen Datenumfang.
+[DCF_CALCULATION.md](DCF_CALCULATION.md) beschrieben. Es gibt weiterhin keinen
+Live-Adapter; die Abdeckung des kostenlosen Datenumfangs (nur Stichprobe, Stand
+29.10.2026, keine Zusage) steht in [FUNDAMENTALS_COVERAGE.md](FUNDAMENTALS_COVERAGE.md).
 
 ## Getrennte Ebenen und Status
 

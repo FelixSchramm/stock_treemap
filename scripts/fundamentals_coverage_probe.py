@@ -11,7 +11,11 @@ aggregate counts and case numbers only: no symbols, names or provider values.
         --output docs/private/fundamentals_coverage_<date>.md \\
         --snapshot-dir docs/private/fundamentals_snapshots
 
-Snapshots are raw provider responses: keep them in ignored private storage only.
+Snapshots are raw provider responses stored as Python pickles. They are written
+and read only by this runner on the same machine, in the ignored private
+directory. Never load a snapshot that came from anywhere else: unpickling
+executes code. A snapshot has no fetch time or package version, so on reuse the
+age checks run against today's date and cannot show how old the data really is.
 """
 
 import argparse
@@ -51,6 +55,16 @@ ATTRIBUTES = {
     "quarterly_balance": "quarterly_balance_sheet",
     "quarterly_cashflow": "quarterly_cashflow",
 }
+
+
+def inside_private_dir(path: Path) -> bool:
+    """True when `path` is, or lies below, a *directory* named ``private``.
+
+    A file named ``private`` does not count: the ignore rule ``private/`` only
+    matches directories, so such a file would not be protected from commits.
+    """
+    resolved = path.resolve()
+    return any(p.name == "private" and not p.is_file() for p in (resolved, *resolved.parents))
 
 
 def info_usable(info) -> bool:
@@ -152,10 +166,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if "private" not in args.output.resolve().parts:
+    if not inside_private_dir(args.output.parent):
         parser.error("--output must be inside a directory named 'private'")
-    if args.snapshot_dir and "private" not in args.snapshot_dir.resolve().parts:
-        parser.error("--snapshot-dir must be inside a directory named 'private'")
+    if args.snapshot_dir and not inside_private_dir(args.snapshot_dir):
+        parser.error("--snapshot-dir must be a directory named 'private' or inside one")
     targets = load_universe(json.loads(args.universe.read_text(encoding="utf-8")))
 
     logging.getLogger("yfinance").disabled = True  # Its messages can name symbols.
