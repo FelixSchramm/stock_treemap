@@ -108,3 +108,6 @@ Werte; die Verträge berechnen, runden und sortieren keine Ergebnisse.
 
 Prüfung ausschließlich mit erfundenen Daten:
 `uv run --locked pytest tests/test_fundamentals.py tests/test_intrinsic_models.py tests/test_instruments.py tests/test_models.py`.
+
+Die tatsächliche Abdeckung dieser Felder durch yfinance ist getrennt in
+[FUNDAMENTALS_COVERAGE.md](FUNDAMENTALS_COVERAGE.md) (M8-02, #71) dokumentiert.
