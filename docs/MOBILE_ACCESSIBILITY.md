@@ -49,3 +49,9 @@ Daher sind **alle wesentlichen Tooltip-Informationen vollständig ohne Hover** a
    - Bei Positionen mit sehr geringem EUR-Anteil reicht die Kachelfläche in der Grafik nicht für mehrzeiligen Text aus. Diese Positionen bleiben über Suche, aufsteigende Wertsortierung, Tabelle und `Positionsdetails ohne Hover` uneingeschränkt erreichbar.
 3. **Horizontales Scrollen der 12-spaltigen Tabelle auf schmalen Bildschirmen (`<= 390 px`):**
    - Das vollständige Tabellenraster scrollt auf dem iPhone im Hochformat innerhalb seines Containers horizontal. Für eine scrollfreie Einspalten-Lesbarkeit auf schmalen Displays dient der direkt darunterliegende Bereich `Positionsdetails ohne Hover`.
+
+## 6. Watchlist-Ansicht (#85)
+
+Die Ansicht **Watchlist** ([WATCHLIST_VIEW.md](WATCHLIST_VIEW.md)) verwendet dieselben Bedienelemente und `MOBILE_ACCESSIBILITY_CSS` wie das Depot: Radio **Ansicht** und **Zeitraum** (vier Perioden), Suche, Auswahlfelder, Expander mit Mindesthöhe `2.75rem`, Umbruch der Radio-Gruppen und Spalten unter `640 px`. Alle Tabellenfelder, alle vier Perioden mit Herkunft und der Status stehen im Bereich **Watchlist-Details ohne Hover** als umbrechender Text bereit; Richtung und Herkunft sind nie nur farbig kodiert (Sheet-Wert, zwischengespeichert, `n. v.` stehen als Text). Die 11-spaltige Tabelle scrollt auf schmalen Viewports horizontal innerhalb ihres Containers.
+
+Sichtprüfung (synthetische Demo, headless Chromium über Playwright): bei `1280 px` und `390 px` Breite kein horizontaler Seitenüberlauf, alle Radio-Optionen `44 px` hoch, Kennzahlen und Details vollständig lesbar. Offen bleibt wie bei Abschnitt 1 die Prüfung in iOS Safari auf dem iPhone.

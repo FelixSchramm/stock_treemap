@@ -1,19 +1,24 @@
 """Small native Streamlit helpers for the German dashboard shell."""
 
 from collections.abc import Callable, Sequence
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from html import escape
 
 import plotly.graph_objects as go
 import streamlit as st
 
+from portfolio_dashboard import watchlist_view
 from portfolio_dashboard.models import PortfolioSnapshot, SnapshotStatus
 from portfolio_dashboard.refresh import (
     DATA_UNAVAILABLE_TEXT,
     DashboardBundle,
     PortfolioRefreshCoordinator,
+    format_snapshot_age,
 )
 from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
+from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
+from portfolio_dashboard.sheets_session import SheetsCredentialError
 from portfolio_dashboard.treemap import (
     ALL_FILTER,
     MISSING_COLOR,
@@ -40,6 +45,8 @@ from portfolio_dashboard.treemap import (
     sort_table_rows,
 )
 from portfolio_dashboard.valuations import PortfolioValuation
+from portfolio_dashboard.watchlist_quotes import WatchlistBundle, WatchlistEntry
+from portfolio_dashboard.watchlist_session import WatchlistLoader, session_loader
 
 COURSE_VIEW = "Kursentwicklung"
 PERSONAL_VIEW = "Meine Entwicklung"
@@ -55,6 +62,7 @@ SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
 # widget key and is re-seeded from it on every run.
 COURSE_PERIOD_KEY = "dashboard.course_period"
 _PERIOD_WIDGET_KEY = "_dashboard.course_period"
+PERIOD_RADIO_KEY = _PERIOD_WIDGET_KEY  # For AppTest lookups; the radio is no longer first.
 HIDE_MISSING_COURSE_KEY = "dashboard.hide_missing_course"
 _HIDE_MISSING_WIDGET_KEY = "_dashboard.hide_missing_course"
 FILTER_QUERY_KEY = "dashboard.filter_query"
@@ -64,6 +72,56 @@ SORT_FIELD_KEY = "dashboard.sort_field"
 SORT_ORDER_KEY = "dashboard.sort_order"
 REFRESH_BUTTON_KEY = "dashboard.refresh"
 BUNDLE_STATE_KEY = "dashboard.bundle"
+
+# Top-level Ansicht. "Kursentwicklung" and "Meine Entwicklung" stay derived from the
+# Zeitraum inside the Depot; the Watchlist is a second area with its own state.
+DEPOT_AREA = "Depot"
+WATCHLIST_AREA = "Watchlist"
+AREAS = (DEPOT_AREA, WATCHLIST_AREA)
+AREA_KEY = "dashboard.area"
+_AREA_WIDGET_KEY = "_dashboard.area"
+AREA_RADIO_KEY = _AREA_WIDGET_KEY
+WATCHLIST_BUNDLE_KEY = "dashboard.watchlist_bundle"
+WATCHLIST_FILTER_QUERY_KEY = "watchlist.filter_query"
+WATCHLIST_FILTER_TYPE_KEY = "watchlist.filter_type"
+WATCHLIST_FILTER_CATEGORY_KEY = "watchlist.filter_category"
+WATCHLIST_SORT_FIELD_KEY = "watchlist.sort_field"
+WATCHLIST_SORT_ORDER_KEY = "watchlist.sort_order"
+# Streamlit drops the state of widgets that are not rendered in a run; the area
+# that is hidden keeps its filter and sort choices by re-assigning them.
+_DEPOT_WIDGET_KEYS = (
+    FILTER_QUERY_KEY,
+    FILTER_TYPE_KEY,
+    FILTER_CATEGORY_KEY,
+    SORT_FIELD_KEY,
+    SORT_ORDER_KEY,
+)
+_WATCHLIST_WIDGET_KEYS = (
+    WATCHLIST_FILTER_QUERY_KEY,
+    WATCHLIST_FILTER_TYPE_KEY,
+    WATCHLIST_FILTER_CATEGORY_KEY,
+    WATCHLIST_SORT_FIELD_KEY,
+    WATCHLIST_SORT_ORDER_KEY,
+)
+WATCHLIST_NOT_CONFIGURED_TEXT = (
+    "Die Watchlist ist nicht eingerichtet: PORTFOLIO_WATCHLIST_RANGE ist nicht gesetzt. "
+    "Trage den Bereich des Watchlist-Blatts ein, z. B. im Format Blattname!A1:J300 "
+    "(Grundspalten A–D, optionale Zusatzspalten bis T; siehe "
+    "docs/DATA_SOURCE.md, Abschnitt „Watchlist-Blatt“). Das Depot ist davon nicht betroffen."
+)
+WATCHLIST_SINCE_PURCHASE_TEXT = (
+    "„Seit Kauf“ gibt es in der Watchlist nicht (keine Einstände): angezeigt wird „Heute“. "
+    "Die Auswahl im Depot bleibt erhalten, bis hier ein Zeitraum gewählt wird."
+)
+WATCHLIST_SPINNER_TEXT = (
+    "Watchlist-Kurse werden abgerufen … Der erste Abruf kann bei vielen Einträgen "
+    "mehrere Minuten dauern."
+)
+
+
+def _today() -> date:
+    """Local calendar day; replaced in tests."""
+    return date.today()
 
 MOBILE_ACCESSIBILITY_CSS = """
 <style>
@@ -111,16 +169,55 @@ def _remember_course_period() -> None:
     st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
 
 
-def render_view_controls() -> tuple[str, str]:
+def _remember_area() -> None:
+    """Persist the selected Ansicht in the public session key."""
+    st.session_state[AREA_KEY] = st.session_state[_AREA_WIDGET_KEY]
+
+
+def _keep_state(keys: Sequence[str]) -> None:
+    """Retain widget values of the area that is not rendered in this run."""
+    for key in keys:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
+
+
+def render_area_control() -> str:
+    """Render the Ansicht radio (Depot or Watchlist) and keep the choice in the session.
+
+    :return: ``DEPOT_AREA`` or ``WATCHLIST_AREA``.
+    """
+    if st.session_state.get(AREA_KEY) not in AREAS:
+        st.session_state[AREA_KEY] = DEPOT_AREA
+    st.session_state[_AREA_WIDGET_KEY] = st.session_state[AREA_KEY]
+    return st.radio(
+        "Ansicht",
+        AREAS,
+        key=_AREA_WIDGET_KEY,
+        on_change=_remember_area,
+        horizontal=True,
+    )
+
+
+def render_view_controls(*, watchlist: bool = False) -> tuple[str, str]:
     """Render the Zeitraum radio and derive the view from the selection.
 
+    The remembered Zeitraum is shared by Depot and Watchlist. The Watchlist offers
+    only the four course periods: a remembered ``"Seit Kauf"`` is shown as ``"Heute"``
+    there without overwriting the Depot choice (it changes only if the user picks a
+    period in the Watchlist).
+
+    :param watchlist: Offer only the four course periods (Watchlist area).
     :return: Tuple of (derived view, selected course period or ``"Seit Kauf"``).
     """
+    options = COURSE_PERIODS if watchlist else (*COURSE_PERIODS, SINCE_PURCHASE)
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
-    st.session_state[_PERIOD_WIDGET_KEY] = st.session_state[COURSE_PERIOD_KEY]
+    remembered = st.session_state[COURSE_PERIOD_KEY]
+    st.session_state[_PERIOD_WIDGET_KEY] = (
+        remembered if remembered in options else COURSE_PERIODS[0]
+    )
     period = st.radio(
         "Zeitraum",
-        (*COURSE_PERIODS, SINCE_PURCHASE),
+        options,
         key=_PERIOD_WIDGET_KEY,
         on_change=_remember_course_period,
         horizontal=True,
@@ -414,6 +511,246 @@ def render_data_status(notes: Sequence[str]) -> None:
                 st.caption(f"• {note}")
 
 
+def _markdown_text(text: str) -> str:
+    """Escape sheet-provided text for ``st.markdown`` (HTML and markdown syntax)."""
+    escaped = escape(text)
+    for char in "\\`*_[]$~#|":
+        escaped = escaped.replace(char, "\\" + char)
+    return escaped
+
+
+def render_watchlist_kpis(kpis: watchlist_view.WatchlistKpis, period: str) -> None:
+    """Render the Watchlist header KPIs from the unfiltered entries.
+
+    :param kpis: KPIs for the selected period.
+    :param period: Selected course period.
+    """
+    cols = st.columns(4)
+    with cols[0]:
+        st.metric("Beobachtete Werte", kpis.count_label)
+    with cols[1]:
+        st.metric(
+            f"Datenabdeckung ({period})",
+            kpis.coverage_label,
+            delta=kpis.coverage_note,
+            delta_color="off",
+            delta_arrow="off",
+        )
+    with cols[2]:
+        st.metric(
+            "Größter Gewinner",
+            kpis.winner_label,
+            delta=kpis.winner_note,
+            delta_color="off",
+            delta_arrow="off",
+        )
+    with cols[3]:
+        st.metric(
+            "Größter Verlierer",
+            kpis.loser_label,
+            delta=kpis.loser_note,
+            delta_color="off",
+            delta_arrow="off",
+        )
+    st.caption(
+        "Watchlist-Kennzahlen (ungefilterter Gesamtbestand) · reine Kursentwicklung "
+        "in Handelswährung, ohne Gewichtung und ohne Bezug zum Depot."
+    )
+    st.caption(kpis.coverage_detail)
+
+
+def render_watchlist_filter_controls(
+    entries: Sequence[WatchlistEntry],
+) -> tuple[FilterCriteria, str, bool]:
+    """Render search, type/category filters and sort controls of the Watchlist.
+
+    :param entries: All entries, to derive the category options.
+    :return: Tuple of (FilterCriteria, sort field, descending flag).
+    """
+    st.session_state.setdefault(WATCHLIST_FILTER_QUERY_KEY, "")
+    st.session_state.setdefault(WATCHLIST_FILTER_TYPE_KEY, ALL_FILTER)
+    st.session_state.setdefault(WATCHLIST_FILTER_CATEGORY_KEY, ALL_FILTER)
+    st.session_state.setdefault(WATCHLIST_SORT_FIELD_KEY, watchlist_view.SORT_BY_PERFORMANCE)
+    st.session_state.setdefault(WATCHLIST_SORT_ORDER_KEY, SORT_DIRECTION_DESC)
+    categories = watchlist_view.available_categories(entries)
+    if st.session_state[WATCHLIST_FILTER_CATEGORY_KEY] not in categories:
+        st.session_state[WATCHLIST_FILTER_CATEGORY_KEY] = ALL_FILTER
+
+    fcols = st.columns((2, 1, 1, 1, 1))
+    with fcols[0]:
+        query = st.text_input(
+            "Suche (Name, Ticker, Yahoo-Symbol, Kategorie)",
+            key=WATCHLIST_FILTER_QUERY_KEY,
+        )
+    with fcols[1]:
+        instrument_type = st.selectbox(
+            "Instrumenttyp",
+            watchlist_view.TYPE_FILTER_OPTIONS,
+            key=WATCHLIST_FILTER_TYPE_KEY,
+        )
+    with fcols[2]:
+        category = st.selectbox("Kategorie", categories, key=WATCHLIST_FILTER_CATEGORY_KEY)
+    with fcols[3]:
+        sort_by = st.selectbox(
+            "Sortierung", watchlist_view.SORT_FIELDS, key=WATCHLIST_SORT_FIELD_KEY
+        )
+    with fcols[4]:
+        sort_order = st.selectbox(
+            "Reihenfolge", SORT_DIRECTION_OPTIONS, key=WATCHLIST_SORT_ORDER_KEY
+        )
+    criteria = FilterCriteria(query=query, instrument_type=instrument_type, category=category)
+    return criteria, sort_by, sort_order == SORT_DIRECTION_DESC
+
+
+def render_watchlist_table(
+    rows: Sequence[watchlist_view.WatchlistRow],
+    *,
+    total_count: int,
+    filtered: bool,
+) -> None:
+    """Render the sortable Watchlist table and the details without hover.
+
+    :param rows: Sorted rows for the selected period.
+    :param total_count: Number of entries before filtering.
+    :param filtered: Whether a search, type or category filter is active.
+    """
+    st.subheader("Watchlist-Übersicht")
+    shown = (
+        f"{len(rows)} von {total_count} Einträgen sichtbar"
+        if filtered
+        else f"Alle {len(rows)} Einträge"
+    )
+    st.caption(
+        f"{shown} · n. v. = nicht verfügbar; fehlende Werte erscheinen nie als 0,00 %. "
+        "Spalte „Quelle“ nennt die Herkunft des Werts der gewählten Periode."
+    )
+    if not rows:
+        st.info("Keine Watchlist-Einträge für die aktuelle Filterauswahl.")
+    else:
+        st.dataframe([row.to_display_dict() for row in rows], hide_index=True, width="stretch")
+    render_watchlist_details(rows)
+
+
+def render_watchlist_details(rows: Sequence[watchlist_view.WatchlistRow]) -> None:
+    """Render every table field and all four periods per entry as wrapping text.
+
+    One markdown element keeps 200+ entries fast; no hover or horizontal scrolling.
+
+    :param rows: Visible rows.
+    """
+    with st.expander(f"Watchlist-Details ohne Hover ({len(rows)})", expanded=False):
+        if not rows:
+            st.caption("Keine Einträge für die aktuelle Filterauswahl.")
+            return
+        blocks = []
+        for row in rows:
+            head, *lines = row.detail_lines()
+            blocks.append(
+                f"**{_markdown_text(head)}**  \n"
+                + "  \n".join(_markdown_text(line) for line in lines)
+            )
+        st.markdown("\n\n".join(blocks))
+
+
+def render_watchlist_status(notes: Sequence[str]) -> None:
+    """Render the row-referenced data status notes of the Watchlist.
+
+    :param notes: German notes from ``watchlist_view.build_status_notes``.
+    """
+    with st.expander(f"Datenstatus & Hinweise ({len(notes)})", expanded=False):
+        if not notes:
+            st.caption("Alle Einträge zeigen aktuelle Anbieterdaten.")
+        else:
+            st.markdown("\n".join(f"- {_markdown_text(note)}" for note in notes))
+
+
+def render_watchlist(
+    factory: Callable[[], WatchlistLoader | None] | None,
+    *,
+    refresh_clicked: bool,
+    demo: bool,
+) -> None:
+    """Render the Watchlist area: bundle, period, KPIs, filters, table and status.
+
+    The loader is built once per session and calendar day (``session_loader``) and
+    called behind a spinner, never unguarded: a cold start with 200+ rows takes minutes.
+
+    :param factory: Builds the loader; ``None`` or a factory returning ``None`` shows
+        the configuration notice (``PORTFOLIO_WATCHLIST_RANGE`` missing).
+    :param refresh_clicked: Whether "Aktualisieren" was pressed in this run.
+    :param demo: Whether the loader serves synthetic data.
+    """
+    st.divider()
+    loader = None
+    if factory is not None:
+        try:
+            loader, rebuilt = session_loader(st.session_state, factory, _today())
+        except (SheetsConfigurationError, SheetsCredentialError) as exc:
+            st.error(str(exc))
+            return
+        if rebuilt:  # New calendar window and cache: the old bundle no longer applies.
+            st.session_state.pop(WATCHLIST_BUNDLE_KEY, None)
+    if loader is None:
+        st.info(WATCHLIST_NOT_CONFIGURED_TEXT)
+        return
+
+    if refresh_clicked or WATCHLIST_BUNDLE_KEY not in st.session_state:
+        with st.spinner(WATCHLIST_SPINNER_TEXT):
+            st.session_state[WATCHLIST_BUNDLE_KEY] = loader.load(refresh=refresh_clicked)
+    bundle: WatchlistBundle = st.session_state[WATCHLIST_BUNDLE_KEY]
+
+    st.caption(
+        f"{'Demo-Watchlist' if demo else 'Watchlist'} · {len(bundle.entries)} Einträge"
+    )
+    stamp = bundle.last_attempt_at.strftime("%d.%m.%Y, %H:%M %Z")
+    if demo:
+        st.caption(f"Datenstand (synthetisch): {stamp}")
+    else:
+        age = format_snapshot_age(bundle.last_attempt_at, datetime.now(UTC))
+        st.caption(f"Datenstand: {stamp} (Alter: {age})")
+    if demo:
+        st.info("Nur synthetische Beispieldaten. Kein Zugriff auf echte Depot- oder Kursdaten.")
+    if not bundle.available:
+        st.error(
+            bundle.status_message
+            or f"{DATA_UNAVAILABLE_TEXT}: Keine gültigen Watchlist-Daten vorhanden."
+        )
+        return
+    if bundle.using_cached_stand and bundle.status_message:
+        st.warning(bundle.status_message)
+    elif refresh_clicked and bundle.status_message:
+        st.caption(bundle.status_message)
+
+    st.divider()
+    _, period = render_view_controls(watchlist=True)
+    if st.session_state[COURSE_PERIOD_KEY] not in COURSE_PERIODS:
+        st.caption(WATCHLIST_SINCE_PURCHASE_TEXT)
+    st.subheader(f"Watchlist · {period}")
+    entries = bundle.entries
+    notes = watchlist_view.build_status_notes(entries, bundle.snapshot.warnings)
+    if not entries:
+        st.info("Das Watchlist-Blatt enthält keine Einträge.")
+        render_watchlist_status(notes)
+        return
+    render_watchlist_kpis(watchlist_view.build_kpis(entries, period), period)
+    criteria, sort_by, descending = render_watchlist_filter_controls(entries)
+    rows = watchlist_view.sort_rows(
+        watchlist_view.build_rows(entries, period, criteria),
+        sort_by,
+        descending=descending,
+    )
+    render_watchlist_table(
+        rows,
+        total_count=len(entries),
+        filtered=bool(
+            criteria.query.strip()
+            or criteria.instrument_type != ALL_FILTER
+            or criteria.category != ALL_FILTER
+        ),
+    )
+    render_watchlist_status(notes)
+
+
 def render_dashboard(
     snapshot: PortfolioSnapshot,
     rows: list[dict[str, str | float]] | None,
@@ -424,8 +761,13 @@ def render_dashboard(
     coordinator: PortfolioRefreshCoordinator | None = None,
     period_reasons: Callable[[str, str], Sequence[str | None]] | None = None,
     demo: bool = True,
+    watchlist: Callable[[], WatchlistLoader | None] | None = None,
 ) -> None:
     """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
+
+    The Ansicht radio switches between the Depot (Zeitraum ``Heute`` to ``Jahr`` is the
+    course view, ``Seit Kauf`` the personal view) and the Watchlist. "Aktualisieren"
+    refreshes the area that is shown; the other area keeps its loaded state.
 
     KPIs, treemap and positions table always use the same atomic ``valuation``
     snapshot. When ``coordinator`` is provided, clicking "Aktualisieren"
@@ -440,6 +782,8 @@ def render_dashboard(
     :param coordinator: Optional PortfolioRefreshCoordinator for live/cached refreshes.
     :param period_reasons: Optional callback returning period reason codes per group.
     :param demo: False when ``coordinator`` delivers the owner's own data.
+    :param watchlist: Builds the Watchlist loader once per session and day; ``None`` or
+        a factory returning ``None`` shows the "PORTFOLIO_WATCHLIST_RANGE" notice.
     """
     _ = rows
     render_accessibility_styles()
@@ -448,6 +792,12 @@ def render_dashboard(
         st.title("Depot-Dashboard – Demo" if demo else "Depot-Dashboard")
     with header_cols[1]:
         refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
+
+    if render_area_control() == WATCHLIST_AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS)
+        render_watchlist(watchlist, refresh_clicked=refresh_clicked, demo=demo)
+        return
+    _keep_state(_WATCHLIST_WIDGET_KEYS)
 
     active_bundle: DashboardBundle | None = None
     if coordinator is not None:

@@ -49,7 +49,7 @@ from portfolio_dashboard.treemap import (
     personal_performances,
     sort_table_rows,
 )
-from portfolio_dashboard.ui import treemap_figure
+from portfolio_dashboard.ui import PERIOD_RADIO_KEY, treemap_figure
 from portfolio_dashboard.valuations import FxRate, value_portfolio
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
@@ -251,7 +251,7 @@ def test_dashboard_renders_same_tile_areas_in_both_views():
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception
     course = json.loads(app.get("plotly_chart")[0].proto.spec)["data"][0]
-    app.radio[0].set_value("Seit Kauf").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
     assert not app.exception
     personal = json.loads(app.get("plotly_chart")[0].proto.spec)["data"][0]
     assert course["values"] == personal["values"] == [1200.0, 800.0]

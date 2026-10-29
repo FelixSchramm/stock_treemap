@@ -16,6 +16,7 @@ from portfolio_dashboard.config import (
     load_config,
 )
 from portfolio_dashboard.demo import (
+    DemoWatchlist,
     demo_course_performances,
     demo_personal_performances,
     demo_rows,
@@ -32,6 +33,10 @@ from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
 from portfolio_dashboard.ui import COURSE_VIEW, render_dashboard
 from portfolio_dashboard.valuations import value_portfolio
+from portfolio_dashboard.watchlist_refresh import (
+    build_local_watchlist_coordinator,
+    build_production_watchlist_coordinator,
+)
 
 OWN_COORDINATOR_KEY = "own.coordinator"
 
@@ -59,8 +64,12 @@ except ConfigurationError as exc:
     st.stop()
 
 
-def render_own_portfolio(build_coordinator) -> None:
-    """Build the owner's coordinator once per session, then render and stop."""
+def render_own_portfolio(build_coordinator, build_watchlist) -> None:
+    """Build the owner's coordinator once per session, then render and stop.
+
+    ``build_watchlist`` is only called by the Watchlist view (once per session and
+    day), so no Watchlist loader exists before the owner gate and the first visit.
+    """
     if OWN_COORDINATOR_KEY not in st.session_state:
         try:
             st.session_state[OWN_COORDINATOR_KEY] = build_coordinator()
@@ -76,6 +85,7 @@ def render_own_portfolio(build_coordinator) -> None:
         lambda view, period: (),
         coordinator=st.session_state[OWN_COORDINATOR_KEY],
         demo=False,
+        watchlist=build_watchlist,
     )
     st.stop()
 
@@ -86,7 +96,10 @@ if config.mode is Mode.LOCAL:
     if st.get_option("server.address") not in LOOPBACK_ADDRESSES:
         st.error("Lokaler Modus nur mit --server.address 127.0.0.1.")
         st.stop()
-    render_own_portfolio(lambda: build_local_coordinator(config))
+    render_own_portfolio(
+        lambda: build_local_coordinator(config),
+        lambda: build_local_watchlist_coordinator(config),
+    )
 
 if config.mode is Mode.PRODUCTION:
     # Every run passes the owner gate before secrets, loaders and output.
@@ -97,7 +110,10 @@ if config.mode is Mode.PRODUCTION:
             config,
             st.secrets.get("sheets_service_account"),
             st.secrets.get("listing", []),
-        )
+        ),
+        lambda: build_production_watchlist_coordinator(
+            config, st.secrets.get("sheets_service_account")
+        ),
     )
 
 # Only demo reaches this point: synthetic data without secrets or login.
@@ -112,4 +128,5 @@ render_dashboard(
         if view == COURSE_VIEW
         else demo_personal_performances(demo_values)
     ),
+    watchlist=DemoWatchlist,
 )
