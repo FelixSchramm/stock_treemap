@@ -2,8 +2,9 @@
 
 **Ein privates Portfolio-Dashboard, das ein Wertpapierdepot nach Positionsgröße und Kursentwicklung als Treemap zeigt – mit nachvollziehbarer EUR-Bewertung, expliziter Datenqualität und einem geprüften FCFF-DCF-Rechenkern für den inneren Wert.**
 
-<!-- TODO: URL der öffentlichen Demo-App (Demo-Modus, ohne Secrets) eintragen. -->
+<!-- TODO: Sobald die öffentliche Demo-App (Demo-Modus, ohne Secrets) läuft, diese Zeile einkommentieren und die URL eintragen:
 **[Live-Demo öffnen](https://DEMO-SUBDOMAIN.streamlit.app)** · ausschließlich synthetische Beispieldaten, kein Login erforderlich
+-->
 
 ![Depot-Dashboard im Demo-Modus: Kennzahlen, Zeitraumwahl, Filter und Treemap](docs/images/dashboard-demo.png)
 
