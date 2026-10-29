@@ -202,7 +202,7 @@ def load_fundamental_subjects(path: str) -> FundamentalSubjects:
     try:
         with open(path, "rb") as file:
             entries = tomllib.load(file).get("fundamental", [])
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, ValueError):  # Includes TOMLDecodeError, UnicodeDecodeError.
         raise FundamentalsConfigError(
             "Fundamentaldaten-Zuordnungsdatei fehlt oder ist ungültig."
         ) from None

@@ -17,6 +17,7 @@ from streamlit.user_info import UserInfoProxy
 
 import portfolio_dashboard.auth as auth
 import portfolio_dashboard.demo as demo
+import portfolio_dashboard.fundamentals_loader as fundamentals_loader
 import portfolio_dashboard.local_source as local_source
 import portfolio_dashboard.ui as ui
 import portfolio_dashboard.watchlist_refresh as watchlist_refresh
@@ -27,6 +28,7 @@ from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
 APP_PATH = Path(__file__).parents[1] / "app.py"
 real_production_coordinator = local_source.build_production_coordinator
 real_production_watchlist = watchlist_refresh.build_production_watchlist_coordinator
+real_production_fundamentals = fundamentals_loader.build_production_fundamentals_loader
 NOW = 2_000_000_000
 LOGIN = LoginConfig(
     enabled=True, owner_issuer="https://accounts.google.com",
@@ -148,6 +150,13 @@ def protected_app(monkeypatch):
     monkeypatch.setattr(
         watchlist_refresh, "build_production_watchlist_coordinator", own_watchlist
     )
+    def own_fundamentals(*args, **kwargs):
+        calls.append("build_production_fundamentals_loader")
+        return real_production_fundamentals(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fundamentals_loader, "build_production_fundamentals_loader", own_fundamentals
+    )
     for module, name in (
         (demo, "demo_snapshot"),
         (demo, "demo_valuation"),
@@ -198,7 +207,11 @@ def test_owner_access_and_revocation_are_checked_on_each_run(protected_app, monk
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
     assert not app.exception
-    assert calls == ["build_production_coordinator", "render_dashboard"]
+    assert calls == [
+        "build_production_coordinator",
+        "build_production_fundamentals_loader",
+        "render_dashboard",
+    ]
     assert app.dataframe
     assert any(caption.value.startswith("Eigenes Depot") for caption in app.caption)
     assert not any("synthetische" in info.value for info in app.info)
@@ -217,7 +230,11 @@ def test_native_streamlit_user_mapping_reaches_the_same_owner_gate(protected_app
     monkeypatch.setattr(st, "user", UserInfoProxy())
     app.run()
     assert not app.exception and app.dataframe
-    assert calls == ["build_production_coordinator", "render_dashboard"]
+    assert calls == [
+        "build_production_coordinator",
+        "build_production_fundamentals_loader",
+        "render_dashboard",
+    ]
 
 
 def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_app, monkeypatch):
@@ -235,7 +252,12 @@ def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_a
     app.run()
     app.run()
     assert not app.exception and app.dataframe
-    assert calls == ["build_production_coordinator", "render_dashboard", "render_dashboard"]
+    assert calls == [
+        "build_production_coordinator",
+        "build_production_fundamentals_loader",
+        "render_dashboard",
+        "render_dashboard",
+    ]
     assert seen == [({"type": "service_account", "synthetic": True}, [{"isin": "DE000SYN0001"}])]
 
 
