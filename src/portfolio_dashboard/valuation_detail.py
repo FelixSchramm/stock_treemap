@@ -1027,9 +1027,17 @@ def new_document(report_set: FundamentalReportSet, now: datetime) -> ScenarioDoc
     return ScenarioDocument(report_set, report_set.input_version, MODEL_VERSION, now)
 
 
-def next_data_version(document: ScenarioDocument) -> str:
-    """Unique per original input and revision, so no data version names two bases."""
-    return f"{document.originals.input_version}/d{document.revision + 1}"
+def next_data_version(
+    document: ScenarioDocument, originals: FundamentalReportSet | None = None
+) -> str:
+    """Unique in the lineage of one security: input version plus a running counter.
+
+    The counter continues the current data version, so chained edits that are not
+    saved in between never name two different bases with one version.
+    """
+    base = (originals or document.originals).input_version
+    match = re.search(r"/d([0-9]+)$", document.data_version)
+    return f"{base}/d{int(match.group(1)) + 1 if match else 1}"
 
 
 def next_assumptions_version(document: ScenarioDocument) -> str:
@@ -1057,7 +1065,9 @@ def adopt_report_set(
 ) -> ScenarioDocument:
     """Take a newer original report set; manual values and plans keep their old binding."""
     return document.refresh(
-        report_set, data_version=next_data_version(document), changed_at=now
+        report_set,
+        data_version=next_data_version(document, report_set),
+        changed_at=now,
     )
 
 
