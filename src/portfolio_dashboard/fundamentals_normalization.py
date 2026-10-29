@@ -17,8 +17,9 @@ Rules that keep the numbers honest (docs/FUNDAMENTALS_PROVIDER.md):
 - A currency, identity or scale conflict withholds every number
   (``numbers_withheld``); there is no EUR or zero fallback.
 - Fields without a provider source (operating tax rate, excess cash, ...) are
-  emitted as *missing* observations for the manual supplement path; a provider
-  figure appears only as a clearly labelled ``Suggestion``.
+  emitted as *missing* observations when the corresponding annual, bridge or
+  dated-share period exists; a provider figure appears only as a clearly labelled
+  ``Suggestion`` for the manual supplement path.
 - Only annual fiscal-year flows are produced. Quarterly and cumulative periods
   never enter the report set; ``trailing_twelve_months`` is the only place that
   combines quarters, and only complete, contiguous, non-overlapping ones.
@@ -567,8 +568,9 @@ class _Normalizer:
 
     def run(self) -> NormalizedFundamentals:
         self._failures()
-        if not self._metadata_ok() or not self._scale_ok():
+        if not self._metadata_ok():
             return self._result((), None, None, withheld=True)
+        self._statement_schemas()
         periods, opening = self._annual_periods()
         while (
             periods
@@ -577,6 +579,12 @@ class _Normalizer:
             # A year without an opening NWC cannot yield its change: drop the oldest.
             opening = periods.pop().end
             self.notes.append("oldest_period_dropped_nwc_gap")
+        if not periods:
+            self.issues.append(
+                _issue(QualityStatus.INCOMPLETE, "annual_history_unavailable")
+            )
+        if not self._scale_ok(periods):
+            return self._result((), None, None, withheld=True)
         shares_period = self._shares(periods)
         bridge_date = periods[0].end if periods else None
         if periods:
@@ -606,6 +614,19 @@ class _Normalizer:
         for failure in self.s.failures:
             status = _FAILURE_STATUS.get(failure.code, QualityStatus.MISSING)
             self.issues.append(_issue(status, f"{failure.dataset}_{failure.code}"))
+
+    def _statement_schemas(self) -> None:
+        """Present tables without any recognized anchor row are schema gaps."""
+        for dataset, anchors in (
+            ("annual_income", EBIT_ROWS),
+            ("annual_balance", CURRENT_ASSET_ROWS + DEBT_ROWS),
+            ("annual_cashflow", DA_ROWS + CAPEX_ROWS),
+        ):
+            table = getattr(self.s, dataset)
+            if table is not None and not any(row in table.rows for row in anchors):
+                self.issues.append(
+                    _issue(QualityStatus.MISSING, f"{dataset}_unexpected_schema")
+                )
 
     def _metadata_ok(self) -> bool:
         """Identity and currency checks; any failure withholds all numbers."""
@@ -649,10 +670,12 @@ class _Normalizer:
             f.code == FAILURE_IDENTITY_MISMATCH for f in self.s.failures
         )
 
-    def _scale_ok(self) -> bool:
-        """EPS = net income / average diluted shares verifies money/share scale."""
+    def _scale_ok(self, periods: Sequence[FlowPeriod]) -> bool:
+        """Check money/share scale for every fiscal year that will be emitted."""
         income = self.s.annual_income
-        for end in income.period_ends() if income else ():
+        unverified = not periods
+        for period in periods:
+            end = period.end
             net = next(
                 (v for r in NET_INCOME_ROWS if (v := income.value(r, end)) is not None),
                 None,
@@ -665,12 +688,13 @@ class _Normalizer:
                 (v for r in EPS_ROWS if (v := income.value(r, end)) is not None), None
             )
             if net is None or shares is None or eps is None or shares <= 0 or eps == 0:
+                unverified = True
                 continue
             if abs((net / shares) / eps - 1) > EPS_TOLERANCE:
                 self.issues.append(_issue(QualityStatus.INVALID, "scale_inconsistent"))
                 return False
-            return True
-        self.notes.append("scale_unverified")
+        if unverified:
+            self.notes.append("scale_unverified")
         return True
 
     def _annual_periods(self) -> tuple[list[FlowPeriod], date | None]:
@@ -1182,6 +1206,9 @@ def trailing_twelve_months(
     if any(
         b[0].start != a[0].end + timedelta(days=1) for a, b in zip(window, window[1:])
     ):
+        return _ttm_blocked(QualityStatus.INCOMPLETE, "ttm_incomplete")
+    length = (window[-1][0].end - window[0][0].start).days + 1
+    if not MIN_ANNUAL_DAYS <= length <= MAX_ANNUAL_DAYS:
         return _ttm_blocked(QualityStatus.INCOMPLETE, "ttm_incomplete")
     end = window[-1][0].end
     period = FlowPeriod(

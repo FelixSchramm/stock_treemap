@@ -21,6 +21,7 @@ from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from threading import RLock
 from typing import Protocol
 
 import pandas as pd
@@ -52,6 +53,7 @@ _TIMEOUT_ERRORS = frozenset(
     {"Timeout", "ReadTimeout", "ConnectTimeout", "TimeoutError", "timeout"}
 )
 _ACCESS_STATUS = frozenset({401, 403, 429})
+_PROVIDER_LOG_LOCK = RLock()
 
 
 class FundamentalsProvider(Protocol):
@@ -92,13 +94,23 @@ def classify_error(error: BaseException) -> str:
 @contextmanager
 def _quiet_provider_logs():
     # The library can log symbols and URLs; keep that out of any log sink.
-    logger = logging.getLogger("yfinance")
-    previous = logger.disabled
-    logger.disabled = True
-    try:
-        yield
-    finally:
-        logger.disabled = previous
+    # Serialize flag changes, including nested fetches, so one fetch cannot
+    # restore another's temporary state or leave the price provider muted.
+    with _PROVIDER_LOG_LOCK:
+        loggers = [logging.getLogger("yfinance")] + [
+            logger
+            for logger in list(logging.Logger.manager.loggerDict.values())
+            if isinstance(logger, logging.Logger)
+            and logger.name.startswith("yfinance.")
+        ]
+        states = [(logger, logger.disabled) for logger in loggers]
+        for logger in loggers:
+            logger.disabled = True
+        try:
+            yield
+        finally:
+            for logger, previous in states:
+                logger.disabled = previous
 
 
 def _to_decimal(value: object) -> tuple[Decimal | None, bool]:
@@ -232,6 +244,7 @@ class YFinanceFundamentalsProvider:
             if info is None:
                 return ProviderStatements(self._clock(), failures=tuple(failures))
             tables = {}
+            shares = None
             for name, method in (
                 ("annual_income", "get_income_stmt"),
                 ("annual_balance", "get_balance_sheet"),
@@ -239,13 +252,19 @@ class YFinanceFundamentalsProvider:
             ):
                 self._sleep(self._pause)
                 table, codes = self._read(
-                    lambda m=method: getattr(ticker, m)(freq="yearly"), convert_frame
+                    lambda m=method: getattr(ticker, m)(freq="yearly", pretty=True),
+                    convert_frame,
                 )
                 tables[name] = table
                 failures += [FetchFailure(name, code) for code in codes]
-            self._sleep(self._pause)
-            shares, codes = self._read(lambda: ticker.get_shares_full(), convert_shares)
-            failures += [FetchFailure("shares_full", code) for code in codes]
+                if FAILURE_ACCESS_RESTRICTED in codes:
+                    break  # Do not issue any more reads after a restriction.
+            else:
+                self._sleep(self._pause)
+                shares, codes = self._read(
+                    lambda: ticker.get_shares_full(), convert_shares
+                )
+                failures += [FetchFailure("shares_full", code) for code in codes]
         return ProviderStatements(
             self._clock(),
             info=info,
@@ -262,7 +281,7 @@ class YFinanceFundamentalsProvider:
         return convert(raw)
 
     def _read_info(self, ticker: Ticker, symbol: str):
-        """Minimal metadata subset; a stub is retried a few times, then reported."""
+        """Retry metadata stubs/errors within the limit; clear recovered failures."""
         failures: list[FetchFailure] = []
         stub = False
         for attempt in range(self._info_attempts):
@@ -288,10 +307,10 @@ class YFinanceFundamentalsProvider:
                         and raw.get("quoteType")
                         and raw.get("currency")
                     ):
-                        return {k: raw.get(k) for k in INFO_KEYS}, failures
+                        return {k: raw.get(k) for k in INFO_KEYS}, []
                     stub = True
             if attempt + 1 < self._info_attempts:
                 self._sleep(self._pause * 4 * (attempt + 1))
         if stub:
             failures.append(FetchFailure("info", FAILURE_METADATA_PLACEHOLDER))
-        return None, failures
+        return None, list(dict.fromkeys(failures))
