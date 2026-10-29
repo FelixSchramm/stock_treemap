@@ -128,8 +128,27 @@ Parser-`warnings`.
 - Pro Zeile sind im Kaltstart zwei Providerabrufe nötig (Historie, bei laufender Sitzung
   zusätzlich Quote), sequenziell mit 10 s Timeout. 200+ Zeilen brauchen im Kaltstart
   entsprechend Zeit; danach tragen die TTLs (`PORTFOLIO_QUOTES_TTL_SECONDS`,
-  `PORTFOLIO_HISTORY_TTL_SECONDS`).
-- Ein Anbieter-Backoff (drei Fehler in Folge) pausiert weitere Abrufe providerweit.
+  `PORTFOLIO_HISTORY_TTL_SECONDS`). Abschätzung: bei 0,3-1 s je Yahoo-Anfrage grob
+  1,5-8 Minuten für 250 Zeilen mit laufender Sitzung (nicht gemessen); bei völligem
+  Ausfall begrenzt der Backoff nach drei Fehlern die Dauer (ca. 30 s bei 10-s-Timeouts).
+  Hinweis für #85: `load()` blockiert und darf nicht ungeschützt im Renderpfad stehen
+  (Spinner bzw. Hintergrund-Vorwärmen, Statusmeldung, ggf. Zeitbudget je Durchgang);
+  parallele Sitzungen warten auf die Sperre.
+- Ein Anbieter-Backoff (drei Fehler in Folge) pausiert weitere Abrufe providerweit. Auch
+  vom Anbieter abgelehnte Symbole (z. B. Tippfehler, delistet) zählen als Fehler. Damit
+  sie die gültigen Zeilen dahinter nicht dauerhaft sperren, führt der Koordinator je
+  Instrument die Zahl aufeinanderfolgender `provider_failure`-Ergebnisse (Erfolg setzt
+  zurück, über Ladevorgänge hinweg) und ruft Quote und Historie fehlerfreie Zeilen
+  zuerst ab; die `entries` bleiben in Blattreihenfolge. Folge: Stehen drei oder mehr
+  abgelehnte Symbole vor gültigen Zeilen, kann der erste Ladevorgang (Kaltstart, noch
+  keine Fehlerzähler) einmalig `provider_backoff` zeigen; der nächste Ladevorgang nach
+  Ablauf des Backoffs (ab 15 s) liefert alle gültigen Zeilen `LIVE`, die defekten Zeilen
+  bleiben `provider_failure`. Bei einem echten Totalausfall gilt der Backoff unverändert.
+- Der Kalender (`venue_calendars(date.today())`) entsteht einmal beim Bau des
+  Koordinators. In einem langlebigen Prozess rückt das Fenster nicht nach: nach etwa
+  35 Tagen liegt der Zieltag für `Jahr` vor dem ersten Kalendertag (`calendar_incomplete`),
+  nach gut einem Jahr endet der Kalender. Hinweis für #85: den Koordinator bei Tageswechsel
+  bzw. mit einer TTL neu bauen (der Cache geht dabei verloren).
 - Der Koordinator ist threadsicher serialisiert (`load` hält eine Sperre); der Cache lebt
   nur im Prozess.
 

@@ -91,6 +91,7 @@ class FakeYahoo:
         self.specs = {}
         self.calls = []
         self.fail = False
+        self.rejected = set()  # symbols the provider refuses (quote and history)
 
     def add(self, key, exchange, ccy, /, **overrides):
         self.specs[key] = {
@@ -112,6 +113,9 @@ class FakeYahoo:
     def history_calls(self, symbol):
         return [call for call in self.calls if call == (symbol, "history")]
 
+    def history_calls_all(self):
+        return [call for call in self.calls if call[1] == "history"]
+
 
 class _FakeTicker:
     def __init__(self, yahoo, symbol):
@@ -120,7 +124,7 @@ class _FakeTicker:
     def history(self, **kwargs):
         spec = self.yahoo.specs[self.symbol]
         self.yahoo.calls.append((self.symbol, "quote" if "period" in kwargs else "history"))
-        if self.yahoo.fail:
+        if self.yahoo.fail or self.symbol in self.yahoo.rejected:
             raise RuntimeError(SECRET)
         tz = spec.get("frame_timezone", spec["exchangeTimezoneName"])
         now = self.yahoo.clock()
@@ -519,6 +523,103 @@ def test_failure_without_earlier_state_falls_back_to_sheet_value_or_unavailable(
     assert without.status_text == "Daten nicht verfügbar (provider_failure)"
     assert without.price is None
     assert SECRET not in repr(env.coordinator.last_bundle)
+
+
+# --- rejected symbols must not lock out the valid rows behind them ---------------
+
+
+def bad_good_env(layout, *, now=CLOSED):
+    """Rows from a layout string: ``b`` = symbol the provider rejects, ``g`` = valid."""
+    rows, symbols, names = [], [], []
+    for index, kind in enumerate(layout):
+        symbol = f"{kind.upper()}{index}.DE"
+        names.append(f"{'Defekt' if kind == 'b' else 'Gueltig'} {index}")
+        rows.append(row(names[-1], symbol=symbol, ticker=f"T{index}"))
+        symbols.append((symbol, "GER", "EUR"))
+    env = Env(rows, now=now, symbols=symbols)
+    env.yahoo.rejected = {sym for (sym, _, _), kind in zip(symbols, layout) if kind == "b"}
+    return env, names
+
+
+def assert_valid_live_defective_failed(bundle, names, layout):
+    assert [e.item.name for e in bundle.entries] == names  # sheet order
+    for entry, kind in zip(bundle.entries, layout):
+        if kind == "g":
+            assert entry.status is WatchlistEntryStatus.LIVE, entry.item.name
+            assert entry.status_reason is None
+        else:
+            assert entry.status is WatchlistEntryStatus.SHEET_VALUE
+            assert entry.status_reason == "provider_failure"
+
+
+@pytest.mark.parametrize(
+    "layout, running",
+    [
+        ("bbb" + "g" * 12, False),  # three rejected symbols at the start
+        ("g" * 5 + "bbb" + "g" * 8, False),  # defective rows in the middle
+        ("g" * 4 + "bbb", False),  # defective rows at the end
+        ("bbb" + "g" * 12, True),  # running session: quote path as well
+        ("g" * 5 + "bbb" + "g" * 8, True),
+    ],
+)
+def test_rejected_symbols_do_not_block_the_valid_rows_behind_them(layout, running):
+    env, names = bad_good_env(layout, now=RUNNING if running else CLOSED)
+    first = env.load()
+    # The cold start may show provider_backoff once; the defective rows already failed.
+    assert [e.item.name for e in first.entries] == names
+    env.now += timedelta(seconds=20)  # past the first backoff (15 s)
+    second = env.load()
+    assert_valid_live_defective_failed(second, names, layout)
+    env.now += timedelta(seconds=30)
+    assert_valid_live_defective_failed(env.load(), names, layout)
+    assert SECRET not in repr(second)
+
+
+def test_valid_rows_are_fetched_before_known_defective_ones_but_listed_in_sheet_order():
+    layout = "bbb" + "g" * 10
+    env, names = bad_good_env(layout)
+    env.load()
+    env.now += timedelta(seconds=20)
+    env.yahoo.calls.clear()
+    bundle = env.load()
+    fetched = [symbol for symbol, _ in env.yahoo.history_calls_all()]
+    assert fetched[:10] == [f"G{i}.DE" for i in range(3, 13)]
+    assert sorted(fetched[10:]) == ["B0.DE", "B1.DE", "B2.DE"]
+    assert [e.item.name for e in bundle.entries] == names
+
+
+def test_failure_counts_survive_loads_and_history_ttl_hits():
+    env, names = bad_good_env("g" * 8)
+    assert {e.status for e in env.load().entries} == {WatchlistEntryStatus.LIVE}
+    # Three rejected rows are inserted in front; the valid histories stay in the TTL cache.
+    bad = [row(f"Neu {i}", symbol=f"B9{i}.DE", ticker=f"N{i}") for i in range(3)]
+    for i in range(3):
+        env.yahoo.add(f"B9{i}.DE", "GER", "EUR")
+        env.yahoo.rejected.add(f"B9{i}.DE")
+    env.rows = bad + env.rows
+    env.now += timedelta(seconds=310)  # holdings TTL over, history TTL (3600 s) not
+    mid = env.load()
+    assert [e.status for e in mid.entries[3:]] == [WatchlistEntryStatus.LIVE] * 8
+    env.now += timedelta(seconds=3600)  # all histories due again, backoff long over
+    late = env.load()
+    assert [e.status for e in late.entries[3:]] == [WatchlistEntryStatus.LIVE] * 8
+    assert all(e.status_reason == "provider_failure" for e in late.entries[:3])
+
+
+def test_total_outage_still_respects_the_provider_backoff():
+    env, _ = bad_good_env("g" * 20)
+    env.yahoo.fail = True
+    env.load()
+    assert len(env.yahoo.calls) == 3  # three failures open the backoff
+    env.now += timedelta(seconds=5)
+    env.load()
+    env.load(refresh=True)
+    assert len(env.yahoo.calls) == 3  # no fetch while the backoff runs
+    env.now += timedelta(seconds=11)
+    bundle = env.load()
+    assert len(env.yahoo.calls) == 4  # exactly one recovery probe
+    assert {e.status for e in bundle.entries} == {WatchlistEntryStatus.SHEET_VALUE}
+    assert {e.status_reason for e in bundle.entries} <= {"provider_failure", "provider_backoff"}
 
 
 def test_cached_quote_of_the_same_session_is_kept_but_not_across_days():
