@@ -7,6 +7,7 @@ Local reads the real source without login; the app serves it on loopback only.
 """
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -47,6 +48,8 @@ class SourceConfig:
     worksheet_range: str | None = field(default=None, repr=False)
     credentials_file: str | None = field(default=None, repr=False)
     listings_file: str | None = field(default=None, repr=False)
+    # Optional separate Watchlist tab (ADR 0011); unset means no Sheet watchlist.
+    watchlist_range: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,42 @@ def _positive_seconds(values: Mapping[str, str], name: str, default: int) -> int
     if value <= 0:
         raise ConfigurationError(f"Positive ganze Sekunden erforderlich: {name}.")
     return value
+
+
+# Explicit tab, columns A..D (basic schema) up to T (optional Yahoo columns), bounded rows.
+_WATCHLIST_RANGE = re.compile(
+    r"(?P<sheet>'(?:[^']|'')+'|[^'!\r\n]+)!A(?P<first>[1-9][0-9]*):(?P<column>[D-T])(?P<last>[1-9][0-9]*)"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class WatchlistRange:
+    """Validated A1 range of the watchlist tab; the first row holds the headers."""
+
+    cell_range: str = field(repr=False)
+    first_row: int
+    last_row: int
+    column_count: int  # 4 (A-D) to 20 (A-T)
+
+    @property
+    def row_count(self) -> int:
+        return self.last_row - self.first_row + 1
+
+
+def parse_watchlist_range(cell_range: object) -> WatchlistRange:
+    """Check ``Tab!A<first>:<D..T><last>`` without any size cap below the Sheets limit.
+
+    Raises a ConfigurationError naming only the setting, never the value.
+    """
+    match = _WATCHLIST_RANGE.fullmatch(cell_range) if isinstance(cell_range, str) else None
+    if match is None or int(match["last"]) < int(match["first"]):
+        raise ConfigurationError("Konfiguration ungültig: PORTFOLIO_WATCHLIST_RANGE.")
+    return WatchlistRange(
+        cell_range,
+        int(match["first"]),
+        int(match["last"]),
+        ord(match["column"]) - ord("A") + 1,
+    )
 
 
 LOOPBACK_ADDRESSES = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -141,6 +180,12 @@ def load_config(
         spreadsheet_id=_required(values, "PORTFOLIO_SHEET_ID"),
         worksheet_range=_required(values, "PORTFOLIO_SHEET_RANGE"),
     )
+    watchlist_range = _text(values, "PORTFOLIO_WATCHLIST_RANGE") or None
+    if watchlist_range is not None:
+        if watchlist_range.startswith("<") or watchlist_range == "CHANGE_ME":
+            raise ConfigurationError("Konfiguration ungültig: PORTFOLIO_WATCHLIST_RANGE.")
+        parse_watchlist_range(watchlist_range)
+        source = replace(source, watchlist_range=watchlist_range)
     if mode is Mode.LOCAL:
         # No login and no auth secrets; app.py refuses non-loopback addresses.
         # Only local mode reads key/listings files; production uses server

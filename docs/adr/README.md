@@ -13,8 +13,8 @@ Stand: 23. Oktober 2026. **Angenommen** bedeutet für die Planung festgelegt, ni
 | [0007](0007-bewertung-und-einstand.md) | EUR-Bewertung und Gewinn/Verlust seit Kauf | Angenommen | Kennzahl vom Nutzer; EUR aus dem Sheet |
 | [0008](0008-treemap-und-bedienung.md) | Treemap, Ansichtswechsel und Gestaltung | Angenommen | Gewichtung/Umschalter vom Nutzer; UI technisch |
 | [0009](0009-betrieb-und-qualitaet.md) | Hosting-Anforderungen, Versionierung und Prüfung | Angenommen; Anbieter offen | Online vom Nutzer; Betriebsregeln technisch |
-
 | [0010](0010-innerer-wert-fcff.md) | FCFF-DCF, Datenanforderungen und Modellgrenzen (M8) | Fachvertrag; Implementierung/Live-Abdeckung offen | Epic #69 / Issue #70; technische Modellregeln |
+| [0011](0011-watchlist.md) | Watchlist aus eigenem Sheet-Blatt, reine Kursentwicklung (M9) | Angenommen; Kursabruf/Ansicht offen | Epic #82 / Issue #83: Nutzerentscheidungen 25.10.2026; Parser- und Prüfregeln technisch |
 
 ## Verbindliche Nutzerentscheidungen
 
