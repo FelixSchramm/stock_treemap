@@ -4,7 +4,7 @@ M8-04 ([#73](https://github.com/FelixSchramm/stock_treemap/issues/73)). Dieser T
 holt Jahresabschlüsse eines **geprüften** Emittenten über yfinance und überführt sie
 in die vorhandenen Verträge aus [FUNDAMENTAL_MODELS.md](FUNDAMENTAL_MODELS.md). Die
 Anforderungen stammen aus dem [Abdeckungsbericht](FUNDAMENTALS_COVERAGE.md) (#71).
-Kein Cache, kein Ladepfad (#74), keine Oberfläche, kein zweiter Anbieter, kein
+Cache und Ladepfad: [FUNDAMENTALS_CACHE.md](FUNDAMENTALS_CACHE.md) (#74). Keine Oberfläche, kein zweiter Anbieter, kein
 kostenpflichtiger Zugang. Der Kursprovider (`market_data`) bleibt unverändert.
 
 ## Aufbau
@@ -176,6 +176,8 @@ Danach bleiben manuelle Felder, Altersgrenzen und die Rechnerprüfungen in
 Eignung noch einen positiven FCFF.
 
 ## Hinweise für #74 (Cache und Ladepfad)
+
+Umgesetzt in [FUNDAMENTALS_CACHE.md](FUNDAMENTALS_CACHE.md); die folgenden Punkte waren die Vorgaben.
 
 - `ProviderStatements` enthält rohe Providerzahlen: nur im geschützten Speicher ablegen,
   nie in Logs. Die Normalisierung ist deterministisch aus (`identity`, `statements`,

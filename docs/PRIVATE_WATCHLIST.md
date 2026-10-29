@@ -67,7 +67,7 @@ nicht mehr und migriert, verschiebt oder löscht ihre Zeilen nicht.
 
 Behandlung bestehender privater Datenbanken (Entscheidung zu #95):
 
-- Schema und `SCHEMA_VERSION = 2` bleiben unverändert; die Tabelle `watchlist` ist
+- Die Tabelle `watchlist` bleibt unverändert (Schema inzwischen `SCHEMA_VERSION = 3`); die Tabelle `watchlist` ist
   weiterhin Teil der erwarteten Struktur. Eine alte Datenbank (Schema 1 oder 2) mit
   Zeilen startet daher wie bisher, wird bei Schema 1 nur um `scenario_versions`
   ergänzt und bleibt für Szenarien voll funktionsfähig.
@@ -122,14 +122,16 @@ verwenden. Beim erfolgreichen Verlassen wird committet, bei Fehlern zurückgerol
 und die Verbindung geschlossen. Verbindungen oder private Ergebnisse gehören
 nicht in globale Streamlit-Caches. Die Konfiguration wird je Aufruf neu gelesen.
 
-`APPLICATION_ID`, `SCHEMA_VERSION = 2`, `MIGRATIONS` und `SCHEMAS` in
+`APPLICATION_ID`, `SCHEMA_VERSION = 3`, `MIGRATIONS` und `SCHEMAS` in
 `private_store.py` kennzeichnen und prüfen das Format. Version 1 enthält
 ausschließlich die seit #95 ungenutzte Tabelle `watchlist` (siehe oben).
 Die erste Schemaanlage wird atomar vor der ersten Fachänderung committet;
 ein abgelehnter Eintrag beschädigt keinen neuen Store. Jede weitere Migration
 muss Version, SQL und die explizite erwartete Schemaprüfung gemeinsam ergänzen.
 Version 2 ergänzt `scenario_versions` für #76 ohne Änderung der Watchlist-Tabelle
-und erhält deren Daten. Die private Szenarioablage verwendet denselben
+und erhält deren Daten. Version 3 ergänzt `fundamentals_cache` für #74 (rohe Fundamentalabrufe, [FUNDAMENTALS_CACHE.md](FUNDAMENTALS_CACHE.md)).
+`PrivateDatabase.require_real_access()` prüft Besitzer bzw. Loopback ohne Dateizugriff und lehnt Demo ab.
+Die private Szenarioablage verwendet denselben
 Transaktions- und Zugriffspfad und eigene fachliche Versionen und JSON-Codecs.
 
 `BEGIN IMMEDIATE` serialisiert kurze Operationen aus unabhängigen Sitzungen und

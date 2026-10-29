@@ -543,3 +543,37 @@ def test_two_sessions_start_when_creator_is_paused_before_sqlite_connect(
         assert first.result(timeout=10) == ()
         assert second.result(timeout=10) == ()
     assert second_waiting.is_set()
+
+
+def test_require_real_access_checks_owner_or_loopback_and_refuses_demo(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth.time, "time", lambda: NOW)
+    user = claims()
+    production = PrivateDatabase(
+        lambda: config(tmp_path / "p", Mode.PRODUCTION), user=lambda: user
+    )
+    production.require_real_access()
+    user["sub"] = "synthetic-other"
+    with pytest.raises(PrivateStorageError) as error:
+        production.require_real_access()
+    assert error.value.code == "access"
+    local = PrivateDatabase(
+        lambda: config(tmp_path / "l"), server_address=lambda: "192.0.2.10"
+    )
+    with pytest.raises(PrivateStorageError) as error:
+        local.require_real_access()
+    assert error.value.code == "local"
+    demo = PrivateDatabase(lambda: config(tmp_path / "d", Mode.DEMO))
+    with pytest.raises(PrivateStorageError) as error:
+        demo.require_real_access()
+    assert error.value.code == "access"
+    # The check touches neither the configured paths nor a temporary database.
+    assert not any((tmp_path / name).exists() for name in ("p", "l", "d"))
+
+
+def test_new_database_contains_the_empty_fundamentals_cache(tmp_path):
+    directory = tmp_path / "private"
+    repo_for(directory).list()
+    with sqlite3.connect(directory / "private.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM fundamentals_cache"
+        ).fetchone() == (0,)

@@ -113,3 +113,5 @@ Die tatsächliche Abdeckung dieser Felder durch yfinance ist getrennt in
 [FUNDAMENTALS_COVERAGE.md](FUNDAMENTALS_COVERAGE.md) (M8-02, #71) dokumentiert.
 Abruf und Normalisierung dieser Felder aus yfinance beschreibt
 [FUNDAMENTALS_PROVIDER.md](FUNDAMENTALS_PROVIDER.md) (M8-04, #73).
+Cache und geschützten Ladepfad dieser Daten beschreibt
+[FUNDAMENTALS_CACHE.md](FUNDAMENTALS_CACHE.md) (M8-05, #74).

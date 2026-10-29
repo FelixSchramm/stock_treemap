@@ -740,7 +740,7 @@ def test_v1_migration_keeps_orphaned_watchlist_rows_and_adds_versioned_scenarios
         assert (
             connection.execute("PRAGMA user_version").fetchone()[0]
             == storage.SCHEMA_VERSION
-            == 2
+            == 3
         )
         assert (
             connection.execute("PRAGMA application_id").fetchone()[0]
@@ -748,7 +748,35 @@ def test_v1_migration_keeps_orphaned_watchlist_rows_and_adds_versioned_scenarios
         )
         assert connection.execute(
             "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name"
-        ).fetchall() == [("scenario_versions",), ("watchlist",)]
+        ).fetchall() == [
+            ("fundamentals_cache",),
+            ("scenario_versions",),
+            ("watchlist",),
+        ]
+
+
+def test_v2_migration_keeps_scenarios_and_adds_the_fundamentals_cache(
+    tmp_path, monkeypatch
+):
+    directory = tmp_path / "private"
+    path = legacy_database(directory)
+    with monkeypatch.context() as previous_app:
+        # An app that only knows schema 2 writes a scenario into the database.
+        previous_app.setattr(storage, "SCHEMA_VERSION", 2)
+        saved = repository(directory).save(with_plan(document()))
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert repository(directory).get(saved.originals.identity) == saved
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute(
+            "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name"
+        ).fetchall() == [
+            ("fundamentals_cache",),
+            ("scenario_versions",),
+            ("watchlist",),
+        ]
+        assert connection.execute("SELECT COUNT(*) FROM fundamentals_cache").fetchone() == (0,)
 
 
 def test_orphaned_watchlist_table_is_never_read_written_or_dropped(tmp_path):
