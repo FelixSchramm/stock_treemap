@@ -414,6 +414,118 @@ def test_scale_conflict_is_detected_through_eps_and_withholds_numbers():
     assert "scale_unverified" in unverifiable.notes
 
 
+@pytest.mark.parametrize("end", FY_ENDS)
+def test_each_emitted_year_is_checked_for_money_scale_conflicts(end):
+    source = income()
+    monetary_rows = {
+        "Operating Income",
+        "EBIT",
+        "Pretax Income",
+        "Tax Provision",
+        "Net Income Common Stockholders",
+    }
+    scaled = StatementTable(
+        {
+            row: {
+                at: value / 1000 if at == end and row in monetary_rows else value
+                for at, value in cells.items()
+            }
+            for row, cells in source.rows.items()
+        }
+    )
+    result = run(annual_income=scaled)
+    assert result.numbers_withheld and "scale_inconsistent" in codes(result)
+    assert not result.observations and not result.suggestions
+    proof = CapitalStructure(
+        "synthetic-issuer", IDENTITY.source, SHARES_DATE, 1, True, "p", RETRIEVED
+    )
+    assert build_report_set(result, proof, "v1") is None
+
+
+def test_scale_checks_continue_after_an_unverifiable_year():
+    result = run(annual_income=income(**{"Diluted EPS": [None, 9500, 9, 8.5]}))
+    assert result.numbers_withheld and "scale_inconsistent" in codes(result)
+    partial = run(annual_income=income(**{"Diluted EPS": [10, None, 9, 8.5]}))
+    assert not partial.numbers_withheld and "scale_unverified" in partial.notes
+
+
+@pytest.mark.parametrize(
+    "dataset", ["annual_income", "annual_balance", "annual_cashflow"]
+)
+def test_renamed_statement_rows_produce_a_sanitized_blocking_schema_issue(dataset):
+    source = getattr(statements(), dataset)
+    renamed = StatementTable(
+        {
+            f"unknown-private-row-{i}": cells
+            for i, cells in enumerate(source.rows.values())
+        }
+    )
+    result = run(**{dataset: renamed})
+    (issue,) = [i for i in result.issues if i.code == f"{dataset}_unexpected_schema"]
+    assert issue.blocking
+    assert "unknown-private-row" not in repr((result.issues, result.notes))
+
+
+@pytest.mark.parametrize(
+    "reason", ["unknown_rows", "nwc_gap", "start_unknown", "annual_gap"]
+)
+def test_unavailable_annual_history_always_explains_why_no_report_can_be_built(reason):
+    kwargs = {}
+    if reason == "unknown_rows":
+        kwargs = {
+            dataset: StatementTable(
+                {
+                    f"unknown-row-{i}": cells
+                    for i, cells in enumerate(
+                        getattr(statements(), dataset).rows.values()
+                    )
+                }
+            )
+            for dataset in ("annual_income", "annual_balance", "annual_cashflow")
+        }
+    elif reason == "nwc_gap":
+        kwargs["annual_balance"] = StatementTable(
+            {
+                row: cells
+                for row, cells in balance().rows.items()
+                if row != "Current Debt And Capital Lease Obligation"
+            }
+        )
+    else:
+        kwargs["annual_income"] = StatementTable(
+            {
+                row: {FY_ENDS[0]: cells[FY_ENDS[0]]}
+                for row, cells in income().rows.items()
+            }
+        )
+        kwargs["annual_balance"] = StatementTable(
+            {
+                "Current Assets": {
+                    FY_ENDS[0]: D(300e6),
+                    **(
+                        {date(2020, 12, 31): D(260e6)} if reason == "annual_gap" else {}
+                    ),
+                }
+            }
+        )
+        if reason == "annual_gap":
+            kwargs["annual_income"] = StatementTable(
+                {
+                    row: {end: cells[end] for end in (FY_ENDS[0], FY_ENDS[2])}
+                    for row, cells in income().rows.items()
+                }
+            )
+    result = run(**kwargs)
+    (issue,) = [i for i in result.issues if i.code == "annual_history_unavailable"]
+    assert issue.blocking and result.bridge_date is None
+    assert not by_field(result, FundamentalField.EBIT)
+    assert "unknown-row" not in repr((result.issues, result.notes))
+    proof = CapitalStructure(
+        "synthetic-issuer", IDENTITY.source, SHARES_DATE, 1, True, "p", RETRIEVED
+    )
+    assert build_report_set(result, proof, "v1") is None
+
+
 def test_fetch_failures_become_sanitized_codes_only():
     failures = (
         FetchFailure("annual_balance", "timeout"),
@@ -788,6 +900,32 @@ def test_missing_incomplete_or_noncontiguous_quarters_give_no_ttm():
         assert result.value is None and result.period is None
         assert result.issues[0].code == "ttm_incomplete"
         assert result.issues[0].blocking
+
+
+@pytest.mark.parametrize(
+    ("lengths", "complete"),
+    [
+        ([84] * 4, False),
+        ([98] * 4, False),
+        ([91] * 4, True),
+        ([91, 91, 91, 98], True),
+        ([91, 91, 91, 90], False),
+        ([91, 91, 92, 98], False),
+    ],
+)
+def test_ttm_total_span_must_cover_a_complete_52_or_53_week_year(lengths, complete):
+    start = date(2023, 1, 1)
+    entries = []
+    for days in lengths:
+        end = start + timedelta(days=days - 1)
+        entries.append((quarter(start, end), D(10)))
+        start = end + timedelta(days=1)
+    result = trailing_twelve_months(entries)
+    if complete:
+        assert result.value == D(40) and result.period.complete and not result.issues
+    else:
+        assert result.value is None and result.period is None
+        assert result.issues[0].blocking and result.issues[0].code == "ttm_incomplete"
 
 
 def test_cumulative_periods_alone_and_overlaps_never_form_a_ttm():

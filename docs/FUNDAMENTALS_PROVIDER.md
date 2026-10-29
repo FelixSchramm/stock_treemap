@@ -18,6 +18,9 @@ kostenpflichtiger Zugang. Der Kursprovider (`market_data`) bleibt unverändert.
 (`fetch(identity) -> ProviderStatements`). `YFinanceFundamentalsProvider` nimmt
 Ticker-Fabrik, Uhr und `sleep` entgegen; Tests laufen deshalb ohne Netzwerk und ohne
 yfinance. Der Adapter wirft keine Providerfehler, sondern liefert bereinigte Status.
+Die Jahresabschlussmethoden werden mit `freq="yearly", pretty=True` aufgerufen:
+yfinance 1.7.0 liefert nur dann die Titelform der geprüften Zeilenlabels; sein
+Standard `pretty=False` liefert CamelCase.
 
 ## Identität und Zuordnung
 
@@ -35,22 +38,31 @@ Berichts- und Handelswährung sind getrennt; eine Abweichung ist nur ein Hinweis
 ## Fehlerklassen (bereinigt)
 
 Nur diese Codes erscheinen, nie Ausnahmetexte, Symbole, URLs oder Rohantworten; der
-yfinance-Logger ist während des Abrufs stummgeschaltet. Im Normalisierungsergebnis
+yfinance-Logger und seine bereits vorhandenen Kindlogger sind während des Abrufs
+stummgeschaltet. Ein gemeinsamer reentranter Lock schützt die Wiederherstellung
+ihres vorherigen Zustands auch bei parallelen oder verschachtelten Abrufen.
+Im Normalisierungsergebnis
 heißt der Grund `<Datensatz>_<Klasse>`, z. B. `annual_balance_timeout`.
 
 | Klasse | Bedeutung |
 | --- | --- |
 | `timeout` | Zeitüberschreitung (yfinance wendet sein eigenes Netzwerk-Timeout an) |
-| `access_restricted` | Drosselung/Zugriffsbeschränkung (`YFRateLimitError`, HTTP 401/403/429); wird nicht wiederholt |
+| `access_restricted` | Drosselung/Zugriffsbeschränkung (`YFRateLimitError`, HTTP 401/403/429); danach keine weiteren Abrufe in diesem Fetch |
 | `provider_error` | sonstiger Providerfehler |
 | `empty` | leere oder nur aus NaN bestehende Antwort |
-| `unexpected_schema` | geänderte Struktur: keine Tabelle, Perioden nicht in den Spalten, Nicht-Datumsspalten, doppelte Spalten/Zeilen, Zeilenlabel keine Texte |
+| `unexpected_schema` | geänderte Struktur: keine Tabelle, Perioden nicht in den Spalten, Nicht-Datumsspalten, doppelte Spalten/Zeilen, Zeilenlabel keine Texte; in der Normalisierung auch vorhandene Tabellen ohne eine erkannte Ankerzeile |
 | `invalid_values` | nicht numerische oder nicht endliche Zellen (`inf`, Text, bool) wurden entfernt; blockiert als *ungültig* |
 | `metadata_placeholder` | gedrosselter Metadaten-Platzhalter ohne Typ/Währung/Symbol; höchstens 3 Versuche mit wachsenden Pausen, danach Abbruch ohne weitere Abrufe |
 | `identity_mismatch`, `identity_not_supported`, `unsupported_provider` | Zuordnung nicht verwertbar |
 
 Fehlende Zeilen und NaN sind *fehlend*, nie 0; ein ausdrücklich gelieferter Wert 0
 bleibt ein gelieferter Wert.
+
+Metadaten-Platzhalter, Timeouts, sonstige Providerfehler und unerwartete
+Metadatenstrukturen werden höchstens `info_attempts`-mal (Standard: 3) mit wachsenden
+Pausen versucht. Gelingt ein Folgeversuch, entfallen die Fehler der vorherigen
+Versuche. Scheitern alle, werden die Fehlerklassen je Datensatz einmal gemeldet.
+Eine Zugriffssperre oder abweichende Identität beendet die Metadatenversuche sofort.
 
 ## Normalisierung
 
@@ -61,6 +73,11 @@ bleibt ein gelieferter Wert.
   je Jahr, `mixed_row_labels`, kann hier nicht entstehen): Hinweis `fallback_row_<erste Zeile>` und Vermerk in der
   Provenienz («Definition kann abweichen»). `EBIT` gilt nur als Kontrolle
   (`ebit_control_definition_differs`).
+  Fehlt jede Ankerzeile in einer vorhandenen Tabelle, entsteht ein blockierendes
+  `<Datensatz>_unexpected_schema`: GuV (`EBIT_ROWS`), Bilanz (`CURRENT_ASSET_ROWS`
+  oder `DEBT_ROWS`), Cashflow (`DA_ROWS` oder `CAPEX_ROWS`). Unbekannte Providerlabels
+  werden dabei nicht in Fehlercodes übernommen. Einzelne fehlende Felder bleiben
+  fehlende Beobachtungen für die manuelle Ergänzung.
 - **Capex:** Provider-Abfluss (negativ) wird ausdrücklich zum positiven Abzug umgekehrt;
   ein positiver Providerwert ist *ungültig* (`capex_sign_unexpected`), 0 wird mit Hinweis
   übernommen. Negative D&A und Finanzschulden sind *ungültig*, kein Absturz.
@@ -83,8 +100,11 @@ bleibt ein gelieferter Wert.
   (`period_end_aligned`). Der Beginn des ältesten Jahres braucht einen belegten
   Vorgängerstichtag (`oldest_period_start_unknown`). Quartals- und YTD-Daten werden nicht
   abgerufen und nie in den Berichtssatz übernommen.
+  Bleibt nach Perioden-/Eröffnungs-NWC-Prüfung kein Geschäftsjahr übrig, meldet das
+  Ergebnis zusätzlich den blockierenden Grund `annual_history_unavailable`.
 - **TTM:** `trailing_twelve_months` summiert nur die neuesten vier vollständigen,
-  lückenlos aneinandergrenzenden, nicht überlappenden Quartale. Geschäftsjahres-, YTD- und
+  lückenlos aneinandergrenzenden, nicht überlappenden Quartale; ihre Gesamtspanne
+  muss 364–371 Tage umfassen (52/53 Wochen). Geschäftsjahres-, YTD- und
   TTM-Einträge tragen nie bei (keine Doppelzählung); ein fehlendes oder unvollständiges
   Quartal ergibt kein TTM (`ttm_incomplete`, `ttm_no_quarters`, `ttm_overlapping_periods`).
   Stichtagswerte lassen sich nicht übergeben. Der Adapter bildet daraus keine Beobachtung.
@@ -95,8 +115,10 @@ bleibt ein gelieferter Wert.
   Anzahl der Stammaktienklassen kommt nie vom Provider. Die historische gewichtete
   EPS-Stückzahl ist nur Kontrolle.
 - **Skala:** yfinance liefert absolute Einheiten (Faktor 1). EPS ≈ Ergebnis / Ø verwässerte
-  Aktien (± 5 %) prüft das; ein Widerspruch sperrt alles (`scale_inconsistent`), eine
-  nicht prüfbare Skala bleibt ein Hinweis (`scale_unverified`).
+  Aktien (± 5 %) prüft das für **jedes ausgegebene Geschäftsjahr**; ein Widerspruch
+  in einem dieser Jahre sperrt alles (`scale_inconsistent`). Ist die Kontrolle in
+  mindestens einem ausgegebenen Jahr nicht möglich, bleibt `scale_unverified` ein
+  Hinweis; die übrigen Jahre werden trotzdem geprüft.
 - **Sperren statt Fallback:** Währungs-, Typ-, Identitäts- oder Skalenkonflikte entfernen
   **alle** Zahlen (`numbers_withheld`, `currency=None`); es gibt keine EUR- und keine
   Nullannahme, `build_report_set` liefert dann `None`.
@@ -106,10 +128,13 @@ bleibt ein gelieferter Wert.
 
 ## Feldkatalog: automatisch, Kontrolle, manuell
 
-`FIELD_CATALOG` listet jedes Vertragsfeld mit Herkunft. «Manuell» heißt: Das Ergebnis
-enthält immer eine *fehlende* Beobachtung (`manual_required`) für den Pfad der
-`ManualAdjustment`-Ergänzung; ein Providerwert erscheint höchstens als
-gekennzeichneter `Suggestion`, nie als Beobachtung.
+`FIELD_CATALOG` listet jedes Vertragsfeld mit Herkunft. «Manuell» heißt: Für jede
+ausgegebene Jahresperiode enthält das Ergebnis eine *fehlende* Steuerbeobachtung,
+für den verfügbaren Brückenstichtag die vier manuellen Brückenfelder und für eine
+datierte Aktienzahl die fehlende Verwässerungsbeobachtung (`manual_required`).
+Ohne die jeweilige Periode bzw. bei gesperrten Zahlen entstehen diese Beobachtungen
+nicht. Sie dienen dem Pfad der `ManualAdjustment`-Ergänzung; ein Providerwert
+erscheint höchstens als gekennzeichneter `Suggestion`, nie als Beobachtung.
 
 | Feld | Herkunft | Behandlung |
 | --- | --- | --- |

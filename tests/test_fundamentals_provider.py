@@ -4,14 +4,16 @@ import logging
 import subprocess
 import sys
 import types
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from threading import Event
 
 import pandas as pd
 import pytest
-from test_fundamentals_normalization import IDENTITY, INFO
+from test_fundamentals_normalization import IDENTITY, INFO, adjustments, capital
 
 import portfolio_dashboard.fundamentals_provider as provider_module
 from portfolio_dashboard.fundamentals import (
@@ -20,7 +22,9 @@ from portfolio_dashboard.fundamentals import (
     IssuerKind,
 )
 from portfolio_dashboard.fundamentals_normalization import (
+    OwnerConfirmations,
     ProviderExpectation,
+    build_report_set,
     normalize_statements,
 )
 from portfolio_dashboard.fundamentals_provider import (
@@ -109,13 +113,21 @@ class FakeTicker:
         return answer
 
     def get_income_stmt(self, **kw):
-        return self._answer("get_income_stmt", kw)
+        return self._statement("get_income_stmt", kw)
 
     def get_balance_sheet(self, **kw):
-        return self._answer("get_balance_sheet", kw)
+        return self._statement("get_balance_sheet", kw)
 
     def get_cashflow(self, **kw):
-        return self._answer("get_cashflow", kw)
+        return self._statement("get_cashflow", kw)
+
+    def _statement(self, name, kwargs):
+        answer = self._answer(name, kwargs)
+        # yfinance 1.7.0 defaults to CamelCase row labels; only pretty=True
+        # yields the title-form labels used by the reviewed preference lists.
+        if isinstance(answer, pd.DataFrame) and not kwargs.get("pretty", False):
+            return answer.rename(index=lambda label: label.replace(" ", ""))
+        return answer
 
     def get_shares_full(self, **kw):
         return self._answer("get_shares_full", kw)
@@ -160,7 +172,21 @@ class YFRateLimitError(Exception):
     pass
 
 
-def test_complete_fetch_converts_frames_and_feeds_the_normalizer():
+@pytest.mark.parametrize(
+    ("method", "label"),
+    [
+        ("get_income_stmt", "Operating Income"),
+        ("get_balance_sheet", "Total Debt"),
+        ("get_cashflow", "Capital Expenditure"),
+    ],
+)
+def test_fake_statement_labels_follow_the_yfinance_pretty_flag(method, label):
+    ticker = FakeTicker()
+    assert label.replace(" ", "") in getattr(ticker, method)(freq="yearly").index
+    assert label in getattr(ticker, method)(freq="yearly", pretty=True).index
+
+
+def test_complete_fetch_converts_frames_and_builds_a_usable_report_set():
     ticker = FakeTicker()
     fetched = adapter(ticker).fetch(IDENTITY)
     assert not fetched.failures and fetched.retrieved_at == NOW
@@ -187,7 +213,7 @@ def test_complete_fetch_converts_frames_and_feeds_the_normalizer():
         "get_shares_full",
     ]
     assert all(
-        kw == {"freq": "yearly"}
+        kw == {"freq": "yearly", "pretty": True}
         for name, kw in ticker.calls
         if name.startswith("get_") and name not in {"get_info", "get_shares_full"}
     )
@@ -195,6 +221,13 @@ def test_complete_fetch_converts_frames_and_feeds_the_normalizer():
     assert not result.numbers_withheld
     ebit = [o for o in result.observations if o.field is FundamentalField.EBIT]
     assert ebit and all(o.status is ValueStatus.AVAILABLE for o in ebit)
+    assert result.bridge_date == date(2024, 12, 31) and not result.issues
+    report = build_report_set(
+        result, capital(result), "synthetic-v1", OwnerConfirmations(True, True, True)
+    )
+    assert report is not None
+    report = replace(report, adjustments=adjustments(result))
+    assert not [issue for issue in report.issues_at(NOW) if issue.blocking]
 
 
 def test_it_satisfies_the_replaceable_provider_contract_and_requests_pauses():
@@ -258,6 +291,29 @@ def test_symbol_less_metadata_counts_as_a_stub():
     assert failure_codes(result) == {("info", "metadata_placeholder")}
 
 
+@pytest.mark.parametrize("failed_attempt", [Timeout(SECRET), [], RuntimeError(SECRET)])
+def test_recovered_metadata_failure_does_not_block_the_report_set(failed_attempt):
+    ticker = FakeTicker(get_info=[failed_attempt, {**INFO, "symbol": "SYN.XX"}])
+    fetched = adapter(ticker).fetch(IDENTITY)
+    assert fetched.info and not fetched.failures
+    result = normalize_statements(IDENTITY, fetched, ProviderExpectation("EUR", 12, 31))
+    assert not result.issues and not result.numbers_withheld
+    report = build_report_set(
+        result, capital(result), "synthetic-v1", OwnerConfirmations(True, True, True)
+    )
+    assert report is not None
+    report = replace(report, adjustments=adjustments(result))
+    assert not [issue for issue in report.issues_at(NOW) if issue.blocking]
+
+
+def test_repeated_metadata_failure_is_reported_once_after_all_attempts():
+    ticker = FakeTicker(get_info=Timeout(SECRET))
+    result = adapter(ticker).fetch(IDENTITY)
+    assert len(result.failures) == 1
+    assert failure_codes(result) == {("info", "timeout")}
+    assert [name for name, _ in ticker.calls] == ["get_info"] * 3
+
+
 @pytest.mark.parametrize(
     ("error", "code"),
     [
@@ -277,15 +333,12 @@ def test_exceptions_become_sanitized_classes_without_message_text(error, code):
         get_shares_full=error,
     )
     result = adapter(ticker).fetch(IDENTITY)
-    assert failure_codes(result) == {
-        (dataset, code)
-        for dataset in (
-            "annual_income",
-            "annual_balance",
-            "annual_cashflow",
-            "shares_full",
-        )
-    }
+    datasets = (
+        ("annual_income",)
+        if code == "access_restricted"
+        else ("annual_income", "annual_balance", "annual_cashflow", "shares_full")
+    )
+    assert failure_codes(result) == {(dataset, code) for dataset in datasets}
     assert SECRET not in repr(result)
     outcome = normalize_statements(IDENTITY, result, ProviderExpectation("EUR", 12, 31))
     assert SECRET not in repr(outcome)
@@ -307,6 +360,31 @@ def test_restricted_metadata_is_not_retried():
     result = adapter(ticker, sleeps).fetch(IDENTITY)
     assert failure_codes(result) == {("info", "access_restricted")}
     assert [n for n, _ in ticker.calls] == ["get_info"] and sleeps == []
+
+
+@pytest.mark.parametrize(
+    ("method", "dataset", "statement_reads"),
+    [
+        ("get_income_stmt", "annual_income", 1),
+        ("get_balance_sheet", "annual_balance", 2),
+        ("get_cashflow", "annual_cashflow", 3),
+    ],
+)
+def test_restricted_statement_stops_all_later_requests(
+    method, dataset, statement_reads
+):
+    sleeps = []
+    ticker = FakeTicker(**{method: YFRateLimitError(SECRET)})
+    result = adapter(ticker, sleeps).fetch(IDENTITY)
+    assert failure_codes(result) == {(dataset, "access_restricted")}
+    assert [name for name, _ in ticker.calls] == [
+        "get_info",
+        "get_income_stmt",
+        "get_balance_sheet",
+        "get_cashflow",
+    ][: statement_reads + 1]
+    assert sleeps == [1.5] * statement_reads
+    assert result.dated_shares is None
 
 
 def test_factory_failure_is_a_sanitized_request_failure():
@@ -413,6 +491,71 @@ def test_provider_logging_is_silenced_during_a_fetch_and_restored():
     logger.disabled = False
     adapter(Noisy()).fetch(IDENTITY)
     assert seen == [True] and logger.disabled is False
+
+
+def test_existing_provider_child_loggers_are_silenced_and_restored(caplog, monkeypatch):
+    parent = logging.getLogger("yfinance")
+    child = logging.getLogger("yfinance.synthetic.child")
+    monkeypatch.setattr(parent, "disabled", False)
+    monkeypatch.setattr(child, "disabled", False)
+
+    class Noisy(FakeTicker):
+        def get_info(self):
+            parent.error(SECRET)
+            child.error(SECRET)
+            return super().get_info()
+
+    adapter(Noisy()).fetch(IDENTITY)
+    assert SECRET not in caplog.text
+    assert parent.disabled is False and child.disabled is False
+
+
+def test_overlapping_fetches_restore_the_original_logger_state():
+    logger = logging.getLogger("yfinance")
+    original = logger.disabled
+    first_entered, second_started, second_entered = Event(), Event(), Event()
+    release_first, release_second = Event(), Event()
+    seen = []
+
+    class WaitingTicker(FakeTicker):
+        def __init__(self, entered, release):
+            super().__init__()
+            self.entered, self.release = entered, release
+
+        def get_info(self):
+            self.entered.set()
+            assert self.release.wait(5)
+            seen.append(logger.disabled)
+            return super().get_info()
+
+    def second_fetch():
+        second_started.set()
+        return adapter(WaitingTicker(second_entered, release_second)).fetch(IDENTITY)
+
+    logger.disabled = False
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(
+                adapter(WaitingTicker(first_entered, release_first)).fetch, IDENTITY
+            )
+            try:
+                assert first_entered.wait(5)
+                second = pool.submit(second_fetch)
+                assert second_started.wait(5)
+                # Give the second fetch a chance to overlap the first. It must
+                # not snapshot the first fetch's temporary disabled=True flag.
+                second_entered.wait(0.1)
+                release_first.set()
+                assert not first.result(timeout=5).failures
+                assert second_entered.wait(5)
+                release_second.set()
+                assert not second.result(timeout=5).failures
+            finally:
+                release_first.set()
+                release_second.set()
+        assert seen == [True, True] and logger.disabled is False
+    finally:
+        logger.disabled = original
 
 
 def test_default_factory_imports_yfinance_lazily(monkeypatch):
