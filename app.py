@@ -23,6 +23,14 @@ from portfolio_dashboard.demo import (
     demo_snapshot,
     demo_valuation,
 )
+from portfolio_dashboard.fundamentals_config import FundamentalsConfigError
+from portfolio_dashboard.fundamentals_loader import (
+    LOADER_STATE_KEY as FUNDAMENTALS_LOADER_KEY,
+)
+from portfolio_dashboard.fundamentals_loader import (
+    build_local_fundamentals_loader,
+    build_production_fundamentals_loader,
+)
 from portfolio_dashboard.local_source import (
     ListingsFileError,
     build_local_coordinator,
@@ -64,16 +72,25 @@ except ConfigurationError as exc:
     st.stop()
 
 
-def render_own_portfolio(build_coordinator, build_watchlist) -> None:
+def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals) -> None:
     """Build the owner's coordinator once per session, then render and stop.
 
     ``build_watchlist`` is only called by the Watchlist view (once per session and
     day), so no Watchlist loader exists before the owner gate and the first visit.
+    The fundamentals loader (or ``None`` without a private mapping) is built once
+    per session after the gate; building reads the mapping but performs no
+    retrieval, and it only fetches when a view calls ``load`` (#74).
     """
     if OWN_COORDINATOR_KEY not in st.session_state:
         try:
             st.session_state[OWN_COORDINATOR_KEY] = build_coordinator()
         except (ListingsFileError, SheetsConfigurationError, SheetsCredentialError) as exc:
+            st.error(str(exc))
+            st.stop()
+    if FUNDAMENTALS_LOADER_KEY not in st.session_state:
+        try:
+            st.session_state[FUNDAMENTALS_LOADER_KEY] = build_fundamentals()
+        except FundamentalsConfigError as exc:
             st.error(str(exc))
             st.stop()
     # The coordinator replaces these placeholders with its atomic bundle.
@@ -99,6 +116,7 @@ if config.mode is Mode.LOCAL:
     render_own_portfolio(
         lambda: build_local_coordinator(config),
         lambda: build_local_watchlist_coordinator(config),
+        lambda: build_local_fundamentals_loader(config),
     )
 
 if config.mode is Mode.PRODUCTION:
@@ -113,6 +131,9 @@ if config.mode is Mode.PRODUCTION:
         ),
         lambda: build_production_watchlist_coordinator(
             config, st.secrets.get("sheets_service_account")
+        ),
+        lambda: build_production_fundamentals_loader(
+            config, st.secrets.get("fundamental", [])
         ),
     )
 
