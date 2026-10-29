@@ -126,7 +126,8 @@ class Status(Enum):
     NO_DATA = "Keine Fundamentaldaten"
     UNMAPPED = "Fundamentaldaten-Zuordnung fehlt"
     NOT_CONFIGURED = "Fundamentaldaten nicht eingerichtet"
-    NOT_LOADED = "Fundamentaldaten nicht verfügbar"
+    NOT_LOADED = "Fundamentaldaten noch nicht geladen"
+    LOAD_FAILED = "Fundamentaldaten nicht verfügbar"
     IDENTITY_MISSING = "Zuordnung fehlt"
     EXCLUDED = "Kein Bewertungsmodell"
 
@@ -206,6 +207,10 @@ _NOTE_CODE_TEXT = {
 }
 
 DEMO_NOTE = "Demo: Annahmen, manuelle Werte und Zahlen sind erfunden (synthetisch)"
+NOT_LOADED_EXPLANATION = (
+    "Die Fundamentaldaten sind noch nicht geladen. „Bewertungsdaten laden“ liest sie aus "
+    "der geschützten Ablage und ruft sie, soweit fällig, neu ab."
+)
 NO_ASSUMPTIONS_LINE = "Annahmenstand: keine gespeicherten Annahmen"
 IDENTITY_MISSING_PORTFOLIO = (
     "Die Depotposition hat keine geprüfte Zuordnung (Kennung und Handelsplatz) in den "
@@ -749,7 +754,7 @@ def _stand(
     return short, tuple(lines)
 
 
-def _pick_entry(
+def entry_for(
     subject: Subject, bundle: FundamentalsBundle | None
 ) -> FundamentalsEntry | None:
     """First listing of the security that the loader can resolve, else the first."""
@@ -870,18 +875,34 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
             price,
         )
     if state.bundle is None:
+        failed = state.error is not None
+        return _row(
+            index,
+            subject,
+            Status.LOAD_FAILED if failed else Status.NOT_LOADED,
+            [state.error or NOT_LOADED_EXPLANATION],
+            base_notes,
+            _empty_views(
+                "Fundamentaldaten nicht verfügbar"
+                if failed
+                else "Fundamentaldaten noch nicht geladen"
+            ),
+            no_stand,
+            price,
+        )
+    entry = entry_for(subject, state.bundle)
+    if entry is None:
         return _row(
             index,
             subject,
             Status.NOT_LOADED,
-            [state.error or "Die Fundamentaldaten wurden nicht geladen."],
+            [NOT_LOADED_EXPLANATION],
             base_notes,
-            _empty_views("Fundamentaldaten nicht verfügbar"),
+            _empty_views("Fundamentaldaten noch nicht geladen"),
             no_stand,
             price,
         )
-    entry = _pick_entry(subject, state.bundle)
-    if entry is None or entry.status is FundamentalsStatus.UNMAPPED:
+    if entry.status is FundamentalsStatus.UNMAPPED:
         return _row(
             index,
             subject,
