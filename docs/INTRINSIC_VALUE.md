@@ -1,8 +1,9 @@
 # Innerer Wert: Feldvertrag und synthetische Referenzrechnung
 
 M8-01 (#70), fachliche Spezifikation zu [ADR 0010](adr/0010-innerer-wert-fcff.md).
-Dies beschreibt den Vertrag für spätere Implementierungen, keinen vorhandenen
-DCF-Rechner, Live-Adapter oder nachgewiesenen kostenlosen Datenumfang.
+Dies beschreibt den Vertrag. Der Rechner aus M8-08 (#77) ist in
+[DCF_CALCULATION.md](DCF_CALCULATION.md) beschrieben; es gibt weiterhin keinen
+Live-Adapter oder nachgewiesenen kostenlosen Datenumfang.
 
 ## Getrennte Ebenen und Status
 

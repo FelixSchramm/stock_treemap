@@ -1,4 +1,4 @@
-"""Real wheel installation with invented checkout paths and watchlist records."""
+"""Real wheel installation with invented checkout paths and synthetic records."""
 
 import shutil
 import subprocess
@@ -74,7 +74,19 @@ from pathlib import Path
 sys.path.append(sys.argv[1])
 import portfolio_dashboard.private_store as storage
 from portfolio_dashboard.config import AppConfig, CacheTTLs, LoginConfig, Mode, Provider, SourceConfig
-from portfolio_dashboard.watchlist import WatchlistEntry, WatchlistRepository
+
+class ProbeStore:
+    # Neutral exerciser: the scenario table through the public transaction contract.
+    def __init__(self, database):
+        self._database = database
+
+    def list(self):
+        with self._database.transaction() as connection:
+            return tuple(connection.execute('SELECT instrument_id, payload FROM scenario_versions'))
+
+    def add(self, record):
+        with self._database.transaction() as connection:
+            connection.execute('INSERT INTO scenario_versions VALUES (?, 1, ?)', record)
 
 def no_network(*args, **kwargs):
     raise AssertionError('unexpected network access')
@@ -92,7 +104,7 @@ def database(directory, mode=Mode.LOCAL):
 for directory in (checkout, checkout / 'exports' / 'nested', checkout / 'synthetic-runtime',
                   Path(sys.prefix) / 'private', Path('/app/private')):
     try:
-        WatchlistRepository(database(directory)).list()
+        ProbeStore(database(directory)).list()
     except storage.PrivateStorageError as error:
         assert error.code == 'path'
         assert str(directory) not in str(error)
@@ -100,16 +112,16 @@ for directory in (checkout, checkout / 'exports' / 'nested', checkout / 'synthet
         raise AssertionError('forbidden database path was accepted')
 assert not tuple(checkout.rglob('private.sqlite3'))
 
-record = WatchlistEntry('synthetic-id', 'Synthetische Beobachtung')
+record = ('synthetic-id', 'Synthetische Beobachtung')
 first = database(external)
-WatchlistRepository(first).add(record)
+ProbeStore(first).add(record)
 first.close()
-assert WatchlistRepository(database(external)).list() == (record,)
+assert ProbeStore(database(external)).list() == (record,)
 assert (external / 'private.sqlite3').is_file()
 
 demo = database(checkout / 'exports', Mode.DEMO)
-WatchlistRepository(demo).add(record)
-assert WatchlistRepository(demo).list() == (record,)
+ProbeStore(demo).add(record)
+assert ProbeStore(demo).list() == (record,)
 demo.close()
 assert not tuple(checkout.rglob('private.sqlite3'))
 print('wheel-storage-ok')

@@ -14,9 +14,17 @@ first, so permanently rejected symbols cannot keep taking the recovery probe.
 A key already in its own failure streak is ignored only directly after a
 healthy key succeeded without any new failure, so rejected symbols cannot block
 FX, history or other keys while a partial recovery still rearms the breaker.
+A failing listing is not yet a provider outage: quotes() counts failures per
+position. A position is a primary listing plus its replacement listings, tried
+directly after the failed primary. It adds at most one failure to the streak,
+and only if every candidate failed; any successful candidate resets the
+streak. Positions are probed in order of their fewest-failure candidate, so a
+healthy replacement stays reachable after a backoff however many failing
+listings precede it. If all candidates fail (a real outage), the provider-wide
+backoff opens as before.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Generic, TypeVar
@@ -78,6 +86,7 @@ class QuoteCache:
     _provider_failures: int = field(default=0, init=False, repr=False)
     _provider_retry_after: datetime | None = field(default=None, init=False, repr=False)
     _healthy_success: bool = field(default=False, init=False, repr=False)
+    _deferred: bool | None = field(default=None, init=False, repr=False)
 
     def _get(
         self,
@@ -111,6 +120,8 @@ class QuoteCache:
                 was_healthy = entry.failures == 0
                 self._entries[key] = _Entry(fetched, now)
                 if provider_wide:
+                    if self._deferred:
+                        self._deferred = False  # a fresh success clears the position
                     self._provider_failures = 0
                     self._provider_retry_after = None
                     self._healthy_success = was_healthy
@@ -124,16 +135,10 @@ class QuoteCache:
                     or not self._healthy_success
                 )
             ):
-                self._provider_failures += 1
-                self._healthy_success = False
-                excess = self._provider_failures - self.provider_failure_threshold
-                if excess >= 0:
-                    self._provider_retry_after = now + timedelta(
-                        seconds=min(
-                            self.backoff_base_seconds * 2**excess,
-                            self.backoff_max_seconds,
-                        )
-                    )
+                if self._deferred is None:
+                    self._count_provider_failure(now)
+                else:
+                    self._deferred = True
             entry.last_failure = fetched
             entry.failures += 1
             delay = min(
@@ -146,6 +151,17 @@ class QuoteCache:
         if entry.last_failure is None:
             return unavailable(now)
         return entry.last_failure
+
+    def _count_provider_failure(self, now: datetime) -> None:
+        self._provider_failures += 1
+        self._healthy_success = False
+        excess = self._provider_failures - self.provider_failure_threshold
+        if excess >= 0:
+            self._provider_retry_after = now + timedelta(
+                seconds=min(
+                    self.backoff_base_seconds * 2**excess, self.backoff_max_seconds
+                )
+            )
 
     def quote(
         self, instrument: Instrument, *, refresh: bool = False
@@ -168,15 +184,52 @@ class QuoteCache:
         )
 
     def quotes(
-        self, instruments: Iterable[Instrument], *, refresh: bool = False
+        self,
+        instruments: Iterable[Instrument],
+        *,
+        refresh: bool = False,
+        replacements: Mapping[Instrument, Iterable[Instrument]] | None = None,
     ) -> dict[Instrument, PriceObservation]:
-        """Fetch due keys with fewer failures first; return in input order."""
+        """Fetch due positions with fewer failures first; return in input order.
+
+        A position is an input plus its replacement listings. A replacement is
+        fetched directly after the failed primary; it is not an input and is
+        appended after the inputs. A position counts at most one provider
+        failure, and only if all of its candidates fail.
+        """
         items = list(instruments)
-        ordered = sorted(
-            items, key=lambda item: self._entries.get(("quote", item), _Entry()).failures
-        )
-        results = {item: self.quote(item, refresh=refresh) for item in ordered}
-        return {item: results[item] for item in items}
+        alternatives = {
+            item: [
+                r for r in dict.fromkeys((replacements or {}).get(item, ()))
+                if r != item and r not in items
+            ]
+            for item in items
+        }
+
+        def failures(item):
+            return min(
+                self._entries.get(("quote", c), _Entry()).failures
+                for c in (item, *alternatives[item])
+            )
+
+        results = {}
+        for item in sorted(items, key=failures):
+            self._deferred = False
+            try:
+                for candidate in (item, *alternatives[item]):
+                    if candidate not in results:
+                        results[candidate] = self.quote(candidate, refresh=refresh)
+                    if (
+                        results[candidate].valuation.status is ValueStatus.AVAILABLE
+                        and not self._deferred
+                    ):
+                        break
+                if self._deferred:
+                    self._count_provider_failure(self.clock())
+            finally:
+                self._deferred = None
+        extras = {key: value for key, value in results.items() if key not in items}
+        return {item: results[item] for item in items} | extras
 
     def fx(self, pair: VerifiedFxPair, *, refresh: bool = False) -> FxObservation:
         return self._get(

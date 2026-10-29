@@ -116,6 +116,26 @@ def test_missing_return_is_gray_n_v_and_keeps_its_area():
     assert "Referenzdatum: n. v." in tile.tooltip
 
 
+def test_hiding_missing_returns_keeps_original_valuation_weights_and_value_omissions():
+    valuation = valued(
+        position("Mit Periode", InstrumentType.STOCK, "1", "60", row=1),
+        position("Ohne Periode", InstrumentType.STOCK, "1", "40", row=2),
+        position("Ohne Wert", InstrumentType.STOCK, "1", None, row=3),
+    )
+    perfs = (Performance(Decimal(0)), Performance(None), Performance(None))
+    before = build_table_rows(valuation, perfs)
+    kpis = build_kpis(valuation, perfs)
+    model = build_treemap(valuation, perfs, hide_missing_performance=True)
+    assert [tile.name for tile in model.tiles] == ["Mit Periode"]
+    assert model.tiles[0].amount_eur == Decimal(60)
+    assert model.tiles[0].percent == Decimal(0)
+    assert model.omitted_count == 1  # Only the missing EUR value, never hidden returns.
+    assert valuation.total_eur == Decimal(100)
+    assert [g.weight_fraction for g in valuation.groups] == [Decimal("0.6"), Decimal("0.4"), None]
+    assert build_table_rows(valuation, perfs) == before
+    assert build_kpis(valuation, perfs) == kpis
+
+
 def test_personal_view_without_verified_cost_is_n_v_but_with_cost_is_signed():
     valuation = valued(
         position("Mit Einstand", InstrumentType.STOCK, "1", "120", cost="100", row=1),

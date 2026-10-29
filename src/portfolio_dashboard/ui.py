@@ -55,6 +55,8 @@ SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
 # widget key and is re-seeded from it on every run.
 COURSE_PERIOD_KEY = "dashboard.course_period"
 _PERIOD_WIDGET_KEY = "_dashboard.course_period"
+HIDE_MISSING_COURSE_KEY = "dashboard.hide_missing_course"
+_HIDE_MISSING_WIDGET_KEY = "_dashboard.hide_missing_course"
 FILTER_QUERY_KEY = "dashboard.filter_query"
 FILTER_TYPE_KEY = "dashboard.filter_type"
 FILTER_CATEGORY_KEY = "dashboard.filter_category"
@@ -127,12 +129,27 @@ def render_view_controls() -> tuple[str, str]:
     return view, period
 
 
-def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
+def _remember_missing_course_filter() -> None:
+    """Retain the course-only toggle while the since-purchase view is active."""
+    st.session_state[HIDE_MISSING_COURSE_KEY] = st.session_state[_HIDE_MISSING_WIDGET_KEY]
+
+
+def render_kpis(
+    kpis: PortfolioKpis,
+    *,
+    is_personal_view: bool = False,
+    missing_course_count: int = 0,
+    missing_course_eur: Decimal = Decimal(0),
+) -> bool:
     """Render portfolio-wide header KPIs from the unfiltered valuation snapshot.
 
     :param kpis: Calculated PortfolioKpis object.
     :param is_personal_view: Whether to include the personal cost-basis comparison.
+    :param missing_course_count: Number of valued tiles without the selected course return.
+    :param missing_course_eur: Full EUR value of those tiles, before search/type filters.
+    :return: Whether to hide tiles without the selected course return.
     """
+    hide_missing = False
     cols = st.columns(4)
     with cols[0]:
         st.metric(
@@ -141,6 +158,19 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
             delta=kpis.total_status_note,
             delta_color="off",
         )
+        if not is_personal_view:
+            st.session_state.setdefault(HIDE_MISSING_COURSE_KEY, True)
+            st.session_state[_HIDE_MISSING_WIDGET_KEY] = st.session_state[HIDE_MISSING_COURSE_KEY]
+            hide_missing = st.toggle(
+                "Positionen ohne Kursentwicklung ausblenden",
+                key=_HIDE_MISSING_WIDGET_KEY,
+                on_change=_remember_missing_course_filter,
+            )
+            if hide_missing:
+                st.caption(
+                    f"{missing_course_count} Positionen ({format_eur(missing_course_eur)}) "
+                    "ohne Kursentwicklung ausgeblendet"
+                )
     with cols[1]:
         st.metric(
             "Aktive Positionen",
@@ -184,6 +214,7 @@ def render_kpis(kpis: PortfolioKpis, *, is_personal_view: bool = False) -> None:
             )
         if kpis.personal_coverage_label:
             st.caption(f"Einstandsvergleich: {kpis.personal_coverage_label}.")
+    return hide_missing
 
 
 def render_filter_controls(
@@ -308,7 +339,7 @@ def render_treemap(model: TreemapModel) -> None:
     :param model: Prepared TreemapModel.
     """
     if not model.tiles:
-        st.info("Keine bewertete Position für die Treemap.")
+        st.info("Keine Position für die Treemap sichtbar.")
     else:
         st.plotly_chart(treemap_figure(model), width="stretch")
         render_color_legend(model)
@@ -490,14 +521,31 @@ def render_dashboard(
         is_personal_view=is_personal,
         returns=resolved_returns,
     )
-    render_kpis(kpis, is_personal_view=is_personal)
+    missing_course_groups = [
+        group
+        for group, performance in zip(valuation.groups, current_performances)
+        if performance.percent is None
+        and group.amount_eur is not None
+        and group.amount_eur > 0
+    ]
+    hide_missing = render_kpis(
+        kpis,
+        is_personal_view=is_personal,
+        missing_course_count=len(missing_course_groups),
+        missing_course_eur=sum((g.amount_eur for g in missing_course_groups), Decimal(0)),
+    )
 
     criteria, sort_by, descending = render_filter_controls(valuation)
     filtered_groups, filtered_performances = filter_groups(
         valuation, current_performances, criteria
     )
     render_treemap(
-        build_treemap(valuation, filtered_performances, groups=filtered_groups)
+        build_treemap(
+            valuation,
+            filtered_performances,
+            groups=filtered_groups,
+            hide_missing_performance=hide_missing,
+        )
     )
 
     table_rows = build_table_rows(

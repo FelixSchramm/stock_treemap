@@ -14,8 +14,9 @@ Listing auflösen. Das Mapping muss ausdrücklich `provider="yfinance"` nennen.
 Für diesen Adapter bezeichnet `trading_venue` den extern geprüften, exakten
 Yahoo-`exchangeName`-Code. Die kanonische Yahoo-Symbolschreibweise im Mapping
 muss exakt mit dem Antwortfeld `symbol` übereinstimmen. Abweichende Symbole oder
-Handelsplätze werden verworfen. Es gibt keine Suche, Umbenennung, alternative
-Börse, Underlying-, ADR- oder andere Produkt-Ersatzversorgung.
+Handelsplätze werden verworfen. Es gibt keine Suche, automatische Umbenennung,
+Underlying-, ADR- oder andere Produkt-Ersatzversorgung. Ein ausdrücklich vom
+Besitzer gepflegtes alternatives Listing desselben Produkts ist unten beschrieben.
 
 Die Antwort muss eine gültige `exchangeTimezoneName` und die geprüfte Einheit
 bestätigen. Ein übereinstimmender Währungscode gilt nur mit Faktor 1. Die vom
@@ -32,6 +33,92 @@ keinen nutzbaren Zahlenwert bzw. keine Historienpunkte und einen stabilen
 `unknown_exchange_timezone` oder `unknown_or_conflicting_unit`.
 Der Adapter übernimmt oder loggt keine Provider-Ausnahmetexte und Rohantworten.
 Mehrdeutige Registries und ungültige Aufrufparameter bleiben Programmierfehler.
+
+Die Oberfläche unterscheidet **Keine Kurszuordnung** von
+**Kursabruf fehlgeschlagen (Grund)**. Eine fehlende Zuordnung wird auch dann
+erkannt, wenn die Position schon eine Instrumentkennung besitzt. Der
+Zuordnungs-/Abrufgrund hat Vorrang vor dem allgemeinen Sheet-Fallbackgrund.
+Ein gültiger Kurs mit abgelehnter Historie zeigt getrennt
+**Kurshistorie nicht verfügbar (Grund)**, beispielsweise **Kurs ungültig**
+beim stabilen Historiencode `invalid_price`. Die Codes bleiben am
+Bewertungs-/Periodenergebnis erhalten. Tabelle, Positionsdetails und Datenstatus
+übersetzen ausschließlich eine feste Allowlist in kurze deutsche Ursachen.
+Unbekannte Codes ergeben einen neutralen deutschen Text; Warnungsmeldungen,
+Symbole, Rohantworten und Ausnahmetexte werden nie als Fehlerursache ausgegeben.
+
+## Ausdrücklich gepflegte Sheet-Ersatzzuordnung (#101)
+
+Der lokale und der produktive Lader lesen vier optionale, eindeutig benannte
+Überschriften innerhalb **N–X**. Hinter den bisherigen Spalten können sie in
+**U–X** stehen. Der konfigurierte Sheet-Bereich muss diese Spalten einschließen
+und bleibt explizit begrenzt, beispielsweise `'<Tab>'!A1:X500`; unbeschränkte
+Spaltenbereiche bleiben gesperrt. Bestehende A–M..A–T-Bereiche funktionieren
+weiter, lesen aber keine außerhalb ihres Bereichs liegenden Ersatzangaben.
+
+| Überschrift | Inhalt |
+| --- | --- |
+| `Yahoo-Symbol` | Exakter, vom Besitzer geprüfter Yahoo-Symbolstring |
+| `Yahoo-Handelsplatz` | `GER`, `FRA`, `STU`, `MUN` oder `DUS`; fest EUR, Faktor 1 |
+| `Yahoo-Aktienform` | Für Aktien zwingend `share` oder `adr`; für ETFs leer |
+| `Yahoo-Anteilsklasse` | Für ETFs zwingend geprüfte Anteilsklasse; für Aktien leer |
+
+Die bestehende ISIN-Überschrift und der Instrumenttyp bestimmen das Produkt.
+Alle Angaben müssen vollständig sein; Form/Klasse werden nicht geraten oder
+automatisch geerbt. Die Pflege ist dieselbe ausdrückliche Besitzerbestätigung
+der Produktidentität wie ein privater TOML-Eintrag. Form und Klasse müssen mit
+einem vorhandenen privaten Listing derselben ISIN/Typ-Identität übereinstimmen.
+Ein anderes Symbol am **gleichen Handelsplatz** ist zulässig, etwa als explizite
+Korrektur eines nicht mehr nutzbaren Symbols. Symbole werden nicht anhand von
+Name, Ticker, Suffix, Stammaktie, Index oder Basiswert hergeleitet. Ein technisch
+gültiges falsches Produktsymbol ist ohne externe Identitätsprüfung nicht
+erkennbar; diese Prüfung bleibt vor der privaten Eintragung beim Besitzer.
+
+Die Auswahl erfolgt einmal für das ganze Produkt, mit einer gemeinsamen Quote
+und Historie für alle vier Perioden:
+
+1. Ein vollständig nutzbares primäres App-Listing gewinnt; kein Ersatzabruf.
+2. Fehlt es oder ist seine Quote abgelehnt, wird die gepflegte Alternative versucht.
+3. Bei nutzbarer primärer Quote mit lückenhaften Perioden gewinnt die Alternative
+   nur, wenn ihre verfügbaren Perioden eine **echte Obermenge** bilden. Vorhandene
+   primäre Perioden dürfen nicht zugunsten anderer Perioden verloren gehen.
+4. Bei Gleichstand oder ungeeignetem Ersatz bleibt die primäre Zuordnung.
+   Sind beide Abrufe unbrauchbar, bleiben gekennzeichneter Sheet-Wert/n. v.
+   und die sichere Fehlerursache sichtbar. Eine gültige alternative Quote ohne
+   nutzbare Historie kann bei fehlender Primärzuordnung weiterhin bewerten;
+   Kursperioden bleiben dann n. v. mit dem Historiengrund.
+
+Ein fehlgeschlagenes Listing ist noch kein Anbieterausfall: Der Cache wertet
+Fehler je **Position** (primäres Listing plus gepflegter Ersatz, der direkt
+danach abgerufen wird). Eine Position erhöht die anbieterweite Fehlerserie
+höchstens einmal und nur, wenn alle ihre Kandidaten fehlschlagen; jeder
+erfolgreiche Abruf setzt die Serie zurück. Gesunde Ersatzlistings bleiben so
+unabhängig von davor liegenden fehlerhaften Listings erreichbar, solange der
+Anbieter antwortet. Ein echter Ausfall (alle Kandidaten fehlerhaft) öffnet das
+anbieterweite Backoff unverändert. Die Wiederaufnahme prüft Positionen mit dem
+fehlerärmsten Kandidaten zuerst. Reine Ersatzpositionen ohne primäres
+App-Listing sowie Positionen ohne Ersatz zählen einzeln und können in einem
+ersten Durchgang nachfolgende gesunde Schlüssel sperren; das heilt sich über
+die Sortierung nach Fehlerzahl ab dem nächsten Durchgang nach Ablauf des
+Backoffs.
+
+Referenzkurs und aktueller Kurs werden nie zwischen Listings gemischt. Alle
+Provider-Metadaten-, Einheiten-, Kalender-, Split- und Historienprüfungen bleiben
+streng. Fehlerhafte/unvollständige optionale Zeilen oder widersprüchliche
+Produkt-/Symbolzuordnungen werden einzeln mit neutralem Hinweis ignoriert.
+Andere Bestände bleiben verfügbar. Die bisherige Gesamtfehlerstrategie für
+ungültige private TOML-Einträge bleibt bestehen. Derivate und USD-Listings
+werden in diesen Ladewegen weiterhin nicht unterstützt; USD erfordert unter
+anderem den Kalender aus #84 und eine getrennte Besitzerentscheidung.
+
+**Kurszuordnung** in Tabelle und Positionsdetails nennt App/Sheet-Ersatz,
+Provider, aktives Symbol und Handelsplatz. Der Status und Datenstatus nennen
+die Herkunft ebenfalls, auch in **Seit Kauf**. Ein versuchter, nicht gewählter
+Ersatz wird kenntlich gemacht. Ein erfolgreicher Bestandsrefresh ersetzt die
+Kandidaten vollständig; Entfernen oder Wechseln einer Sheet-Angabe verhindert
+die weitere Nutzung der vorherigen Zuordnung. Der Cache trennt nach dem
+vollständigen Listinginstrument einschließlich Provider-Symbol und Handelsplatz.
+Ein fehlgeschlagener Bestandsrefresh behält das bisherige atomare Bundle samt
+Zuordnung und Perioden; der vorhandene Backoff bleibt wirksam.
 
 ## Zeitpunkt und reguläre Sitzung
 
@@ -131,9 +218,11 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
 - `refresh=True` (manuelles Aktualisieren) überspringt nur die TTL, nicht das Backoff.
 - Fehler erzeugen ein Backoff je Schlüssel (15 s, verdoppelt, höchstens 300 s;
   Konstruktorparameter). Solange es läuft, erfolgt kein Providerabruf. Ein Erfolg setzt es zurück.
-- `quotes(instruments)` bündelt einen Durchgang: nur fällige Schlüssel werden
-  abgerufen, Schlüssel mit weniger bisherigen Fehlern zuerst (bei Gleichstand
-  in Eingabereihenfolge). Die Rückgabe bleibt in Eingabereihenfolge. Dadurch
+- `quotes(instruments, replacements=...)` bündelt einen Durchgang: nur fällige
+  Schlüssel werden abgerufen, Positionen mit weniger bisherigen Fehlern zuerst
+  (Fehlerzahl des fehlerärmsten Kandidaten aus Primär- und Ersatzlisting; bei
+  Gleichstand in Eingabereihenfolge). Eine Position zählt höchstens einen
+  Providerfehler und nur, wenn auch ihre Ersatzlistings fehlschlagen. Die Rückgabe bleibt in Eingabereihenfolge. Dadurch
   belegen dauerhaft abgelehnte Symbole nicht immer die erste Erholungsprobe.
   Nach `provider_failure_threshold` (3) aufeinanderfolgenden Providerfehlern
   (Warncode `provider_failure`, auch bei vom Provider abgelehnten Symbolen;

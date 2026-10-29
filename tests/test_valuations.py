@@ -34,6 +34,7 @@ from portfolio_dashboard.models import (
 from portfolio_dashboard.valuations import (
     EurValuationStatus,
     FxRate,
+    unit_price_status,
     value_portfolio,
     value_position,
 )
@@ -543,3 +544,22 @@ snapshot = PortfolioSnapshot(datetime(2026, 1, 5, tzinfo=timezone.utc), Snapshot
 assert value_portfolio(snapshot, ()).total_eur == Decimal('0')
 """
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_unit_price_status_is_the_price_part_of_value_position_without_fx_or_quantity():
+    verified = listing(USD)
+    quote = position(verified).valuation
+
+    assert unit_price_status(quote, verified) is None  # USD price needs no FX here
+    assert unit_price_status(None, verified) is EurValuationStatus.MISSING_PRICE
+    assert unit_price_status(quote, None) is EurValuationStatus.UNVERIFIED_INSTRUMENT
+    assert (
+        unit_price_status(replace(quote, unit=None), verified)
+        is EurValuationStatus.UNKNOWN_UNIT
+    )
+    assert (
+        unit_price_status(replace(quote, unit=EUR), verified)
+        is EurValuationStatus.UNIT_MISMATCH
+    )
+    sheet = replace(quote, provenance=SHEET)
+    assert unit_price_status(sheet, None) is None

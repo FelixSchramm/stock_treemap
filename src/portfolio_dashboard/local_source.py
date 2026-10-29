@@ -14,19 +14,25 @@ from decimal import Decimal
 from dateutil.easter import easter
 
 from portfolio_dashboard.config import AppConfig
-from portfolio_dashboard.instruments import EquityForm, VerifiedListing
+from portfolio_dashboard.instruments import EquityForm, VerifiedListing, resolve_listing
 from portfolio_dashboard.market_data import YFinanceProvider
 from portfolio_dashboard.models import (
+    DataWarning,
     Instrument,
     InstrumentType,
     PortfolioSnapshot,
     ProviderMapping,
     QuoteUnit,
+    SnapshotStatus,
 )
 from portfolio_dashboard.price_periods import SessionCalendar, session_calendar
 from portfolio_dashboard.quote_cache import QuoteCache
 from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
-from portfolio_dashboard.sheet_parser import NumberLocale, SheetMetadata
+from portfolio_dashboard.sheet_parser import (
+    NumberLocale,
+    SheetMetadata,
+    SheetParseResult,
+)
 from portfolio_dashboard.sheets_adapter import SheetsAdapter
 from portfolio_dashboard.sheets_session import (
     build_readonly_session,
@@ -157,6 +163,88 @@ def assign_listings(
     return replace(snapshot, positions=tuple(positions))
 
 
+def sheet_listing_candidates(
+    parsed: SheetParseResult, primary: tuple[VerifiedListing, ...]
+) -> tuple[PortfolioSnapshot, dict[int, VerifiedListing]]:
+    """Validate complete owner declarations without inferring product identity.
+
+    Bad optional rows are isolated. Alternative symbols at the same venue are
+    allowed, but product form/class and a symbol's product identity must agree.
+    """
+    positions = {p.source_row: p for p in parsed.snapshot.positions}
+    candidates: dict[int, VerifiedListing] = {}
+    invalid: set[int] = set()
+    for entry in parsed.yahoo_listings:
+        position = positions[entry.source_row]
+        source = position.instrument
+        matching = next((item for item in primary if (
+            item.isin == source.source_isin
+            and item.instrument.instrument_type is source.instrument_type
+        )), None)
+        try:
+            if entry.venue not in VENUE_HOURS or source.source_isin is None:
+                raise ValueError
+            if any(item.isin == source.source_isin
+                   and item.instrument.instrument_type is not source.instrument_type
+                   for item in primary):
+                raise ValueError
+            candidate = VerifiedListing(
+                Instrument(
+                    source.instrument_type,
+                    instrument_id=(matching.instrument.instrument_id if matching
+                                   else source.source_isin),
+                    trading_venue=entry.venue,
+                    quote_unit=EUR,
+                    provider_mapping=ProviderMapping("yfinance", entry.symbol),
+                ),
+                equity_form=EquityForm(entry.equity_form) if entry.equity_form else None,
+                isin=source.source_isin,
+                share_class=entry.share_class,
+            )
+            if source.instrument_type is InstrumentType.DERIVATIVE:
+                raise ValueError
+            if matching and (candidate.equity_form != matching.equity_form
+                             or candidate.share_class != matching.share_class):
+                raise ValueError
+            if any(
+                item.instrument.provider_mapping == candidate.instrument.provider_mapping
+                and (item.instrument.instrument_id, item.instrument.trading_venue)
+                != (candidate.instrument.instrument_id, candidate.instrument.trading_venue)
+                for item in primary
+            ):
+                raise ValueError
+            candidates[entry.source_row] = candidate
+        except (TypeError, ValueError):
+            invalid.add(entry.source_row)
+
+    for row, candidate in candidates.items():
+        for other_row, other in candidates.items():
+            same_product = candidate.instrument.instrument_id == other.instrument.instrument_id
+            same_symbol = candidate.instrument.provider_mapping == other.instrument.provider_mapping
+            if (same_product and candidate != other) or (same_symbol and not same_product):
+                invalid.update((row, other_row))
+    notes = tuple(DataWarning(
+        "invalid_yahoo_listing", "Yahoo-Ersatzzuordnung widersprüchlich oder nicht unterstützt; ignoriert.",
+        "yahoo_listing", row,
+    ) for row in sorted(invalid))
+    snapshot = replace(
+        parsed.snapshot,
+        positions=tuple(replace(p, warnings=p.warnings + tuple(
+            note for note in notes if note.source_row == p.source_row
+        )) for p in parsed.snapshot.positions),
+        warnings=parsed.snapshot.warnings + notes,
+    )
+    by_product = {
+        (candidate.isin, candidate.instrument.instrument_type): candidate
+        for row, candidate in candidates.items() if row not in invalid
+    }
+    return snapshot, {
+        p.source_row: by_product[(p.instrument.source_isin, p.instrument.instrument_type)]
+        for p in snapshot.positions
+        if (p.instrument.source_isin, p.instrument.instrument_type) in by_product
+    }
+
+
 def build_local_coordinator(config: AppConfig) -> PortfolioRefreshCoordinator:
     """Local mode: key and optional listings from the configured files."""
     listings = (
@@ -184,15 +272,28 @@ def _coordinator(
 ) -> PortfolioRefreshCoordinator:
     """Read the configured Sheet through the read-only service-account session."""
     adapter = SheetsAdapter(config.source, LOCAL_SHEET_METADATA, session)
+    fallbacks: dict[int, VerifiedListing] = {}
+    provider_listings = listings
 
     def read_holdings(attempted_at):
-        return assign_listings(
-            adapter.read(attempted_at=attempted_at).snapshot, listings
-        )
+        nonlocal fallbacks, provider_listings
+        result = adapter.read(attempted_at=attempted_at)
+        if result.snapshot.status is SnapshotStatus.FAILED:
+            return result.snapshot
+        snapshot, fallbacks = sheet_listing_candidates(result.parsed, listings)
+        provider_listings = tuple(dict.fromkeys((*listings, *fallbacks.values())))
+        return assign_listings(snapshot, listings)
+
+    def resolve_provider_listing(instrument):
+        # Candidate symbols for the same ID/venue live separately until selection.
+        candidates = tuple(item for item in provider_listings
+                           if item.instrument.provider_mapping == instrument.provider_mapping)
+        return resolve_listing(instrument, candidates)
 
     return PortfolioRefreshCoordinator(
         read_holdings,
-        QuoteCache(YFinanceProvider(listings), config.ttls),
+        QuoteCache(YFinanceProvider(listings, listing_resolver=resolve_provider_listing), config.ttls),
         listings=listings,
+        fallback_listings=lambda: fallbacks,
         calendars=venue_calendars(date.today()),
     )

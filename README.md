@@ -22,6 +22,8 @@ Das uv-Projekt enthält einen offline startbaren Streamlit-Einstieg mit ausschli
 - [Container und Betriebsparameter](docs/CONTAINER.md)
 - [Betrieb auf Streamlit Community Cloud](docs/COMMUNITY_CLOUD.md)
 - [Treemap-Wertmodell](docs/TREEMAP.md)
+- [FCFF-DCF-Rechner (innerer Wert)](docs/DCF_CALCULATION.md)
+- [Innerer Wert und Kurs vergleichen (Abschlag, Abstand, EUR-Anzeige)](docs/PRICE_COMPARISON.md)
 - [Mobile Bedienung und Barrierefreiheit](docs/MOBILE_ACCESSIBILITY.md)
 
 ## Dashboard entwickeln und prüfen
@@ -47,12 +49,15 @@ Der deutsche Demo-Aufbau verwendet das native dunkle Streamlit-Theme, einen Depo
 
 Die kleinen UI-Helfer stehen in [`ui.py`](src/portfolio_dashboard/ui.py). `dashboard.course_period` speichert den gewählten Zeitraum für die aktuelle Sitzung; das Auswahlfeld hat einen eigenen Widget-Schlüssel und wird bei jedem Lauf daraus vorbelegt. [`demo.py`](src/portfolio_dashboard/demo.py) liefert dafür einen ausschließlich synthetischen `PortfolioSnapshot` mit festen Sheet-Preisen und ohne bestätigten Einstand sowie separate, vorgegebene Tabellenwerte.
 
+Direkt unter **Bewerteter Depotwert** blendet der standardmäßig aktive Schalter **Positionen ohne Kursentwicklung ausblenden** die Treemap-Kacheln ohne Prozentwert der gewählten Kursperiode aus. Der Hinweis nennt die Anzahl dieser bewerteten Positionen und ihren EUR-Wert im Gesamtbestand. Depotwert, Gewichte und Kennzahlen bleiben vollständig; Tabelle, Positionsdetails und Datenstatus zeigen die Positionen weiterhin. Bei **Seit Kauf** gibt es diesen Filter nicht.
+
 ### Laufzeitkonfiguration und Testdaten
 
 [`config.py`](src/portfolio_dashboard/config.py) lädt typisierte Einstellungen aus exportierten Umgebungsvariablen. [`.env.example`](.env.example) dokumentiert ausschließlich Standardwerte und Platzhalter; die Anwendung lädt `.env`-Dateien nicht automatisch. Secret-Werte gehören in die serverseitige Secret-Verwaltung des gewählten Hosts. Sie dürfen weder in Git noch in Kommandozeilen oder Logs erscheinen. Quelldatei, Tabellenbereich und Besitzerkennungen werden ebenfalls vertraulich behandelt.
 
 - `PORTFOLIO_MODE`: `demo` oder `production`. Demo verwendet nur synthetische Daten und liest weder `st.user` noch Auth-Secrets. Produktion bleibt ohne vollständige Konfiguration und gültige Besitzerfreigabe geschlossen.
 - `PORTFOLIO_SOURCE=google_sheets`, `PORTFOLIO_SHEET_ID`, `PORTFOLIO_SHEET_RANGE`: explizite Quellkonfiguration. Der Service-Account-Schlüssel kommt im lokalen Modus aus der Datei `PORTFOLIO_SHEETS_CREDENTIALS_FILE`, im Produktivmodus ausschließlich aus dem serverseitigen Secret-Abschnitt `[sheets_service_account]`. Der Konfigurationslader liest keine Credential-Dateien und übernimmt keine möglicherweise geerbte Plattformidentität automatisch. Der [Sheets-Adapter](docs/SHEETS_ADAPTER.md) benötigt eine explizite Session und einen begrenzten Bereich; die Session entsteht über `sheets_session.build_readonly_session` bzw. `build_readonly_session_from_info` (M2-03).
+- `PORTFOLIO_WATCHLIST_RANGE` (optional): Bereich des Watchlist-Blatts im selben Sheet, ausdrücklich mit Blattname und Zeilengrenzen und Endspalte `D` bis `T`, z. B. `Watchlist!A1:D300` (nur Grundspalten) oder `Watchlist!A1:J300` (mit Yahoo-Zusatzspalten). Schema und Regeln: [ADR 0011](docs/adr/0011-watchlist.md) und [DATA_SOURCE.md](docs/DATA_SOURCE.md#watchlist-blatt). Demo verwirft den Wert. Modell, Parser und Bereichsprüfung existieren; Abruf und Ansicht folgen (M9).
 - `PORTFOLIO_PROVIDER=yfinance`: vorgesehener Anbieter im Produktivmodus. Demo erzwingt stattdessen den synthetischen Anbieter. Der austauschbare [Adapter](docs/MARKET_DATA.md) für verifizierte Kurs-/Historien-/FX-Mappings ist unabhängig testbar; der reale Lader ist noch nicht angebunden.
 - `PORTFOLIO_QUOTES_TTL_SECONDS=60`, `PORTFOLIO_HOLDINGS_TTL_SECONDS=300`, `PORTFOLIO_HISTORY_TTL_SECONDS=21600`: positive ganze Sekunden entsprechend ADR 0005.
 - `PORTFOLIO_LOGIN_PROVIDER=google` und `PORTFOLIO_OWNER_ISSUER` / `PORTFOLIO_OWNER_SUBJECT`: explizit freigegebene, vertrauliche Besitzeridentität. Sie wird kontrolliert aus validierten Claims festgelegt (#31), niemals aus dem ersten Login oder einer E-Mail abgeleitet. Der Issuer muss exakt dem konfigurierten Wert entsprechen.
@@ -64,7 +69,11 @@ Fehlende Platzhalter, ungültige Werte und fehlende Besitzerkonfiguration sperre
 
 `PORTFOLIO_MODE=local` liest das eigene Sheet über den lesenden Service-Account, ohne Login. Deshalb startet der Modus nur, wenn Streamlit ausschließlich auf einer Loopback-Adresse lauscht; jede andere Adresse sperrt vor dem ersten Sheet-Abruf (Nachtrag in [ADR 0003](docs/adr/0003-login-und-zugriff.md)). Werte und Einstand stammen aus dem Sheet (deutsches Zahlenformat, Einstand als Restbestand gemäß #20). Ohne geprüfte Provider-Zuordnungen werden keine Kurse abgerufen; die Kursperioden zeigen „n. v.“, der Zeitraum **Seit Kauf** (Meine Entwicklung) rechnet mit den Sheet-Werten.
 
-Optional verweist `PORTFOLIO_LISTINGS_FILE` auf eine private TOML-Datei außerhalb des Repositorys. Jeder Eintrag ordnet einer Sheet-ISIN (Spalte R) ein vom Besitzer geprüftes Yahoo-Listing in EUR zu; nur diese Positionen erhalten Live-Kurse und Kursperioden. Die Datei legt Handelsplatz und Währung fest; Spalte F beschreibt das Listing des Sheets (Spalte E) und wird dafür nicht herangezogen. Unterstützt sind die Yahoo-Börsencodes `GER` (Xetra, 9:00–17:30), `FRA`, `STU`, `MUN` und `DUS` (8:00–22:00) mit den gemeinsamen Börsenfeiertagen. Derivate bleiben beim Sheet-Wert.
+Optional verweist `PORTFOLIO_LISTINGS_FILE` auf eine private TOML-Datei außerhalb des Repositorys. Jeder Eintrag ordnet einer Sheet-ISIN (Spalte R) ein vom Besitzer geprüftes primäres Yahoo-Listing in EUR für Live-Kurse und Kursperioden zu. Die Datei legt Handelsplatz und Währung fest; Spalte F beschreibt das Listing des Sheets (Spalte E) und wird dafür nicht herangezogen. Unterstützt sind die Yahoo-Börsencodes `GER` (Xetra, 9:00–17:30), `FRA`, `STU`, `MUN` und `DUS` (8:00–22:00) mit den gemeinsamen Börsenfeiertagen. Derivate bleiben beim Sheet-Wert.
+
+Als optionale Ersatzzuordnung kann das private Sheet vier eindeutig benannte Zusatzspalten führen: **Yahoo-Symbol**, **Yahoo-Handelsplatz**, **Yahoo-Aktienform** (`share` oder `adr` für Aktien) und **Yahoo-Anteilsklasse** (nur für ETFs). Sie passen hinter die bisherigen Spalten in **U–X**; die Zuordnung erfolgt anhand der Überschriften innerhalb N–X. Dafür den ausdrücklich begrenzten `PORTFOLIO_SHEET_RANGE` bis **X** erweitern, etwa `'<Tab>'!A1:X500`. Eine vollständige Angabe ist die ausdrückliche Besitzerbestätigung, dass Symbol, EUR-Handelsplatz und Form/Anteilsklasse genau zur ISIN und zum Typ dieser Zeile gehören. Alle Daten müssen vor der privaten Befüllung geprüft werden. Es gibt keine automatische Symbolsuche oder Produktableitung.
+
+Das private App-Listing bleibt vorrangig. Der Sheet-Ersatz wird bei fehlender Zuordnung oder unbrauchbarer primärer Quote versucht; bei vorhandenen Kursperioden gewinnt er nur, wenn er **alle** verfügbaren primären Perioden und mindestens eine weitere liefert. Bei Gleichstand bleibt das App-Listing. Quote und sämtliche Perioden stammen immer gemeinsam aus einer gewählten Zuordnung. Die Spalte **Kurszuordnung** nennt Herkunft, Yahoo-Symbol und Handelsplatz; der Status kennzeichnet den verwendeten Sheet-Ersatz auch bei **Seit Kauf**. Ein technisch gültiges, aber vom Besitzer falsch zugeordnetes Produktsymbol lässt sich durch die Metadatenprüfung allein nicht erkennen. Details und Fehlergrenzen: [Marktdaten](docs/MARKET_DATA.md).
 
 ```toml
 [[listing]]
@@ -88,7 +97,9 @@ Die Werte nur in der eigenen Shell setzen, nicht in Dateien im Repository. Der M
 
 ### Produktivmodus mit Login
 
-`PORTFOLIO_MODE=production` zeigt nach Login und Besitzerprüfung dasselbe eigene Depot wie der lokale Modus: Werte und Einstand aus dem Sheet, Live-Kurse und Kursperioden für die Positionen mit geprüftem Listing. Statt Dateien verwendet er die serverseitigen Secrets: `[sheets_service_account]` (Felder der Service-Account-JSON) und optional `[[listing]]`-Einträge im Format der lokalen Zuordnungsdatei. Ohne Einträge bleibt es bei den Sheet-Werten. Ladeablauf und Secrets werden erst nach bestandener Besitzerprüfung angefasst, einmal pro Sitzung aufgebaut und bei jedem Lauf erneut hinter die Prüfung gestellt. Vorlage: [`secrets.example.toml`](.streamlit/secrets.example.toml), Einrichtung: [Community Cloud](docs/COMMUNITY_CLOUD.md).
+`PORTFOLIO_MODE=production` zeigt nach Login und Besitzerprüfung dasselbe eigene Depot wie der lokale Modus: Werte und Einstand aus dem Sheet, Live-Kurse und Kursperioden für die Positionen mit geprüftem Listing. Statt Dateien verwendet er die serverseitigen Secrets: `[sheets_service_account]` (Felder der Service-Account-JSON) und optional `[[listing]]`-Einträge im Format der lokalen Zuordnungsdatei. Ladeablauf und Secrets werden erst nach bestandener Besitzerprüfung angefasst, einmal pro Sitzung aufgebaut und bei jedem Lauf erneut hinter die Prüfung gestellt. Vorlage: [`secrets.example.toml`](.streamlit/secrets.example.toml), Einrichtung: [Community Cloud](docs/COMMUNITY_CLOUD.md).
+
+Der Produktivmodus liest dieselben optionalen Yahoo-Ersatzspalten wie der lokale Modus. Ohne private App-Listings und ohne vollständige Sheet-Ersatzzuordnung bleibt es beim Sheet-Wert. **Keine Kurszuordnung**, **Kursabruf fehlgeschlagen (deutscher Grund)** und ein abgelehnter Historienabruf sind in Tabelle, Positionsdetails und Datenstatus getrennt erkennbar. Fehlertexte enthalten ausschließlich feste deutsche Ursachen, keine Provider-Rohantworten oder Ausnahmetexte.
 
 ### Besitzerprüfung und Sitzungen
 
@@ -118,6 +129,7 @@ Kursdaten stammen aus `yfinance` (inoffiziell, Kurse können verzögert sein). K
 
 Sheet-ID und Dokumentlinks gehören in lokale Konfiguration oder `docs/private/`, nicht in das Repository. `docs/DATA_SOURCE.md` beschreibt ausschließlich das allgemeine Importschema.
 
-Die Offline-Fachoperationen für eine private Watchlist und die explizit konfigurierte
-SQLite-Ablage sind in [PRIVATE_WATCHLIST.md](docs/PRIVATE_WATCHLIST.md) dokumentiert.
-Der Watchlist-Editor folgt separat; Demo verwendet ausschließlich temporäre synthetische Daten.
+Die Watchlist ist ausschließlich das Watchlist-Blatt im Sheet; die App pflegt keine eigene Liste.
+Die Zuordnung von Blattzeilen zu geprüften Titeln (Bewertungsschlüssel) und die explizit
+konfigurierte SQLite-Ablage für Szenarien sind in [PRIVATE_WATCHLIST.md](docs/PRIVATE_WATCHLIST.md)
+dokumentiert. Demo verwendet ausschließlich temporäre synthetische Daten.

@@ -32,6 +32,7 @@ from portfolio_dashboard.models import (
     Provenance,
     QuoteUnit,
     SnapshotStatus,
+    Valuation,
     ValuationSource,
     ValueStatus,
 )
@@ -146,6 +147,35 @@ def _fraction(numerator: Decimal, denominator: Decimal) -> Decimal:
         return numerator / denominator
 
 
+def unit_price_status(
+    quote: Valuation | None, listing: VerifiedListing | None
+) -> EurValuationStatus | None:
+    """Usability of one per-unit price observation, independent of quantity and FX.
+
+    None means the price is available with a known unit; otherwise the first
+    failing status. Provider and cache prices need the verified listing, its
+    provider mapping and exactly its verified quote unit. A Sheet price carries
+    its own explicit unit and needs neither listing nor mapping. This is the
+    price part of ``value_position`` and is reused by per-share comparisons.
+    """
+    if quote is None or quote.status is ValueStatus.MISSING:
+        return EurValuationStatus.MISSING_PRICE
+    if quote.status is ValueStatus.INVALID:
+        return EurValuationStatus.INVALID_PRICE
+    unit = quote.unit
+    if unit is None or unit.scale_to_currency is None:
+        return EurValuationStatus.UNKNOWN_UNIT
+    if quote.provenance.source is not ValuationSource.SHEET:
+        if listing is None:
+            return EurValuationStatus.UNVERIFIED_INSTRUMENT
+        mapping = listing.instrument.provider_mapping
+        if mapping is None or mapping.provider != quote.provenance.provider:
+            return EurValuationStatus.UNVERIFIED_PROVIDER
+        if unit != listing.instrument.quote_unit:
+            return EurValuationStatus.UNIT_MISMATCH
+    return None
+
+
 def value_position(
     position: Position,
     listings: tuple[VerifiedListing, ...],
@@ -171,21 +201,10 @@ def value_position(
     if position.activity is not PositionActivity.ACTIVE:
         return unavailable(EurValuationStatus.INACTIVE)
     quote = position.valuation
-    if quote is None or quote.status is ValueStatus.MISSING:
-        return unavailable(EurValuationStatus.MISSING_PRICE)
-    if quote.status is ValueStatus.INVALID:
-        return unavailable(EurValuationStatus.INVALID_PRICE)
+    price_status = unit_price_status(quote, listing)
+    if price_status is not None:
+        return unavailable(price_status)
     unit = quote.unit
-    if unit is None or unit.scale_to_currency is None:
-        return unavailable(EurValuationStatus.UNKNOWN_UNIT)
-    if quote.provenance.source is not ValuationSource.SHEET:
-        if listing is None:
-            return unavailable(EurValuationStatus.UNVERIFIED_INSTRUMENT)
-        mapping = listing.instrument.provider_mapping
-        if mapping is None or mapping.provider != quote.provenance.provider:
-            return unavailable(EurValuationStatus.UNVERIFIED_PROVIDER)
-        if unit != listing.instrument.quote_unit:
-            return unavailable(EurValuationStatus.UNIT_MISMATCH)
     applied_fx = None
     factors = (position.quantity, quote.price, unit.scale_to_currency)
     if unit.currency != "EUR":

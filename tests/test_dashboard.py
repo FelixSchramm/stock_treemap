@@ -1,5 +1,6 @@
 """Exercise the actual dashboard's session lifecycle and offline boundary."""
 
+import json
 import os
 import socket
 from pathlib import Path
@@ -17,6 +18,7 @@ from portfolio_dashboard.ui import (
     FILTER_CATEGORY_KEY,
     FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
+    HIDE_MISSING_COURSE_KEY,
     SORT_DIRECTION_ASC,
     SORT_FIELD_KEY,
     SORT_ORDER_KEY,
@@ -179,4 +181,100 @@ def test_table_sorting_controls_reorder_rows_deterministically(offline_demo):
     app.selectbox(key=FILTER_CATEGORY_KEY).set_value("Demo").run()
     assert not app.exception
     assert len(app.dataframe[0].value) == 2
+
+
+def _course_coverage_app():
+    from decimal import Decimal
+
+    from portfolio_dashboard.demo import demo_snapshot
+    from portfolio_dashboard.treemap import Performance
+    from portfolio_dashboard.ui import render_dashboard
+    from portfolio_dashboard.valuations import value_portfolio
+
+    snapshot = demo_snapshot()
+    valuation = value_portfolio(snapshot, ())
+    performances = {
+        "Heute": (Performance(Decimal("1")), Performance(None)),
+        "Woche": (Performance(None), Performance(Decimal("-1"))),
+        "Monat": (Performance(None), Performance(None)),
+        "Jahr": (Performance(Decimal("0")), Performance(None)),
+        "Seit Kauf": (Performance(None), Performance(None)),
+    }
+    render_dashboard(snapshot, None, valuation, lambda view, period: performances[period])
+
+
+def _chart_trace(app):
+    return json.loads(app.get("plotly_chart")[0].proto.spec)["data"][0]
+
+
+def test_course_toggle_hides_only_selected_period_tiles_and_keeps_complete_data():
+    app = AppTest.from_function(_course_coverage_app).run()
+    assert not app.exception
+    assert app.toggle[0].label == "Positionen ohne Kursentwicklung ausblenden"
+    assert app.toggle[0].value is True
+    assert _chart_trace(app)["values"] == [1200.0]
+    assert "1 Positionen (800,00 EUR) ohne Kursentwicklung ausgeblendet" in [
+        item.value for item in app.caption
+    ]
+    initial_metrics = [(metric.label, metric.value, metric.delta) for metric in app.metric]
+    initial_rows = app.dataframe[0].value.copy()
+    initial_details = [item.value for item in app.markdown]
+    assert len(initial_rows) == 2
+    assert initial_rows[WEIGHT_COLUMN_LABEL].tolist() == [60.0, 40.0]
+
+    app.toggle[0].set_value(False).run()
+    assert not app.exception
+    assert _chart_trace(app)["values"] == [1200.0, 800.0]
+    assert [(m.label, m.value, m.delta) for m in app.metric] == initial_metrics
+    assert app.dataframe[0].value.equals(initial_rows)
+    assert [item.value for item in app.markdown] == initial_details
+    assert not any("ohne Kursentwicklung ausgeblendet" in c.value for c in app.caption)
+
+    app.toggle[0].set_value(True).run()
+    app.radio[0].set_value("Woche").run()
+    assert not app.exception
+    assert _chart_trace(app)["values"] == [800.0]
+    assert "1 Positionen (1.200,00 EUR) ohne Kursentwicklung ausgeblendet" in [
+        item.value for item in app.caption
+    ]
+    assert app.metric[0].value == "2.000,00 EUR"
+    assert app.dataframe[0].value[WEIGHT_COLUMN_LABEL].tolist() == [60.0, 40.0]
+
+    # All course tiles can disappear without losing positions, KPIs or status.
+    app.radio[0].set_value("Monat").run()
+    assert not app.exception
+    assert len(app.get("plotly_chart")) == 0
+    assert "2 Positionen (2.000,00 EUR) ohne Kursentwicklung ausgeblendet" in [
+        item.value for item in app.caption
+    ]
+    assert len(app.dataframe[0].value) == 2
+    assert app.metric[0].value == "2.000,00 EUR"
+    assert any("Datenstatus & Hinweise (2)" == e.label for e in app.expander)
+
+    # A measured zero return is available and must remain visible.
+    app.radio[0].set_value("Jahr").run()
+    assert not app.exception
+    assert _chart_trace(app)["values"] == [1200.0]
+
+
+def test_course_toggle_is_inactive_since_purchase_and_retains_its_session_preference():
+    app = AppTest.from_function(_course_coverage_app).run()
+    app.toggle[0].set_value(False).run()
+    app.radio[0].set_value("Seit Kauf").run()
+    app.run()  # Exercise widget cleanup while the course toggle is absent.
+    assert not app.exception
+    assert len(app.toggle) == 0
+    assert _chart_trace(app)["values"] == [1200.0, 800.0]
+    assert not any("ohne Kursentwicklung ausgeblendet" in c.value for c in app.caption)
+    app.radio[0].set_value("Heute").run()
+    assert not app.exception
+    assert app.toggle[0].value is False
+    assert app.session_state[HIDE_MISSING_COURSE_KEY] is False
+    assert _chart_trace(app)["values"] == [1200.0, 800.0]
+
+    app.toggle[0].set_value(True).run()
+    app.radio[0].set_value("Seit Kauf").run()
+    assert _chart_trace(app)["values"] == [1200.0, 800.0]
+    fresh = AppTest.from_function(_course_coverage_app).run()
+    assert fresh.toggle[0].value is True
 

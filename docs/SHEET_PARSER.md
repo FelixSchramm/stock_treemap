@@ -13,13 +13,23 @@ und wiederholte Leerzeichen ändern das Mapping nicht. Fehlende oder doppelte
 Überschriften ergeben einen `FAILED`-Snapshot mit Feld und Überschriftenzeile.
 Zellen rechts von M werden ignoriert, auch wenn dort gleichnamige Aggregate
 stehen. Ausnahme sind die optionalen Hinweisspalten *ISIN*, *Handelsplatz* und
-*Kursdatum…* in N–T (siehe [DATA_SOURCE.md](DATA_SOURCE.md)): ISIN und Handelsplatz
+*Kursdatum…* in N–X (siehe [DATA_SOURCE.md](DATA_SOURCE.md)): ISIN und Handelsplatz
 landen als `source_isin`/`source_venue` ohne jede Identitäts- oder Providerwirkung,
 eine ungültige ISIN wird mit `invalid_isin` verworfen. Das Kursdatum (`dd.mm.yyyy`,
 ISO oder Sheets-Seriennummer, nicht nach `imported_at`) setzt den Kursstand der
 Zeile; ungültig ergibt `invalid_price_date` und der Kursstand bleibt unbekannt. Zeilen wie
 „Brokerage-Gesamtwert…“ oder „Differenz zu…“ ohne Typ zählen als Summenzeilen. Kurze Datenzeilen erhalten fehlende Zellen; `header_row` bestimmt den
 tatsächlichen Zeilenbezug eines konfigurierten Ausschnitts.
+
+Die ebenfalls optionalen Spalten **Yahoo-Symbol**, **Yahoo-Handelsplatz**,
+**Yahoo-Aktienform** und **Yahoo-Anteilsklasse** werden per eindeutiger Überschrift
+innerhalb N–X gelesen (typischerweise U–X). Der Parser hält vollständige
+Besitzerangaben getrennt in `result.yahoo_listings`; er setzt dadurch keine
+Providerzuordnung am Instrument. Unvollständige oder syntaktisch ungültige Angaben
+ergeben feste Warntexte und behalten den Bestand. Die Produkt-/Handelsplatzprüfung
+und Prioritätsauswahl erfolgen im gemeinsamen lokalen/produktiven Lader, siehe
+[MARKET_DATA.md](MARKET_DATA.md). Doppelte Yahoo-Überschriften bleiben ein
+optionaler Fehler und sperren nicht den übrigen Import.
 
 `SheetMetadata.number_locale` ist erforderlich: `NumberLocale.GERMAN` liest
 `1.234,125`, `NumberLocale.ENGLISH` liest `1,234.125`. Es gibt keine automatische
@@ -98,3 +108,21 @@ assert not result.active_positions[0].cost_basis.usable_for_since_purchase
 Prüfung: `uv run --locked pytest tests/test_sheet_parser.py`. Die Tests verwenden
 ausschließlich synthetische Zellen und prüfen auch Import und Parsing im frischen
 Prozess mit gesperrten UI-/Provider-Paketen und gesperrtem Netzwerk.
+
+## Watchlist-Parser
+
+`portfolio_dashboard.watchlist_sheet.parse_watchlist_rows(headers, rows, imported_at=..., number_locale=NumberLocale.GERMAN, header_row=1)`
+liest das Watchlist-Blatt nach [ADR 0011](adr/0011-watchlist.md) mit denselben
+Eigenschaften wie der Depot-Parser: keine Quelle, kein Netzwerk, keine Uhr, feste
+Warnungstexte ohne Zellwerte, Zahlenformat nur über `NumberLocale`. Schema und
+Handelsplätze: [DATA_SOURCE.md](DATA_SOURCE.md#watchlist-blatt).
+
+- Ergebnis: `WatchlistParseResult.snapshot` (`WatchlistSnapshot` mit `attempted_at`, `status`, `items`, `warnings`) und `excluded_rows`. `COMPLETE` darf Zeilenwarnungen tragen, `PARTIAL` bedeutet abgelehnte Zeilen (fehlender `Position`-Name), `FAILED` ein fehlendes oder doppeltes Grundspalten-Etikett in A–D (ohne Items).
+- `WatchlistItem`: `name`, `source_row`, `sheet_price` (`Valuation`: EUR, `SHEET`, Kursstand unbekannt; `MISSING` bei leerer Zelle ohne Warnung), `sheet_change_percent_points`, `sheet_net_change_eur`, `status`, `mapping`, `ticker`, `instrument_type`, `category`, `warnings`. Die Anzeigebezeichnung des Ersatzwertes ist `SHEET_VALUE_LABEL`.
+- `WatchlistRowStatus`: `SHEET_ONLY` (keine Yahoo-Angabe), `MAPPED` (`WatchlistMapping(symbol, exchange, currency, instrument_type)` mit `timezone`; nur ein Kandidat ohne `instrument_id`), `FALLBACK` (Hinweis, nur Sheet-Wert).
+- Warncodes der Zuordnung: `incomplete_mapping`, `invalid_yahoo_symbol`, `unknown_exchange`, `invalid_currency`, `symbol_exchange_conflict`, `currency_exchange_conflict`, `duplicate_yahoo_symbol`, `unsupported_derivative`, `invalid_instrument_type`, `invalid_text`; Zahlen: `invalid_price`, `invalid_change`, `invalid_net_change`; Schema: `missing_column`, `duplicate_column`; Zeile: `invalid_name`.
+- Leere Zeilen stehen in `excluded_rows`. Das Bereichsformat prüft `config.parse_watchlist_range` (`WatchlistRange` mit `first_row`, `last_row`, `column_count`); ein Abruf des Blatts ist nicht Teil dieses Moduls.
+
+Zuordnung zu Portfolio und Bewertungsschlüssel (#95): [PRIVATE_WATCHLIST.md](PRIVATE_WATCHLIST.md).
+
+Prüfung: `uv run --locked pytest tests/test_watchlist_sheet.py` (synthetisch, auch 280 Zeilen).
