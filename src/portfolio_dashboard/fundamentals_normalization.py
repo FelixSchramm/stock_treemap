@@ -70,6 +70,7 @@ CASH_ROWS = (
 )
 CURRENT_DEBT_ROWS = ("Current Debt And Capital Lease Obligation", "Current Debt")
 DEBT_ROWS = ("Total Debt",)
+LEASE_ROWS = ("Capital Lease Obligations",)  # Subset of total debt, if shown.
 MINORITY_ROWS = ("Minority Interest",)
 PREFERRED_ROWS = (
     "Preferred Stock Equity",
@@ -184,10 +185,7 @@ FIELD_CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         FundamentalField.OPERATING_NWC,
         FieldOrigin.PROVIDER,
-        CURRENT_ASSET_ROWS
-        + CASH_ROWS
-        + CURRENT_LIABILITY_ROWS
-        + CURRENT_DEBT_ROWS,
+        CURRENT_ASSET_ROWS + CASH_ROWS + CURRENT_LIABILITY_ROWS + CURRENT_DEBT_ROWS,
         "(Current assets - cash) - (current liabilities - current debt) per balance "
         "date; one missing component makes that date missing.",
     ),
@@ -219,7 +217,8 @@ FIELD_CATALOG: tuple[CatalogEntry, ...] = (
         FundamentalField.FINANCIAL_DEBT,
         FieldOrigin.PROVIDER,
         DEBT_ROWS,
-        "Total debt including leases, as reported.",
+        "Total debt including leases, as reported; owner confirms the lease treatment "
+        "matches EBIT (no double charge).",
     ),
     CatalogEntry(
         FundamentalField.PREFERRED_CLAIMS,
@@ -497,6 +496,15 @@ class _Normalizer:
         self.suggestions: list[Suggestion] = []
         self.issues: list[QualityIssue] = []
         self.notes: list[str] = []
+        self.fallback_rows: set[str] = set()
+
+    def _pick(self, table, labels, columns) -> str | None:
+        """Choose one series row; a row beyond the first preference is flagged."""
+        row = _pick_row(table, labels, columns)
+        if row is not None and row != labels[0]:
+            self.fallback_rows.add(row)
+            self.notes.append("fallback_row_" + labels[0].lower().replace(" ", "_"))
+        return row
 
     # -- observation factories ---------------------------------------------
 
@@ -535,6 +543,8 @@ class _Normalizer:
         invalid: bool = False,
     ) -> FundamentalObservation:
         """Append an observation; a value the field rule rejects becomes invalid."""
+        if row and self.fallback_rows & set(row.split("+")):
+            normalization += "; fallback row, definition may differ from preferred"
         provenance = self._provenance(statement, row, normalization)
         unit = self._unit(kind)
         status = ValueStatus.AVAILABLE if value is not None else ValueStatus.MISSING
@@ -660,7 +670,11 @@ class _Normalizer:
         Returns periods newest first and the opening balance date of the oldest.
         """
         income = self.s.annual_income
-        ends = [e for e in (income.period_ends() if income else ()) if e <= self.retrieved_on]
+        ends = [
+            e
+            for e in (income.period_ends() if income else ())
+            if e <= self.retrieved_on
+        ]
         if income and len(ends) < len(income.period_ends()):
             self.issues.append(_issue(QualityStatus.INVALID, "future_period"))
         chain: list[date] = []
@@ -670,13 +684,18 @@ class _Normalizer:
                     _issue(QualityStatus.INVALID, "fiscal_year_end_mismatch")
                 )
                 break
-            if chain and not MIN_ANNUAL_DAYS <= (chain[-1] - end).days <= MAX_ANNUAL_DAYS:
+            if (
+                chain
+                and not MIN_ANNUAL_DAYS <= (chain[-1] - end).days <= MAX_ANNUAL_DAYS
+            ):
                 self.notes.append("annual_history_gap")
                 break
             chain.append(end)
         opening: date | None = None
         if chain:
-            balance_ends = self.s.annual_balance.period_ends() if self.s.annual_balance else ()
+            balance_ends = (
+                self.s.annual_balance.period_ends() if self.s.annual_balance else ()
+            )
             opening = next(
                 (
                     b
@@ -712,15 +731,11 @@ class _Normalizer:
             self.notes.append("period_end_aligned")
         used_cash = [c for c in cash_columns.values() if c is not None]
 
-        ebit_row = _pick_row(income, EBIT_ROWS, ends)
-        if ebit_row is not None and ebit_row != EBIT_ROWS[0]:
-            self.notes.append("ebit_fallback_row")
-        da_row = _pick_row(cashflow, DA_ROWS, used_cash)
-        capex_row = _pick_row(cashflow, CAPEX_ROWS, used_cash)
-        if capex_row is not None and capex_row != CAPEX_ROWS[0]:
-            self.notes.append("capex_fallback_row")
-        fcf_row = _pick_row(cashflow, FREE_CASH_ROWS, used_cash)
-        eps_row = _pick_row(income, EPS_SHARE_ROWS, ends)
+        ebit_row = self._pick(income, EBIT_ROWS, ends)
+        da_row = self._pick(cashflow, DA_ROWS, used_cash)
+        capex_row = self._pick(cashflow, CAPEX_ROWS, used_cash)
+        fcf_row = self._pick(cashflow, FREE_CASH_ROWS, used_cash)
+        eps_row = self._pick(income, EPS_SHARE_ROWS, ends)
 
         for period in periods:
             end = period.end
@@ -751,8 +766,12 @@ class _Normalizer:
                 invalid=da is not None and da < 0,
             )
 
-            raw = cashflow.value(capex_row, cash_end) if capex_row and cash_end else None
-            capex = None if raw is None else -raw  # Outflow is negative at the provider.
+            raw = (
+                cashflow.value(capex_row, cash_end) if capex_row and cash_end else None
+            )
+            capex = (
+                None if raw is None else -raw
+            )  # Outflow is negative at the provider.
             if raw is not None and raw == 0:
                 self.notes.append("capex_zero_reported")
             self.add(
@@ -838,7 +857,7 @@ class _Normalizer:
             self.notes.append("period_end_aligned")
         used = [c for c in columns.values() if c is not None]
         rows = {
-            name: _pick_row(balance, labels, used)
+            name: self._pick(balance, labels, used)
             for name, labels in (
                 ("assets", CURRENT_ASSET_ROWS),
                 ("liabilities", CURRENT_LIABILITY_ROWS),
@@ -874,7 +893,7 @@ class _Normalizer:
         column = _aligned_end(ends, latest.end)
 
         def read(labels):
-            row = _pick_row(balance, labels, [column] if column else [])
+            row = self._pick(balance, labels, [column] if column else [])
             return (row, balance.value(row, column)) if row else (None, None)
 
         debt_row, debt = read(DEBT_ROWS)
@@ -892,6 +911,11 @@ class _Normalizer:
             "total debt including leases, as reported",
             invalid=below or (debt is not None and debt < 0),
         )
+        lease = read(LEASE_ROWS)[1]
+        if lease is None:
+            self.notes.append("lease_split_not_visible")
+        elif lease > 0:
+            self.notes.append("financial_debt_includes_leases")
         cash = read(CASH_ROWS)[1]
         for field, labels, basis in (
             (FundamentalField.EXCESS_CASH, None, None),
@@ -939,7 +963,7 @@ class _Normalizer:
         balance = self.s.annual_balance
         if periods and balance:
             column = _aligned_end(balance.period_ends(), periods[0].end)
-            row = _pick_row(balance, BALANCE_SHARE_ROWS, [column] if column else [])
+            row = self._pick(balance, BALANCE_SHARE_ROWS, [column] if column else [])
             held = balance.value(row, column) if row else None
             if held is not None and held > 0:
                 sources["balance_sheet"] = held
@@ -957,7 +981,8 @@ class _Normalizer:
             return None
         period = CurrentSharesPeriod(latest[0], SPLIT_BASIS_UNVERIFIED)
         conflict = (
-            len(sources) > 1 and max(sources.values()) / min(sources.values()) - 1 > SHARE_CONFLICT_RATIO
+            len(sources) > 1
+            and max(sources.values()) / min(sources.values()) - 1 > SHARE_CONFLICT_RATIO
         )
         if conflict:
             self.issues.append(_issue(QualityStatus.INVALID, "share_sources_conflict"))
@@ -1011,9 +1036,13 @@ class OwnerConfirmations:
 
     ebit_definition: bool = False  # Provider EBIT matches the intended EBIT.
     share_split_basis: bool = False  # No split distorts count versus price/report.
+    # EBIT and total debt treat leases alike: operating-lease cost is not deducted
+    # in EBIT while the lease liability is also deducted in the bridge (or the
+    # reverse), so nothing is charged twice or not at all.
+    lease_treatment: bool = False
 
     def __post_init__(self) -> None:
-        for name in ("ebit_definition", "share_split_basis"):
+        for name in ("ebit_definition", "share_split_basis", "lease_treatment"):
             if type(getattr(self, name)) is not bool:
                 raise TypeError(f"{name} must be bool")
 
@@ -1051,6 +1080,10 @@ def build_report_set(
     if not confirmations.share_split_basis:
         qualifications.append(
             QualityIssue(QualityStatus.UNCONFIRMED_ASSUMPTIONS, "share_split_basis")
+        )
+    if not confirmations.lease_treatment:
+        qualifications.append(
+            QualityIssue(QualityStatus.UNCONFIRMED_ASSUMPTIONS, "lease_treatment")
         )
     return FundamentalReportSet(
         normalized.identity,

@@ -47,7 +47,7 @@ from portfolio_dashboard.fundamentals_normalization import (
 DEFAULT_PAUSE_SECONDS = 1.5  # Between reads; the provider throttles silently.
 INFO_ATTEMPTS = 3  # A throttled quote summary returns a stub without an error.
 
-_ACCESS_ERRORS = frozenset({"YFRateLimitError", "TooManyRequests", "HTTPError"})
+_ACCESS_ERRORS = frozenset({"YFRateLimitError", "TooManyRequests"})
 _TIMEOUT_ERRORS = frozenset(
     {"Timeout", "ReadTimeout", "ConnectTimeout", "TimeoutError", "timeout"}
 )
@@ -81,12 +81,8 @@ def _ticker(symbol: str) -> Ticker:
 def classify_error(error: BaseException) -> str:
     """Map an exception to a sanitized class by type name and status only."""
     names = {cls.__name__ for cls in type(error).__mro__}
-    response = getattr(error, "response", None)
-    status = getattr(response, "status_code", None)
-    if names & _ACCESS_ERRORS and not names & _TIMEOUT_ERRORS:
-        if "HTTPError" not in names or status in _ACCESS_STATUS:
-            return FAILURE_ACCESS_RESTRICTED
-    if status in _ACCESS_STATUS:
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    if names & _ACCESS_ERRORS or status in _ACCESS_STATUS:
         return FAILURE_ACCESS_RESTRICTED
     if names & _TIMEOUT_ERRORS:
         return FAILURE_TIMEOUT
@@ -159,7 +155,9 @@ def convert_frame(frame: object) -> tuple[StatementTable | None, tuple[str, ...]
     return table, (FAILURE_INVALID_VALUES,) if invalid else ()
 
 
-def convert_shares(series: object) -> tuple[tuple[tuple[date, Decimal], ...] | None, tuple[str, ...]]:
+def convert_shares(
+    series: object,
+) -> tuple[tuple[tuple[date, Decimal], ...] | None, tuple[str, ...]]:
     """Dated share counts (one per date, last wins) from a time-indexed series."""
     if series is None:
         return None, (FAILURE_EMPTY,)
@@ -212,7 +210,9 @@ class YFinanceFundamentalsProvider:
         self._info_attempts = info_attempts
 
     def _failed(self, dataset: str, code: str) -> ProviderStatements:
-        return ProviderStatements(self._clock(), failures=(FetchFailure(dataset, code),))
+        return ProviderStatements(
+            self._clock(), failures=(FetchFailure(dataset, code),)
+        )
 
     def fetch(self, identity: VerifiedFundamentalIdentity) -> ProviderStatements:
         if not isinstance(identity, VerifiedFundamentalIdentity):
@@ -264,7 +264,9 @@ class YFinanceFundamentalsProvider:
     def _read_info(self, ticker: Ticker, symbol: str):
         """Minimal metadata subset; a stub is retried a few times, then reported."""
         failures: list[FetchFailure] = []
+        stub = False
         for attempt in range(self._info_attempts):
+            raw, stub = None, False
             try:
                 raw = ticker.get_info()
             except Exception as error:
@@ -272,19 +274,24 @@ class YFinanceFundamentalsProvider:
                 failures.append(FetchFailure("info", code))
                 if code == FAILURE_ACCESS_RESTRICTED:
                     return None, failures  # Do not hammer a restricting provider.
-                raw = None
             else:
                 if not isinstance(raw, Mapping):
                     failures.append(FetchFailure("info", FAILURE_UNEXPECTED_SCHEMA))
                     raw = None
-            if raw is not None:
-                reported = raw.get("symbol")
-                if reported is not None and reported != symbol:
-                    # The answer belongs to another entity: use none of it.
-                    return None, [FetchFailure("info", FAILURE_IDENTITY_MISMATCH)]
-                if reported == symbol and raw.get("quoteType") and raw.get("currency"):
-                    return {k: raw.get(k) for k in INFO_KEYS}, failures
+                else:
+                    reported = raw.get("symbol")
+                    if reported is not None and reported != symbol:
+                        # The answer belongs to another entity: use none of it.
+                        return None, [FetchFailure("info", FAILURE_IDENTITY_MISMATCH)]
+                    if (
+                        reported == symbol
+                        and raw.get("quoteType")
+                        and raw.get("currency")
+                    ):
+                        return {k: raw.get(k) for k in INFO_KEYS}, failures
+                    stub = True
             if attempt + 1 < self._info_attempts:
                 self._sleep(self._pause * 4 * (attempt + 1))
-        failures.append(FetchFailure("info", FAILURE_METADATA_PLACEHOLDER))
+        if stub:
+            failures.append(FetchFailure("info", FAILURE_METADATA_PLACEHOLDER))
         return None, failures
