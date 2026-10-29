@@ -16,14 +16,18 @@ documents (#76) and the comparison time. Model values come unchanged from
 buy/sell signal and no default financial assumption.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, DecimalException
 from enum import Enum
 
 from portfolio_dashboard.dcf import calculate_scenarios
-from portfolio_dashboard.fundamentals import QualityIssue, QualityStatus
+from portfolio_dashboard.fundamentals import (
+    QualityIssue,
+    QualityStatus,
+    VerifiedFundamentalIdentity,
+)
 from portfolio_dashboard.fundamentals_loader import (
     FundamentalsBundle,
     FundamentalsEntry,
@@ -201,6 +205,8 @@ _NOTE_CODE_TEXT = {
     "content_unchanged": "Inhalt gegenüber dem letzten Abruf unverändert",
 }
 
+DEMO_NOTE = "Demo: Annahmen, manuelle Werte und Zahlen sind erfunden (synthetisch)"
+NO_ASSUMPTIONS_LINE = "Annahmenstand: keine gespeicherten Annahmen"
 IDENTITY_MISSING_PORTFOLIO = (
     "Die Depotposition hat keine geprüfte Zuordnung (Kennung und Handelsplatz) in den "
     "Listings; ohne sie gibt es weder Fundamentaldaten noch einen Modellwert."
@@ -464,6 +470,22 @@ def verified_instruments(subjects: Sequence[Subject]) -> tuple[Instrument, ...]:
     return tuple(dict.fromkeys(i for s in subjects for i in s.listing_instruments))
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class OverviewSource:
+    """What the application wiring hands to the view (real or demo).
+
+    ``scenario_reader`` returns the stored scenario document of a verified identity
+    (``ScenarioRepository.get`` in production) or ``None``. ``portfolio`` replaces
+    the loaded depot valuation (demo only); ``demo`` marks all data as invented.
+    """
+
+    listings: tuple[VerifiedListing, ...]
+    scenario_reader: Callable[[VerifiedFundamentalIdentity], ScenarioDocument | None]
+    clock: Callable[[], datetime]
+    portfolio: PortfolioValuation | None = None
+    demo: bool = False
+
+
 # --- evaluation inputs -------------------------------------------------------------
 
 
@@ -689,8 +711,8 @@ def _stand(
 ) -> tuple[str, tuple[str, ...]]:
     """Retrieval age and business age, kept apart, plus the assumptions stand."""
     if entry is None or entry.last_checked_at is None:
-        short = "kein Abruf gespeichert"
-        lines = ["Datenstand Fundamentaldaten: kein vollständiger Abruf gespeichert"]
+        short = "nicht abgerufen"
+        lines = ["Datenstand Fundamentaldaten: kein vollständiger Abruf vorhanden"]
     else:
         retrieved = (
             f"Abruf {entry.last_checked_at.strftime('%d.%m.%Y, %H:%M %Z')} "
@@ -707,7 +729,8 @@ def _stand(
                 f"Jahresabschluss bis {_fmt_date(period_end)} "
                 f"(fachliches Alter {days} Tage)"
             )
-        short = f"Abruf {format_snapshot_age(entry.last_checked_at, as_of)}; {business}"
+        age = format_snapshot_age(entry.last_checked_at, as_of)
+        short = f"Abruf {age}; {business}"
         lines = [f"Abrufalter: {retrieved}", f"Fachliches Alter: {business_long}"]
         if entry.bridge_date is not None:
             lines.append(
@@ -721,7 +744,8 @@ def _stand(
             lines.append(
                 f"Inhalt geliefert: {entry.retrieved_at.strftime('%d.%m.%Y, %H:%M %Z')}"
             )
-    lines.append(assumptions or "Annahmenstand: keine gespeicherten Annahmen")
+    if assumptions is not None:
+        lines.append(assumptions)
     return short, tuple(lines)
 
 
@@ -780,8 +804,8 @@ def _row(
         subject.considered,
         status,
         text or status.value,
-        tuple(reasons),
-        tuple(notes),
+        tuple(dict.fromkeys(reasons)),
+        tuple(dict.fromkeys(notes)),
         price_label,
         price_source,
         views,
@@ -897,13 +921,13 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
             reasons,
             base_notes + entry_notes,
             _empty_views("Fundamentaldaten fehlen"),
-            _stand(entry, as_of, None),
+            _stand(entry, as_of, NO_ASSUMPTIONS_LINE),
             price,
             detail_key=detail_key,
         )
 
     document = context.documents.get(subject.key)
-    stand_without = _stand(entry, as_of, None)
+    stand_without = _stand(entry, as_of, NO_ASSUMPTIONS_LINE)
     notes = base_notes + entry_notes
     notes.extend(_issue_notes(entry.report_set.issues_at(as_of)))
     if document is None or not document.scenarios:
@@ -1022,6 +1046,8 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
     ):
         if limitation in _LIMITATION_TEXT:
             notes.append(_LIMITATION_TEXT[limitation])
+    if context.demo:
+        notes.append(DEMO_NOTE)
     base_cmp = next(v for v in views if v.scenario is Scenario.BASE).comparison
     comparison_text = "kein Basiswert, kein Vergleich"
     position_text = ""
