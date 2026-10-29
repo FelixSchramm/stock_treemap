@@ -50,7 +50,7 @@ ROW = [
 class ForbiddenProvider:
     """Sheet-only mode must not request any quote, history or FX."""
 
-    def __init__(self, listings):
+    def __init__(self, listings, *, listing_resolver=None):
         assert listings == ()
 
     def quote(self, *args, **kwargs):

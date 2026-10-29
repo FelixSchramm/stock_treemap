@@ -13,13 +13,23 @@ und wiederholte Leerzeichen ändern das Mapping nicht. Fehlende oder doppelte
 Überschriften ergeben einen `FAILED`-Snapshot mit Feld und Überschriftenzeile.
 Zellen rechts von M werden ignoriert, auch wenn dort gleichnamige Aggregate
 stehen. Ausnahme sind die optionalen Hinweisspalten *ISIN*, *Handelsplatz* und
-*Kursdatum…* in N–T (siehe [DATA_SOURCE.md](DATA_SOURCE.md)): ISIN und Handelsplatz
+*Kursdatum…* in N–X (siehe [DATA_SOURCE.md](DATA_SOURCE.md)): ISIN und Handelsplatz
 landen als `source_isin`/`source_venue` ohne jede Identitäts- oder Providerwirkung,
 eine ungültige ISIN wird mit `invalid_isin` verworfen. Das Kursdatum (`dd.mm.yyyy`,
 ISO oder Sheets-Seriennummer, nicht nach `imported_at`) setzt den Kursstand der
 Zeile; ungültig ergibt `invalid_price_date` und der Kursstand bleibt unbekannt. Zeilen wie
 „Brokerage-Gesamtwert…“ oder „Differenz zu…“ ohne Typ zählen als Summenzeilen. Kurze Datenzeilen erhalten fehlende Zellen; `header_row` bestimmt den
 tatsächlichen Zeilenbezug eines konfigurierten Ausschnitts.
+
+Die ebenfalls optionalen Spalten **Yahoo-Symbol**, **Yahoo-Handelsplatz**,
+**Yahoo-Aktienform** und **Yahoo-Anteilsklasse** werden per eindeutiger Überschrift
+innerhalb N–X gelesen (typischerweise U–X). Der Parser hält vollständige
+Besitzerangaben getrennt in `result.yahoo_listings`; er setzt dadurch keine
+Providerzuordnung am Instrument. Unvollständige oder syntaktisch ungültige Angaben
+ergeben feste Warntexte und behalten den Bestand. Die Produkt-/Handelsplatzprüfung
+und Prioritätsauswahl erfolgen im gemeinsamen lokalen/produktiven Lader, siehe
+[MARKET_DATA.md](MARKET_DATA.md). Doppelte Yahoo-Überschriften bleiben ein
+optionaler Fehler und sperren nicht den übrigen Import.
 
 `SheetMetadata.number_locale` ist erforderlich: `NumberLocale.GERMAN` liest
 `1.234,125`, `NumberLocale.ENGLISH` liest `1,234.125`. Es gibt keine automatische
