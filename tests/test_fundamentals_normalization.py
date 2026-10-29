@@ -109,6 +109,7 @@ def balance(**overrides) -> StatementTable:
         "Current Debt And Capital Lease Obligation": [50e6] * 5,
         "Total Debt": [120e6, 118e6, 116e6, 114e6, 112e6],
         "Capital Lease Obligations": [10e6] * 5,
+        "Long Term Debt And Capital Lease Obligation": [70e6, 68e6, 66e6, 64e6, 62e6],
         "Minority Interest": [5e6, None, None, None, None],
         "Ordinary Shares Number": [10e6] * 5,
     }
@@ -241,6 +242,7 @@ def test_explicit_zero_is_a_delivered_value():
             **{
                 "Total Debt": [0.0, 0, 0, 0, 0],
                 "Current Debt And Capital Lease Obligation": [0.0] * 5,
+                "Long Term Debt And Capital Lease Obligation": [0.0] * 5,
             }
         ),
         annual_cashflow=cashflow(**{"Capital Expenditure": [0.0] * 4}),
@@ -845,6 +847,7 @@ def test_row_preferences_match_the_reviewed_coverage_lists():
         "EPS_SHARE_ROWS",
         "BALANCE_SHARE_ROWS",
         "LEASE_ROWS",
+        "LONG_DEBT_ROWS",
         "OPERATING_CASH_ROWS",
         "FREE_CASH_ROWS",
     ):
@@ -886,3 +889,24 @@ def test_normalizer_validates_its_arguments():
         StatementTable({"row": {date(2024, 12, 31): 1.5}})
     with pytest.raises(ValueError):
         StatementTable({"row": {date(2024, 12, 31): D("NaN")}})
+
+
+def test_total_debt_must_equal_current_plus_long_term_debt():
+    holds = run()
+    assert "debt_identity_holds" in holds.notes
+    broken = run(
+        annual_balance=balance(
+            **{"Long Term Debt And Capital Lease Obligation": [10e6] * 5}
+        )
+    )
+    debt = by_field(broken, FundamentalField.FINANCIAL_DEBT)[0]
+    assert debt.status is ValueStatus.INVALID and debt.value is None
+    assert "debt_identity_failed" in broken.notes
+    rows = dict(balance().rows)
+    del rows["Long Term Debt And Capital Lease Obligation"]
+    unchecked = run(annual_balance=StatementTable(rows))
+    assert "debt_identity_not_checked" in unchecked.notes
+    assert (
+        by_field(unchecked, FundamentalField.FINANCIAL_DEBT)[0].status
+        is ValueStatus.AVAILABLE
+    )

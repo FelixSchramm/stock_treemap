@@ -64,6 +64,10 @@ bleibt ein gelieferter Wert.
 - **Capex:** Provider-Abfluss (negativ) wird ausdrücklich zum positiven Abzug umgekehrt;
   ein positiver Providerwert ist *ungültig* (`capex_sign_unexpected`), 0 wird mit Hinweis
   übernommen. Negative D&A und Finanzschulden sind *ungültig*, kein Absturz.
+- **Summenidentität der Schulden:** `Total Debt` muss am Brückenstichtag kurz- plus langfristigen
+  Schulden inkl. Leasing entsprechen (Toleranz 0,5 %): `debt_identity_holds`; Abweichung
+  macht die Beobachtung *ungültig* (`debt_identity_failed`), fehlende Teile bleiben
+  `debt_identity_not_checked`.
 - **Provider-FCF:** nur als Kontrollbeobachtung `provider_fcf`; fehlt Capex und gleicht der
   FCF dem operativen Cashflow, steht `provider_fcf_equals_operating_cash_flow` im Ergebnis.
   Es entsteht nirgends ein FCFF.

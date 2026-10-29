@@ -70,6 +70,8 @@ CASH_ROWS = (
 )
 CURRENT_DEBT_ROWS = ("Current Debt And Capital Lease Obligation", "Current Debt")
 DEBT_ROWS = ("Total Debt",)
+LONG_DEBT_ROWS = ("Long Term Debt And Capital Lease Obligation",)
+DEBT_IDENTITY_TOLERANCE = Decimal("0.005")
 LEASE_ROWS = ("Capital Lease Obligations",)  # Subset of total debt, if shown.
 MINORITY_ROWS = ("Minority Interest",)
 PREFERRED_ROWS = (
@@ -918,6 +920,17 @@ class _Normalizer:
         below = debt is not None and current_debt is not None and debt < current_debt
         if below:
             self.notes.append("financial_debt_below_current_debt")
+        # Total debt should equal current plus long-term debt incl. leases.
+        short = read(CURRENT_DEBT_ROWS[:1])[1]
+        long_term = read(LONG_DEBT_ROWS)[1]
+        failed = False
+        if None in (debt, short, long_term):
+            self.notes.append("debt_identity_not_checked")
+        elif abs(debt - short - long_term) > DEBT_IDENTITY_TOLERANCE * abs(debt):
+            failed = True
+            self.notes.append("debt_identity_failed")
+        else:
+            self.notes.append("debt_identity_holds")
         self.add(
             FundamentalField.FINANCIAL_DEBT,
             debt,
@@ -926,7 +939,7 @@ class _Normalizer:
             "balance sheet",
             debt_row or DEBT_ROWS[0],
             "total debt including leases, as reported",
-            invalid=below or (debt is not None and debt < 0),
+            invalid=below or failed or (debt is not None and debt < 0),
         )
         lease = read(LEASE_ROWS)[1]
         if lease is None:
