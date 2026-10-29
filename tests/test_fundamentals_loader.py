@@ -718,6 +718,25 @@ def test_access_is_checked_again_right_before_the_provider_call():
     assert store.checks == 2
 
 
+def test_session_ending_during_the_pause_stops_the_second_retrieval():
+    subjects = [make_subject(name) for name in "ab"]
+    store = GuardedStore()
+
+    def session_ends_while_waiting(seconds):
+        store.allowed = False
+
+    loader, provider, _ = build(
+        *subjects,
+        store=store,
+        policy=FetchPolicy(pause_seconds=3),
+        sleep=session_ends_while_waiting,
+    )
+    with pytest.raises(PrivateStorageError) as error:
+        loader.load([instrument(s) for s in subjects])
+    assert error.value.code == "access"
+    assert provider.calls == ["SYN.A"]  # The second security is never fetched.
+
+
 def private_loader(tmp_path, mode, *, user=None, address="127.0.0.1", **kwargs):
     from portfolio_dashboard.config import (
         AppConfig,

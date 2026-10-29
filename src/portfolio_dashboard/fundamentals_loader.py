@@ -352,8 +352,9 @@ class FundamentalsLoader:
         """One serialized retrieval; returns the record, notes and call count (0/1)."""
         key = store_key(subject.fetch_key)
         with self._gate.lock:
-            # Access is rechecked right before the provider; another session may
-            # also have fetched meanwhile, so the cache is read again.
+            # Access is checked again before the cache read (another session may
+            # have fetched meanwhile) and once more after the pause, right before
+            # the provider call.
             self._store.require_access()
             record = self._store.get(key) or CacheRecord()
             now = self._clock()
@@ -364,6 +365,8 @@ class FundamentalsLoader:
             if restricted_until is not None and now < restricted_until:
                 return record, (NOTE_PROVIDER_BACKOFF,), 0
             self._pause(now)
+            # The pause can last seconds; the session may have ended meanwhile.
+            self._store.require_access()
             try:
                 statements = self._provider.fetch(subject.identity)
             except Exception:  # noqa: BLE001 - the adapter never raises; a foreign one may
