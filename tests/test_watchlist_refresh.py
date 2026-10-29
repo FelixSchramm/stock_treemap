@@ -622,6 +622,135 @@ def test_total_outage_still_respects_the_provider_backoff():
     assert {e.status_reason for e in bundle.entries} <= {"provider_failure", "provider_backoff"}
 
 
+# Warm state: every row loaded fine once, then symbols get rejected after the TTLs.
+# Rows are tokens: g/b = valid/rejected, D/U = German/US venue (``gD``, ``bU``).
+VENUE = {"D": ("GER", "EUR", ".DE"), "U": ("NMS", "USD", "")}
+MIXED_OPEN_DE = datetime(2026, 10, 28, 9, 0, tzinfo=UTC)  # Xetra 10:00 open, NYSE 05:00 closed
+
+
+def warm_env(layout, *, now):
+    tokens = [layout[i : i + 2] for i in range(0, len(layout), 2)]
+    rows, symbols = [], []
+    for index, token in enumerate(tokens):
+        exchange, currency, suffix = VENUE[token[1]]
+        symbol = f"{token[0].upper()}{index}{suffix}"
+        rows.append(row(f"Zeile {index}", symbol=symbol, exchange=exchange,
+                        currency=currency, ticker=f"T{index}"))
+        symbols.append((symbol, exchange, currency))
+    env = Env(rows, now=now, symbols=symbols)
+    env.kinds = [token[0] for token in tokens]
+    env.symbols = [symbol for symbol, _, _ in symbols]
+    return env
+
+
+def reject(env):
+    env.yahoo.rejected = {s for s, kind in zip(env.symbols, env.kinds) if kind == "b"}
+
+
+def heal_then_reject_after_ttls(env):
+    """All rows valid and LIVE, then the TTLs run out and the ``b`` symbols are rejected."""
+    assert {e.status for e in env.load().entries} == {WatchlistEntryStatus.LIVE}
+    env.now += timedelta(seconds=3700)  # past the history TTL (3600 s)
+    reject(env)
+
+
+def seconds_until_valid_rows_are_live(env, *, step=60, limit=900):
+    """Load every ``step`` seconds; returns the seconds until all valid rows are LIVE."""
+    start = env.now
+    while (env.now - start).total_seconds() <= limit:
+        bundle = env.load()
+        assert [e.item.name for e in bundle.entries] == [f"Zeile {i}" for i in range(len(env.kinds))]
+        valid = [e for e, kind in zip(bundle.entries, env.kinds) if kind == "g"]
+        if all(e.status is WatchlistEntryStatus.LIVE for e in valid):
+            for entry, kind in zip(bundle.entries, env.kinds):
+                if kind == "b":  # earlier valid state stays visible with its age
+                    assert entry.status is WatchlistEntryStatus.CACHED
+                    assert entry.age_text
+            assert SECRET not in repr(bundle)
+            return int((env.now - start).total_seconds())
+        env.now += timedelta(seconds=step)
+    pytest.fail("valid rows were not refreshed within the limit")
+
+
+@pytest.mark.parametrize(
+    "layout, now, limit",
+    [
+        ("bD" * 3 + "gD" * 7, CLOSED, 120),  # 3 rejected at the start, market closed
+        ("bD" * 6 + "gD" * 4, CLOSED, 420),  # 6 rejected: backoff windows double
+        ("gD" * 3 + "bD" * 3 + "gD" * 4, CLOSED, 120),  # defective rows in the middle
+        ("gD" * 7 + "bD" * 3, CLOSED, 120),  # defective rows at the end
+        ("bD" * 3 + "gD" * 7, RUNNING, 120),  # session running: quote path as well
+        ("bD" * 6 + "gD" * 4, RUNNING, 420),
+        ("gD" * 3 + "bD" * 3 + "gD" * 4, RUNNING, 120),
+        ("bD" * 3 + "gD" * 57, CLOSED, 120),  # 60 rows
+        ("bD" * 5 + "gD" * 55, CLOSED, 420),
+        ("gD" * 20 + "bD" * 3 + "gD" * 37, CLOSED, 120),
+        ("bD" * 3 + "gD" * 57, RUNNING, 120),
+        # Mixed markets: rejected rows trade on the open German venue (quote path),
+        # the valid rows only on the closed US venue (history path only).
+        ("bD" * 3 + "gU" * 8, MIXED_OPEN_DE, 120),
+        ("bD" * 6 + "gU" * 8, MIXED_OPEN_DE, 420),
+        ("gU" * 4 + "bD" * 3 + "gU" * 4, MIXED_OPEN_DE, 120),
+    ],
+    ids=[
+        "closed-3-start", "closed-6-start", "closed-3-middle", "closed-3-end",
+        "running-3-start", "running-6-start", "running-3-middle",
+        "rows60-closed-3-start", "rows60-closed-5-start", "rows60-closed-3-middle",
+        "rows60-running-3-start",
+        "mixed-3-start", "mixed-6-start", "mixed-3-middle",
+    ],
+)
+def test_warm_valid_rows_recover_within_minutes_after_rejected_symbols(layout, now, limit):
+    env = warm_env(layout, now=now)
+    heal_then_reject_after_ttls(env)
+    assert seconds_until_valid_rows_are_live(env) <= limit
+
+
+def test_previously_healed_rows_that_become_defective_again_do_not_block_valid_rows():
+    env = warm_env("bD" * 3 + "gD" * 10, now=CLOSED)
+    env.yahoo.rejected = {s for s, kind in zip(env.symbols, env.kinds) if kind == "b"}
+    for _ in range(6):  # the rejected rows fail repeatedly while the valid ones load
+        env.load()
+        env.now += timedelta(seconds=60)
+    env.yahoo.rejected = set()  # symbols are corrected at the provider
+    for _ in range(10):
+        env.now += timedelta(seconds=60)
+        bundle = env.load()
+    assert {e.status for e in bundle.entries} == {WatchlistEntryStatus.LIVE}
+    env.now += timedelta(seconds=3700)
+    reject(env)  # defective again
+    assert seconds_until_valid_rows_are_live(env) <= 120
+
+
+def test_rank_ignores_results_served_from_the_cache_only_because_of_a_backoff():
+    env = warm_env("gD" * 3 + "bD" * 3 + "gD" * 4, now=CLOSED)
+    heal_then_reject_after_ttls(env)
+    env.load()  # first probe: three rejected rows open the provider-wide backoff
+    attempted = {symbol for symbol, _ in env.yahoo.calls if symbol.startswith("B")}
+    assert attempted == {"B3.DE", "B4.DE", "B5.DE"}
+    env.yahoo.calls.clear()
+    env.now += timedelta(seconds=60)
+    env.load()
+    fetched = [symbol for symbol, _ in env.yahoo.history_calls_all()]
+    # G6-G9 were only blocked by the backoff (served from the cache, nothing attempted):
+    # they still rank above the rows that really failed, so one of them is the probe.
+    assert fetched == ["G6.DE", "G7.DE", "G8.DE", "G9.DE", "B3.DE", "B4.DE", "B5.DE"]
+
+
+def test_coordinator_keeps_no_failure_state_of_its_own_for_vanished_rows():
+    env = warm_env("bD" * 4 + "gD" * 4, now=CLOSED)
+    reject(env)
+    for _ in range(4):
+        env.load()
+        env.now += timedelta(seconds=60)
+    env.rows = env.rows[4:]  # the rejected rows are removed from the sheet
+    env.now += timedelta(seconds=400)
+    bundle = env.load()
+    assert len(bundle.entries) == 4
+    assert {e.status for e in bundle.entries} == {WatchlistEntryStatus.LIVE}
+    assert not hasattr(env.coordinator, "_failures")
+
+
 def test_cached_quote_of_the_same_session_is_kept_but_not_across_days():
     env = Env([row("US", symbol="SYN2", exchange="NMS", currency="USD")], now=RUNNING,
               symbols=[("SYN2", "NMS", "USD")])

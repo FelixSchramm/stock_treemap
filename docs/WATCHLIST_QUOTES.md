@@ -135,15 +135,36 @@ Parser-`warnings`.
   (Spinner bzw. Hintergrund-Vorwärmen, Statusmeldung, ggf. Zeitbudget je Durchgang);
   parallele Sitzungen warten auf die Sperre.
 - Ein Anbieter-Backoff (drei Fehler in Folge) pausiert weitere Abrufe providerweit. Auch
-  vom Anbieter abgelehnte Symbole (z. B. Tippfehler, delistet) zählen als Fehler. Damit
-  sie die gültigen Zeilen dahinter nicht dauerhaft sperren, führt der Koordinator je
-  Instrument die Zahl aufeinanderfolgender `provider_failure`-Ergebnisse (Erfolg setzt
-  zurück, über Ladevorgänge hinweg) und ruft Quote und Historie fehlerfreie Zeilen
-  zuerst ab; die `entries` bleiben in Blattreihenfolge. Folge: Stehen drei oder mehr
-  abgelehnte Symbole vor gültigen Zeilen, kann der erste Ladevorgang (Kaltstart, noch
-  keine Fehlerzähler) einmalig `provider_backoff` zeigen; der nächste Ladevorgang nach
-  Ablauf des Backoffs (ab 15 s) liefert alle gültigen Zeilen `LIVE`, die defekten Zeilen
-  bleiben `provider_failure`. Bei einem echten Totalausfall gilt der Backoff unverändert.
+  vom Anbieter abgelehnte Symbole (z. B. Tippfehler, delistet) zählen als Fehler, und die
+  Erholungsprobe nach dem Backoff nimmt den ersten fälligen Schlüssel. Damit abgelehnte
+  Symbole die gültigen Zeilen dahinter nicht sperren, ruft der Koordinator Historie und
+  (bei laufender Sitzung) Quote in **einer gemeinsamen Reihenfolge** ab: zuerst Schlüssel
+  ohne gescheiterte Abrufe (Historien vor Quotes, dann Blattreihenfolge), zuletzt bekannte
+  defekte. Der Rang ist die Summe der Fehlerzähler (`QuoteCache`-Einträge, wie bei
+  `QuoteCache.quotes`) von Quote und Historie des Instruments. Gezählt werden nur
+  tatsächlich versuchte und gescheiterte Abrufe; ein wegen Backoff übersprungener Abruf
+  (Anzeige weiter `cached_provider_value` bzw. `provider_backoff`) erhöht ihn nicht, ein
+  Erfolg setzt ihn zurück. Der Koordinator führt keinen eigenen Fehlerzustand. Die `entries`
+  bleiben in Blattreihenfolge.
+  - **Erholungszeit wächst mit der Zahl defekter Zeilen.** Defekte Zeilen ohne bisher
+    gescheiterten Abruf haben Rang 0 wie gültige Zeilen (Kaltstart: noch kein Erfolg;
+    Warmzustand: Zeilen waren früher gültig, Yahoo lehnt sie jetzt erstmals ab) und nehmen je
+    Backoff-Fenster genau eine Erholungsprobe; erst danach haben sie einen Fehlerzähler und
+    rücken ans Ende. Weil sich das Backoff-Fenster dabei verdoppelt (bis 300 s), dauert es
+    bis zur Erholung der gültigen Zeilen (Laden alle 20 s, synthetisch gemessen, Börse
+    offen, geschlossen oder gemischt, Kaltstart wie Warmzustand): 3 defekte Zeilen vor den
+    gültigen 20 s, 4 defekte 60 s, 5 defekte 120 s, 6 defekte 240 s. Defekte Zeilen am Ende
+    des Blatts oder zwischen vielen gültigen kosten nichts. Bis dahin zeigen im Kaltstart
+    die gültigen Zeilen `provider_backoff`, im Warmzustand ihren letzten gültigen Stand
+    (`CACHED`, mit Alter); danach sind sie `LIVE`, die defekten Zeilen bleiben
+    `provider_failure` (Kaltstart: `SHEET_VALUE`) bzw. `CACHED`.
+  - **Warmzustand**: Nach der Erholung rufen die gültigen Zeilen ihre Daten wieder normal
+    ab; es gibt keinen Dauerzustand mehr, auch nicht bei geschlossener Börse (Nacht,
+    Wochenende) oder wenn defekte Zeilen an einer offenen und gültige nur an einer
+    geschlossenen Börse liegen (Historien vor Quotes, gemeinsamer Rang).
+  - Bei einem echten Totalausfall gilt der Backoff unverändert (gemessen: 30 Anbieter-
+    aufrufe in zwei Stunden bei 60 Zeilen); nach dem Ende des Ausfalls sind alle Zeilen
+    nach etwa vier Minuten wieder `LIVE`.
 - Der Kalender (`venue_calendars(date.today())`) entsteht einmal beim Bau des
   Koordinators. In einem langlebigen Prozess rückt das Fenster nicht nach: nach etwa
   35 Tagen liegt der Zieltag für `Jahr` vor dem ersten Kalendertag (`calendar_incomplete`),

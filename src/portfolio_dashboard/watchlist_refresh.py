@@ -110,8 +110,6 @@ METADATA_MISMATCH_CODES = frozenset(
     }
 )
 _INFO_CODES = frozenset({"cached_provider_value"})
-# Provider failure, or the last valid value shown because a refresh failed.
-_FAILURE_CODES = frozenset({"provider_failure", "cached_provider_value"})
 _CACHED_SNAPSHOT_CODE = "cached_holdings_snapshot"
 
 
@@ -475,8 +473,6 @@ class WatchlistRefreshCoordinator:
             self._provider, ttls if ttls is not None else CacheTTLs(), clock=clock
         )
         self._last_bundle: WatchlistBundle | None = None
-        # Consecutive provider failures per Instrument across loads (guarded by _lock).
-        self._failures: dict[Instrument, int] = {}
         self._lock = threading.RLock()
 
     @property
@@ -565,19 +561,19 @@ class WatchlistRefreshCoordinator:
             self._last_bundle = bundle
             return bundle
 
-    def _failure_rank(self, instrument: Instrument) -> int:
-        return sum(self._failures.get((kind, instrument), 0) for kind in ("quote", "history"))
+    def _failure_ranks(self) -> dict[Instrument, int]:
+        """Consecutive failed provider fetches per instrument, quote and history summed.
 
-    def _note(self, kind: str, instrument: Instrument, warnings, status) -> None:
-        """Count a provider failure (or the stale value shown after one); success resets.
-
-        A result with neither (provider backoff: no fetch happened) leaves the count.
+        Taken from the cache's own counters, exactly what ``QuoteCache.quotes`` sorts by.
+        They rise only when a fetch was attempted and failed (a success resets them), so
+        results served from the cache merely because of a backoff do not count. The
+        coordinator keeps no failure state of its own.
         """
-        key = (kind, instrument)
-        if {warning.code for warning in warnings} & _FAILURE_CODES:
-            self._failures[key] = self._failures.get(key, 0) + 1
-        elif status is ValueStatus.AVAILABLE:
-            self._failures.pop(key, None)
+        ranks: dict[Instrument, int] = {}
+        for key, entry in self._cache._entries.items():
+            if entry.failures and key[0] in ("quote", "history"):
+                ranks[key[1]] = ranks.get(key[1], 0) + entry.failures
+        return ranks
 
     def _entries(
         self, snapshot: WatchlistSnapshot, now: datetime, refresh: bool
@@ -605,30 +601,30 @@ class WatchlistRefreshCoordinator:
 
         self._provider.use(tuple(listings))
         # Provider-wide backoff opens after three failures in a row, and a recovery probe
-        # takes the first due key. Rejected symbols are tried last so that they cannot
-        # lock out the valid rows behind them (QuoteCache.history has no such order).
-        quotes = self._cache.quotes(
-            sorted(
-                (step.listing.instrument for step in plan if step.running),
-                key=self._failure_rank,
-            ),
-            refresh=refresh,
-        )
-        for instrument, observation in quotes.items():
-            valuation = observation.valuation
-            self._note("quote", instrument, valuation.warnings, valuation.status)
+        # takes the first due key. Candidates are therefore fetched in one common order for
+        # both kinds: rows without failed fetches first (histories before quotes, then
+        # sheet order), known-defective rows last, so rejected symbols cannot lock out the
+        # valid rows behind them, whatever the market state.
+        ranks = self._failure_ranks()
+        tasks = [
+            ("history", step)
+            for step in plan
+            if step.listing is not None and step.calendar is not None
+        ] + [("quote", step) for step in plan if step.running]
+        tasks.sort(key=lambda task: ranks.get(task[1].listing.instrument, 0))
+        quotes: dict[Instrument, PriceObservation] = {}
         histories: dict[Instrument, PriceHistory] = {}
-        due = [s for s in plan if s.listing is not None and s.calendar is not None]
-        for step in sorted(due, key=lambda s: self._failure_rank(s.listing.instrument)):
+        for kind, step in tasks:
             instrument = step.listing.instrument
-            history = self._cache.history(
-                instrument,
-                step.calendar.first_day,
-                step.calendar.last_day,
-                refresh=refresh,
-            )
-            self._note("history", instrument, history.warnings, history.status)
-            histories[instrument] = history
+            if kind == "quote":
+                quotes[instrument] = self._cache.quote(instrument, refresh=refresh)
+            else:
+                histories[instrument] = self._cache.history(
+                    instrument,
+                    step.calendar.first_day,
+                    step.calendar.last_day,
+                    refresh=refresh,
+                )
         entries = []
         for step in plan:
             item, listing, calendar = step.item, step.listing, step.calendar
