@@ -57,7 +57,8 @@ bleibt ein gelieferter Wert.
 - **Zeilenwahl:** feste Präferenzlisten (identisch zu den geprüften Listen aus
   `fundamentals_coverage`; ein Test erzwingt Gleichheit). Je Feld wird **eine** Zeile für
   die ganze Reihe gewählt, nie je Jahr gemischt. Eine Zeile jenseits der ersten Präferenz
-  ist eine **Ausweichzeile**: Hinweis `fallback_row_<erste Zeile>` und Vermerk in der
+  ist eine **Ausweichzeile** (im Probe-Werkzeug `fallback_row_used`; eine Zeilenmischung
+  je Jahr, `mixed_row_labels`, kann hier nicht entstehen): Hinweis `fallback_row_<erste Zeile>` und Vermerk in der
   Provenienz («Definition kann abweichen»). `EBIT` gilt nur als Kontrolle
   (`ebit_control_definition_differs`).
 - **Capex:** Provider-Abfluss (negativ) wird ausdrücklich zum positiven Abzug umgekehrt;
@@ -134,8 +135,10 @@ entsprechen. Ohne ausdrückliche Bestätigung enthält der Satz drei blockierend
   Abweichung in Stichproben).
 - `share_split_basis`: kein Aktiensplit verzerrt Aktienzahl, Bericht und Kurs; der
   Provider belegt die Splitbasis nicht (`provider-unverified`).
-- `lease_treatment`: EBIT und `Total Debt` behandeln Leasing gleich (Betriebsleasing im EBIT
-  und die Leasingschuld in der Brücke dürfen nicht doppelt belasten). Die Zeile
+- `lease_treatment` (Anforderung 12): EBIT und `Total Debt` behandeln Leasing gleich
+  (IFRS 16: Zinsanteil unter dem EBIT, Leasingschuld in der Brücke; US-GAAP: Aufwand aus
+  Betriebsleasing im EBIT, daher die Betriebsleasingschuld nicht zusätzlich abziehen
+  bzw. EBIT, D&A und Capex entsprechend anpassen; nichts doppelt belasten oder auslassen). Die Zeile
   `Capital Lease Obligations` wird nur als Hinweis ausgewertet
   (`financial_debt_includes_leases`, `lease_split_not_visible`).
 
