@@ -247,7 +247,8 @@ def _parse_entry(entry: object) -> FundamentalSubject:
         # Several listings of one security share one fetch only with one source
         # symbol; without ``source_symbol`` the listing's own symbol is the source.
         FundamentalSource(
-            PROVIDER, _text(entry, "source_symbol") if "source_symbol" in entry else symbol
+            PROVIDER,
+            _text(entry, "source_symbol") if "source_symbol" in entry else symbol,
         ),
         _text(entry, "consolidation_scope"),
         IssuerKind(_text(entry, "issuer_kind")),

@@ -59,7 +59,10 @@ class StoredFetch:
             for name in (*_TABLES, "info", "dated_shares")
         ):
             raise ValueError("only complete retrievals are stored")
-        if not isinstance(self.package_version, str) or not self.package_version.strip():
+        if (
+            not isinstance(self.package_version, str)
+            or not self.package_version.strip()
+        ):
             raise ValueError("package_version must be nonblank text")
         _aware(self.checked_at)
 
@@ -80,7 +83,9 @@ class FailedAttempt:
         if (
             not isinstance(self.codes, tuple)
             or not self.codes
-            or not all(isinstance(c, str) and CODE_PATTERN.fullmatch(c) for c in self.codes)
+            or not all(
+                isinstance(c, str) and CODE_PATTERN.fullmatch(c) for c in self.codes
+            )
         ):
             raise ValueError("failure codes must be sanitized identifiers")
         if type(self.consecutive) is not int or self.consecutive < 1:

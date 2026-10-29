@@ -55,18 +55,38 @@ def _table(rows: dict[str, tuple[int, ...]], ends: tuple[date, ...]) -> Statemen
     )
 
 
-def demo_statements(retrieved_at: datetime = DEMO_FUNDAMENTALS_TIMESTAMP) -> ProviderStatements:
+def demo_statements(
+    retrieved_at: datetime = DEMO_FUNDAMENTALS_TIMESTAMP,
+) -> ProviderStatements:
     """Invented annual statements of a fictitious company with a debt identity."""
     million = 1_000_000
     return ProviderStatements(
         retrieved_at,
         annual_income=_table(
             {
-                "Operating Income": (150 * million, 140 * million, 130 * million, 120 * million),
-                "Pretax Income": (140 * million, 130 * million, 120 * million, 110 * million),
-                "Tax Provision": (28 * million, 26 * million, 24 * million, 22 * million),
+                "Operating Income": (
+                    150 * million,
+                    140 * million,
+                    130 * million,
+                    120 * million,
+                ),
+                "Pretax Income": (
+                    140 * million,
+                    130 * million,
+                    120 * million,
+                    110 * million,
+                ),
+                "Tax Provision": (
+                    28 * million,
+                    26 * million,
+                    24 * million,
+                    22 * million,
+                ),
                 "Net Income Common Stockholders": (
-                    100 * million, 95 * million, 90 * million, 85 * million
+                    100 * million,
+                    95 * million,
+                    90 * million,
+                    85 * million,
                 ),
                 "Diluted Average Shares": (10 * million,) * 4,
             },
@@ -75,8 +95,11 @@ def demo_statements(retrieved_at: datetime = DEMO_FUNDAMENTALS_TIMESTAMP) -> Pro
         annual_balance=_table(
             {
                 "Current Assets": tuple(m * million for m in (300, 290, 280, 270, 260)),
-                "Current Liabilities": tuple(m * million for m in (200, 195, 190, 185, 180)),
-                "Cash Cash Equivalents And Short Term Investments": (100 * million,) * 5,
+                "Current Liabilities": tuple(
+                    m * million for m in (200, 195, 190, 185, 180)
+                ),
+                "Cash Cash Equivalents And Short Term Investments": (100 * million,)
+                * 5,
                 "Current Debt And Capital Lease Obligation": (50 * million,) * 5,
                 "Long Term Debt And Capital Lease Obligation": (70 * million,) * 5,
                 "Total Debt": (120 * million,) * 5,
@@ -113,7 +136,9 @@ class SyntheticFundamentalsProvider:
 def demo_subjects() -> FundamentalSubjects:
     identity = VerifiedFundamentalIdentity(
         VerifiedListing(
-            DEMO_FUNDAMENTALS_INSTRUMENT, equity_form=EquityForm.SHARE, isin="DEMO-FUNDAMENTALS-A"
+            DEMO_FUNDAMENTALS_INSTRUMENT,
+            equity_form=EquityForm.SHARE,
+            isin="DEMO-FUNDAMENTALS-A",
         ),
         "demo-class",
         "demo-issuer",

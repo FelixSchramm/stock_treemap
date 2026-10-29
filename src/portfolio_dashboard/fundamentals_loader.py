@@ -79,7 +79,9 @@ NOTE_DEFERRED = "deferred_batch_limit"
 NOTE_PROVIDER_BACKOFF = "provider_backoff"
 NOTE_REPORT_SET_REJECTED = "report_set_rejected"
 NOTE_UNCHANGED = "content_unchanged"
-_STALE_NOTES = frozenset({NOTE_WINDOW_EXPIRED, NOTE_REFRESH_FAILED, NOTE_PACKAGE_CHANGED})
+_STALE_NOTES = frozenset(
+    {NOTE_WINDOW_EXPIRED, NOTE_REFRESH_FAILED, NOTE_PACKAGE_CHANGED}
+)
 
 _DATASET_FOR_PART = (
     ("annual_income", "annual_income"),
@@ -106,7 +108,9 @@ class FetchPolicy:
     min_refetch_seconds: int = 3_600  # A manual refresh respects this minimum age.
     backoff_base_seconds: int = 300  # After a failure: doubles per consecutive one.
     backoff_max_seconds: int = 21_600
-    restricted_base_seconds: int = 3_600  # After a restriction (throttling, 401/403/429).
+    restricted_base_seconds: int = (
+        3_600  # After a restriction (throttling, 401/403/429).
+    )
     restricted_max_seconds: int = 86_400
     pause_seconds: float = 3.0  # Between securities; the adapter pauses within one.
     max_fetches_per_load: int = 5
@@ -375,7 +379,10 @@ class FundamentalsLoader:
                 restricted = any(c.endswith(FAILURE_ACCESS_RESTRICTED) for c in codes)
                 consecutive = 1 + (record.attempt.consecutive if record.attempt else 0)
                 attempt = FailedAttempt(
-                    done, codes, consecutive, done + self._delay(consecutive, restricted)
+                    done,
+                    codes,
+                    consecutive,
+                    done + self._delay(consecutive, restricted),
                 )
                 self._store.save_failure(key, attempt)
                 if restricted:
@@ -402,10 +409,12 @@ class FundamentalsLoader:
     ) -> tuple[str, ...]:
         """Sanitized codes of an unusable retrieval; empty means complete and consistent."""
         codes = [f"{f.dataset}_{f.code}" for f in statements.failures]
-        reported = {f.dataset for f in statements.failures}
-        for part, dataset in _DATASET_FOR_PART:
-            if getattr(statements, part) is None and dataset not in reported:
-                codes.append(f"{dataset}_empty")
+        if not codes:
+            # Reported failures already explain missing parts (an aborted request
+            # leaves all of them empty); only an unexplained gap is added.
+            for part, dataset in _DATASET_FOR_PART:
+                if getattr(statements, part) is None:
+                    codes.append(f"{dataset}_empty")
         if not codes:
             normalized = normalize_statements(
                 subject.identity, statements, subject.expectation
@@ -414,7 +423,9 @@ class FundamentalsLoader:
                 # The new answer contradicts the owner's expectations: keep the
                 # previous state rather than replacing it with withheld numbers.
                 codes = ["numbers_withheld", *(i.code for i in normalized.issues)]
-        return tuple(dict.fromkeys(sorted(c for c in codes if CODE_PATTERN.fullmatch(c))))
+        return tuple(
+            dict.fromkeys(sorted(c for c in codes if CODE_PATTERN.fullmatch(c)))
+        )
 
     def _success(
         self, prior: StoredFetch | None, statements: ProviderStatements, done: datetime

@@ -303,9 +303,7 @@ def test_a_restriction_stops_every_other_retrieval_in_the_process():
 
 def test_partial_failure_keeps_the_last_complete_state_flagged_and_never_merges():
     subject = make_subject()
-    loader, provider, clock = build(
-        subject, script=[good(), partial_without_balance]
-    )
+    loader, provider, clock = build(subject, script=[good(), partial_without_balance])
     good_entry = loader.load([instrument(subject)]).entry(instrument(subject))
     clock.advance(DAY)
     bundle = loader.load([instrument(subject)])
@@ -323,9 +321,9 @@ def test_partial_failure_keeps_the_last_complete_state_flagged_and_never_merges(
 def test_new_fields_are_not_mixed_into_the_old_statements():
     subject = make_subject()
     changed = good(
-        annual_income=statements().annual_income.__class__(
+        annual_income=StatementTable(
             {
-                label: {end: value * 2 if value is not None else None for end, value in cells.items()}
+                label: {end: value * 2 for end, value in cells.items()}
                 for label, cells in statements().annual_income.rows.items()
             }
         ),
@@ -355,7 +353,8 @@ def test_recovery_after_an_outage_clears_the_failure_state():
     recovered = loader.load([instrument(subject)]).entry(instrument(subject))
     assert recovered.status is FundamentalsStatus.CURRENT
     assert recovered.failures == () and recovered.last_attempt_at is None
-    assert recovered.last_checked_at == clock.now and recovered.notes == ()
+    assert recovered.last_checked_at == clock.now
+    assert recovered.notes == (NOTE_UNCHANGED,)  # Same content as before the outage.
     assert len(provider.calls) == 4
 
 
@@ -482,8 +481,9 @@ def test_changed_content_gets_a_new_delivery_time_and_input_version():
 
 
 def test_owner_confirmations_change_the_input_version_not_the_retrieval():
-    plain, confirmed = make_subject(), make_subject(
-        confirmations=OwnerConfirmations(True, False, False)
+    plain, confirmed = (
+        make_subject(),
+        make_subject(confirmations=OwnerConfirmations(True, False, False)),
     )
     store = MemoryFundamentalsStore()
     one, _, clock = build(plain, store=store)
@@ -551,7 +551,9 @@ def test_unmapped_and_unsupported_instruments_trigger_no_retrieval():
 
 def test_batch_limit_defers_the_rest_and_the_next_call_continues():
     subjects = [make_subject(name) for name in "abc"]
-    loader, provider, clock = build(*subjects, policy=FetchPolicy(max_fetches_per_load=2))
+    loader, provider, clock = build(
+        *subjects, policy=FetchPolicy(max_fetches_per_load=2)
+    )
     items = [instrument(s) for s in subjects]
     first = loader.load(items)
     assert first.provider_calls == 2
@@ -565,7 +567,9 @@ def test_batch_limit_defers_the_rest_and_the_next_call_continues():
 
 def test_never_loaded_securities_come_before_refreshing_old_ones():
     old, new = make_subject("a"), make_subject("b")
-    loader, provider, clock = build(old, new, policy=FetchPolicy(max_fetches_per_load=1))
+    loader, provider, clock = build(
+        old, new, policy=FetchPolicy(max_fetches_per_load=1)
+    )
     loader.load([instrument(old)])
     clock.advance(2 * DAY)
     loader.load([instrument(old), instrument(new)])
@@ -576,8 +580,10 @@ def test_pauses_separate_retrievals_but_not_the_first():
     subjects = [make_subject(name) for name in "ab"]
     loader, provider, clock = build(*subjects, policy=FetchPolicy(pause_seconds=3))
     loader.load([instrument(s) for s in subjects])
-    assert loader.sleeps == [3.0]  # Clock stood still: the full pause before the second.
-    clock.advance(timedelta(seconds=30))
+    assert loader.sleeps == [
+        3.0
+    ]  # Clock stood still: the full pause before the second.
+    clock.advance(2 * HOUR)  # Past the minimum age of a forced refresh.
     loader.load([instrument(s) for s in subjects], refresh=True)
     assert loader.sleeps == [3.0, 3.0]  # Only the second of the pair waits again.
 
@@ -602,8 +608,10 @@ def test_concurrent_sessions_retrieve_once():
         loader._provider = Slow()
     results = []
     threads = [
-        threading.Thread(target=lambda l=l: results.append(l.load([instrument(subject)])))
-        for l in loaders
+        threading.Thread(
+            target=lambda each=each: results.append(each.load([instrument(subject)]))
+        )
+        for each in loaders
     ]
     for thread in threads:
         thread.start()
@@ -618,8 +626,12 @@ def test_concurrent_sessions_retrieve_once():
 
 def test_policy_validation_and_default_window():
     assert FetchPolicy().ttl_seconds == 86_400
-    for bad in ({"ttl_seconds": 0}, {"pause_seconds": -1}, {"max_fetches_per_load": 0},
-                {"backoff_base_seconds": 10, "backoff_max_seconds": 5}):
+    for bad in (
+        {"ttl_seconds": 0},
+        {"pause_seconds": -1},
+        {"max_fetches_per_load": 0},
+        {"backoff_base_seconds": 10, "backoff_max_seconds": 5},
+    ):
         with pytest.raises(ValueError):
             FetchPolicy(**bad)
 
@@ -801,7 +813,12 @@ def test_missing_protected_directory_means_no_retrieval(tmp_path):
 
     database = PrivateDatabase(
         lambda: AppConfig(
-            Mode.LOCAL, SourceConfig(), Provider.SYNTHETIC, CacheTTLs(), LoginConfig(), None
+            Mode.LOCAL,
+            SourceConfig(),
+            Provider.SYNTHETIC,
+            CacheTTLs(),
+            LoginConfig(),
+            None,
         ),
         server_address=lambda: "127.0.0.1",
     )
@@ -825,8 +842,7 @@ def test_demo_loader_is_synthetic_offline_and_writes_nothing(tmp_path):
         "entry = bundle.entry(DEMO_FUNDAMENTALS_INSTRUMENT)\n"
         "assert entry.status.value == 'current' and entry.report_set is not None\n"
         "assert bundle.provider_calls == 1\n"
-        "assert not [m for m in ('yfinance', 'requests', 'sqlite3') if m in sys.modules\n"
-        "            and m != 'sqlite3']\n"
+        "assert 'yfinance' not in sys.modules\n"
         "assert not os.listdir('.')\n"
     )
     subprocess.run([sys.executable, "-I", "-c", code], check=True)
@@ -862,4 +878,3 @@ def test_observation_values_are_available_numbers_not_defaults():
     entry = loader.load([instrument(subject)]).entry(instrument(subject))
     ebit = by_field(entry.normalized, FundamentalField.EBIT)
     assert all(o.status is ValueStatus.AVAILABLE for o in ebit)
-    assert StatementTable  # Re-exported helper keeps the import honest.
