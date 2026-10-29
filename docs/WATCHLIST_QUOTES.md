@@ -140,28 +140,54 @@ Parser-`warnings`.
   Symbole die gültigen Zeilen dahinter nicht sperren, ruft der Koordinator Historie und
   (bei laufender Sitzung) Quote in **einer gemeinsamen Reihenfolge** ab: zuerst Schlüssel
   ohne gescheiterte Abrufe (Historien vor Quotes, dann Blattreihenfolge), zuletzt bekannte
-  defekte. Der Rang ist die Summe der Fehlerzähler (`QuoteCache`-Einträge, wie bei
-  `QuoteCache.quotes`) von Quote und Historie des Instruments. Gezählt werden nur
-  tatsächlich versuchte und gescheiterte Abrufe; ein wegen Backoff übersprungener Abruf
-  (Anzeige weiter `cached_provider_value` bzw. `provider_backoff`) erhöht ihn nicht, ein
-  Erfolg setzt ihn zurück. Der Koordinator führt keinen eigenen Fehlerzustand. Die `entries`
-  bleiben in Blattreihenfolge.
+  defekte. Der Rang gilt **je Abrufart und Instrument**: Ein Historien-Abruf wird nach dem
+  Fehlerzähler seines eigenen Schlüssels (`("history", Instrument)`) im `QuoteCache`
+  gereiht, ein Quote-Abruf nach dem Zähler seines Quote-Schlüssels plus dem Historienzähler
+  derselben Zeile (ein abgelehntes Symbol scheitert an beidem, der Historienzähler ist
+  immer aktuell). Der Quotezähler beeinflusst nie die Historie: Er wird nur durch einen
+  erfolgreichen Quote bei laufender Sitzung zurückgesetzt und bleibt nach Börsenschluss
+  eingefroren; eine geheilte gültige Zeile mit hohem, eingefrorenem Quotezähler würde sonst
+  bis zur nächsten Historien-TTL (Standard 6 h) hinter neu abgelehnten Symbolen warten.
+  Bei Gleichstand gilt: Historien vor Quotes, dann Blattreihenfolge (stabile Sortierung).
+  Gezählt werden nur tatsächlich versuchte und gescheiterte Abrufe; ein wegen Backoff
+  übersprungener Abruf (Anzeige weiter `cached_provider_value` bzw. `provider_backoff`)
+  erhöht ihn nicht, ein Erfolg setzt ihn zurück. Der Koordinator führt keinen eigenen
+  Fehlerzustand. Die `entries` bleiben in Blattreihenfolge.
   - **Erholungszeit wächst mit der Zahl defekter Zeilen.** Defekte Zeilen ohne bisher
     gescheiterten Abruf haben Rang 0 wie gültige Zeilen (Kaltstart: noch kein Erfolg;
     Warmzustand: Zeilen waren früher gültig, Yahoo lehnt sie jetzt erstmals ab) und nehmen je
     Backoff-Fenster genau eine Erholungsprobe; erst danach haben sie einen Fehlerzähler und
     rücken ans Ende. Weil sich das Backoff-Fenster dabei verdoppelt (bis 300 s), dauert es
-    bis zur Erholung der gültigen Zeilen (Laden alle 20 s, synthetisch gemessen, Börse
-    offen, geschlossen oder gemischt, Kaltstart wie Warmzustand): 3 defekte Zeilen vor den
-    gültigen 20 s, 4 defekte 60 s, 5 defekte 120 s, 6 defekte 240 s. Defekte Zeilen am Ende
-    des Blatts oder zwischen vielen gültigen kosten nichts. Bis dahin zeigen im Kaltstart
-    die gültigen Zeilen `provider_backoff`, im Warmzustand ihren letzten gültigen Stand
-    (`CACHED`, mit Alter); danach sind sie `LIVE`, die defekten Zeilen bleiben
-    `provider_failure` (Kaltstart: `SHEET_VALUE`) bzw. `CACHED`.
+    bis zur Erholung der gültigen Zeilen (60 Zeilen, defekte Zeilen am Blattanfang, Laden
+    alle 20 s, synthetisch gemessen; Börse offen oder geschlossen, Kaltstart und Warmzustand
+    ergeben dieselben Werte):
+
+    | defekte Zeilen vor den gültigen | 3 | 4 | 5 | 6 | 7 | 8 | 10 | 12 | 15 | 20 |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | Erholung bis alle gültigen Zeilen `LIVE` | 20 s | 60 s | 120 s | 240 s | 480 s | 780 s | 1380 s | 1980 s | 2880 s | 4380 s |
+
+    Ab der sechsten defekten Zeile kommen je Zeile rund fünf Minuten (Backoff-Obergrenze
+    300 s) dazu. Das ist eine bekannte Grenze: Eine nie versuchte defekte Zeile ist ohne Änderung
+    an `quote_cache.py` nicht von einer gültigen zu unterscheiden und braucht deshalb eine
+    eigene Erholungsprobe. Defekte Zeilen am Ende des Blatts oder zwischen vielen gültigen
+    kosten nichts. Bis dahin zeigen im Kaltstart die gültigen Zeilen `provider_backoff`, im
+    Warmzustand ihren letzten gültigen Stand (`CACHED`, mit Alter); danach sind sie `LIVE`,
+    die defekten Zeilen bleiben `provider_failure` (Kaltstart: `SHEET_VALUE`) bzw. `CACHED`.
   - **Warmzustand**: Nach der Erholung rufen die gültigen Zeilen ihre Daten wieder normal
-    ab; es gibt keinen Dauerzustand mehr, auch nicht bei geschlossener Börse (Nacht,
-    Wochenende) oder wenn defekte Zeilen an einer offenen und gültige nur an einer
-    geschlossenen Börse liegen (Historien vor Quotes, gemeinsamer Rang).
+    ab. Ein eingefrorener Quotezähler (Quote-Fehler in der Sitzung, Heilung nach
+    Börsenschluss) verzögert die Historie einer geheilten Zeile nicht mehr: Gemessen mit den
+    Produktions-TTLs (60 s / 300 s / 21600 s) sind die gültigen Zeilen auch dann sofort
+    wieder `LIVE`, wenn danach ein Block Symbole abgelehnt wird (vorher bis zu einer
+    Historien-TTL, 21840 s); ebenso, wenn Defekte an einer offenen und gültige Zeilen nur an
+    einer geschlossenen Börse liegen. Nicht abgedeckt (unverändert, auch vor dieser
+    Änderung): Der Quotezähler gilt weiter für den Quote-Abruf selbst. Hat eine Zeile am
+    Vortag in der Sitzung viele Quote-Fehler gesammelt und wird am nächsten Handelstag in
+    der laufenden Sitzung ein Block Symbole abgelehnt, bleibt der Quote dieser Zeile
+    (Anzeige `SHEET_VALUE`, `stale_quote`) hinter dem Block, solange dessen Zähler nicht
+    höher sind; die Historie ist davon nicht betroffen. Ebenso warten geheilte Zeilen mit
+    einem echten, älteren Fehlerzähler hinter neu abgelehnten Symbolen, wenn ein
+    Totalausfall ihren erneuten Abruf verhindert hat, bis eine Historien-TTL abläuft (in
+    der Zufallssimulation mit 3600-s-TTL einzelne Verläufe mit 3660-4980 s; endlich).
   - Bei einem echten Totalausfall gilt der Backoff unverändert (gemessen: 30 Anbieter-
     aufrufe in zwei Stunden bei 60 Zeilen); nach dem Ende des Ausfalls sind alle Zeilen
     nach etwa vier Minuten wieder `LIVE`.

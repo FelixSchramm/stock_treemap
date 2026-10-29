@@ -561,18 +561,21 @@ class WatchlistRefreshCoordinator:
             self._last_bundle = bundle
             return bundle
 
-    def _failure_ranks(self) -> dict[Instrument, int]:
-        """Consecutive failed provider fetches per instrument, quote and history summed.
+    def _failure_ranks(self) -> dict[tuple[str, Instrument], int]:
+        """Consecutive failed provider fetches per fetch kind and instrument.
 
-        Taken from the cache's own counters, exactly what ``QuoteCache.quotes`` sorts by.
-        They rise only when a fetch was attempted and failed (a success resets them), so
-        results served from the cache merely because of a backoff do not count. The
-        coordinator keeps no failure state of its own.
+        Taken from the cache's own counters, one per key (``("quote", instrument)`` and
+        ``("history", instrument)``). They rise only when a fetch was attempted and failed
+        (a success resets them), so results served from the cache merely because of a
+        backoff do not count. A quote counter only resets on a successful quote in a
+        running session and stays frozen after the close; it therefore ranks the quote
+        fetch of its row alone, never the history fetch. The coordinator keeps no failure
+        state of its own.
         """
-        ranks: dict[Instrument, int] = {}
+        ranks: dict[tuple[str, Instrument], int] = {}
         for key, entry in self._cache._entries.items():
             if entry.failures and key[0] in ("quote", "history"):
-                ranks[key[1]] = ranks.get(key[1], 0) + entry.failures
+                ranks[(key[0], key[1])] = entry.failures
         return ranks
 
     def _entries(
@@ -602,16 +605,26 @@ class WatchlistRefreshCoordinator:
         self._provider.use(tuple(listings))
         # Provider-wide backoff opens after three failures in a row, and a recovery probe
         # takes the first due key. Candidates are therefore fetched in one common order for
-        # both kinds: rows without failed fetches first (histories before quotes, then
-        # sheet order), known-defective rows last, so rejected symbols cannot lock out the
-        # valid rows behind them, whatever the market state.
+        # both kinds, each ranked by the failure counter of its own key: fetches without
+        # failed attempts first (histories before quotes, then sheet order), known-defective
+        # ones last, so rejected symbols cannot lock out the valid rows behind them,
+        # whatever the market state. A frozen quote counter never delays the history.
         ranks = self._failure_ranks()
         tasks = [
             ("history", step)
             for step in plan
             if step.listing is not None and step.calendar is not None
         ] + [("quote", step) for step in plan if step.running]
-        tasks.sort(key=lambda task: ranks.get(task[1].listing.instrument, 0))
+
+        def rank(task: tuple[str, _Planned]) -> int:
+            kind, step = task
+            instrument = step.listing.instrument
+            own = ranks.get((kind, instrument), 0)
+            # A rejected symbol fails both fetches and the history counter is always
+            # current, so a quote also ranks behind a failing history of its own row.
+            return own + ranks.get(("history", instrument), 0) if kind == "quote" else own
+
+        tasks.sort(key=rank)
         quotes: dict[Instrument, PriceObservation] = {}
         histories: dict[Instrument, PriceHistory] = {}
         for kind, step in tasks:

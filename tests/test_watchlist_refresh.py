@@ -751,6 +751,73 @@ def test_coordinator_keeps_no_failure_state_of_its_own_for_vanished_rows():
     assert not hasattr(env.coordinator, "_failures")
 
 
+# Stale quote counters: a quote failure counter only resets on a successful quote in an
+# open session, so after the close it stays frozen. With production TTLs (history 6 h) it
+# must not hold healed valid rows behind a freshly rejected block until the history TTL.
+PRODUCTION_TTLS = CacheTTLs(quotes_seconds=60, holdings_seconds=300, history_seconds=21600)
+XETRA_CLOSED = datetime(2026, 10, 28, 16, 40, tzinfo=UTC)  # Xetra closed at 16:30 UTC
+
+
+def frozen_quote_counters_then_reject(env, flaky):
+    """Valid rows go LIVE; ``flaky`` ones are refused for the rest of the open session
+    (quote counters climb) and heal after the close (counters stay frozen); then every
+    TTL runs out and the ``b`` symbols are rejected."""
+    env.coordinator._cache.ttls = PRODUCTION_TTLS
+    assert {e.status for e in env.load().entries} == {WatchlistEntryStatus.LIVE}
+    env.yahoo.rejected = {env.symbols[i] for i in flaky}
+    while env.now < XETRA_CLOSED:
+        env.now += timedelta(seconds=60)
+        env.load()
+    env.yahoo.rejected = set()  # healed after the close; no quote task exists any more
+    for _ in range(20):
+        env.now += timedelta(seconds=60)
+        bundle = env.load()
+    assert {e.status for e in bundle.entries} == {WatchlistEntryStatus.LIVE}
+    frozen = {
+        key[1]: entry.failures
+        for key, entry in env.coordinator._cache._entries.items()
+        if key[0] == "quote" and entry.failures
+    }
+    assert len(frozen) == len(flaky) and min(frozen.values()) >= 10  # precondition holds
+    env.now += timedelta(seconds=PRODUCTION_TTLS.history_seconds + 100)  # all TTLs over
+    reject(env)
+
+
+@pytest.mark.parametrize(
+    "layout, flaky, limit",
+    [
+        ("gD" * 9 + "bD" * 3, (7, 8), 120),  # rejected block at the end of the sheet
+        ("bD" * 3 + "gD" * 9, (10, 11), 120),  # rejected block at the start
+        ("gD" * 9 + "bD" * 3, range(9), 120),  # every valid row has a stale quote counter
+        ("bD" * 3 + "gD" * 9, range(3, 12), 120),
+        ("bD" * 5 + "gD" * 7, range(5, 12), 420),  # larger block: backoff windows double
+    ],
+    ids=["block-at-end", "block-at-start", "all-stale-block-at-end",
+         "all-stale-block-at-start", "all-stale-5-at-start"],
+)
+def test_stale_quote_counters_do_not_hold_healed_rows_behind_a_rejected_block(
+    layout, flaky, limit
+):
+    env = warm_env(layout, now=RUNNING)
+    frozen_quote_counters_then_reject(env, flaky)
+    assert seconds_until_valid_rows_are_live(env, limit=limit) <= limit
+
+
+def test_failure_ranks_are_kept_per_fetch_kind_and_instrument():
+    env = warm_env("gD" * 2 + "bD", now=RUNNING)
+    env.load()
+    assert env.coordinator._failure_ranks() == {}
+    env.now += timedelta(seconds=3700)
+    env.yahoo.rejected = {env.symbols[2]}
+    env.load()
+    bad = next(
+        key[1] for key in env.coordinator._cache._entries if key[0] == "quote"
+        and key[1].provider_mapping.symbol == env.symbols[2]
+    )
+    ranks = env.coordinator._failure_ranks()
+    assert ranks == {("history", bad): 1, ("quote", bad): 1}
+
+
 def test_cached_quote_of_the_same_session_is_kept_but_not_across_days():
     env = Env([row("US", symbol="SYN2", exchange="NMS", currency="USD")], now=RUNNING,
               symbols=[("SYN2", "NMS", "USD")])
