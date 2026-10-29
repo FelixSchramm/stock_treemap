@@ -137,7 +137,7 @@ def private_source(listings: tuple[VerifiedListing, ...]) -> OverviewSource:
     return OverviewSource(listings, private_reader(), lambda: datetime.now(UTC))
 
 
-def _load(
+def load_fundamentals(
     source: OverviewSource,
     loader: FundamentalsLoader,
     subjects: Sequence[Subject],
@@ -188,7 +188,7 @@ def current_state(
     wanted = frozenset(verified_instruments(subjects))
     if explicit or (auto and (held is None or not wanted <= held.instruments)):
         with st.spinner(LOAD_SPINNER_TEXT):
-            held = _load(source, loader, subjects, refresh=explicit and held is not None)
+            held = load_fundamentals(source, loader, subjects, refresh=explicit and held is not None)
         st.session_state[LOADED_STATE_KEY] = held
     if held is None:
         return FundamentalsState(None, True), None
