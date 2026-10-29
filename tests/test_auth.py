@@ -17,14 +17,18 @@ from streamlit.user_info import UserInfoProxy
 
 import portfolio_dashboard.auth as auth
 import portfolio_dashboard.demo as demo
+import portfolio_dashboard.fundamentals_loader as fundamentals_loader
 import portfolio_dashboard.local_source as local_source
 import portfolio_dashboard.ui as ui
+import portfolio_dashboard.watchlist_refresh as watchlist_refresh
 from portfolio_dashboard.config import LoginConfig
 from portfolio_dashboard.quote_cache import QuoteCache
 from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
 real_production_coordinator = local_source.build_production_coordinator
+real_production_watchlist = watchlist_refresh.build_production_watchlist_coordinator
+real_production_fundamentals = fundamentals_loader.build_production_fundamentals_loader
 NOW = 2_000_000_000
 LOGIN = LoginConfig(
     enabled=True, owner_issuer="https://accounts.google.com",
@@ -137,6 +141,22 @@ def protected_app(monkeypatch):
         )
 
     monkeypatch.setattr(local_source, "build_production_coordinator", own_coordinator)
+
+    def own_watchlist(config, service_account, session=None):
+        # The real builder returns None without a range and never opens a session then.
+        calls.append("build_production_watchlist_coordinator")
+        return real_production_watchlist(config, service_account, session)
+
+    monkeypatch.setattr(
+        watchlist_refresh, "build_production_watchlist_coordinator", own_watchlist
+    )
+    def own_fundamentals(*args, **kwargs):
+        calls.append("build_production_fundamentals_loader")
+        return real_production_fundamentals(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fundamentals_loader, "build_production_fundamentals_loader", own_fundamentals
+    )
     for module, name in (
         (demo, "demo_snapshot"),
         (demo, "demo_valuation"),
@@ -187,7 +207,11 @@ def test_owner_access_and_revocation_are_checked_on_each_run(protected_app, monk
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
     assert not app.exception
-    assert calls == ["build_production_coordinator", "render_dashboard"]
+    assert calls == [
+        "build_production_coordinator",
+        "build_production_fundamentals_loader",
+        "render_dashboard",
+    ]
     assert app.dataframe
     assert any(caption.value.startswith("Eigenes Depot") for caption in app.caption)
     assert not any("synthetische" in info.value for info in app.info)
@@ -206,7 +230,11 @@ def test_native_streamlit_user_mapping_reaches_the_same_owner_gate(protected_app
     monkeypatch.setattr(st, "user", UserInfoProxy())
     app.run()
     assert not app.exception and app.dataframe
-    assert calls == ["build_production_coordinator", "render_dashboard"]
+    assert calls == [
+        "build_production_coordinator",
+        "build_production_fundamentals_loader",
+        "render_dashboard",
+    ]
 
 
 def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_app, monkeypatch):
@@ -224,7 +252,12 @@ def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_a
     app.run()
     app.run()
     assert not app.exception and app.dataframe
-    assert calls == ["build_production_coordinator", "render_dashboard", "render_dashboard"]
+    assert calls == [
+        "build_production_coordinator",
+        "build_production_fundamentals_loader",
+        "render_dashboard",
+        "render_dashboard",
+    ]
     assert seen == [({"type": "service_account", "synthetic": True}, [{"isin": "DE000SYN0001"}])]
 
 
@@ -346,3 +379,56 @@ def test_demo_does_not_read_auth_secrets_or_user(monkeypatch):
     monkeypatch.setattr(st, "user", Forbidden())
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception and app.dataframe
+
+
+def test_watchlist_loader_is_built_only_for_the_owner_and_only_when_opened(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    app = make_app(owner_claims()).run()
+    assert not app.exception
+    assert "build_production_watchlist_coordinator" not in calls  # Depot view only
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Watchlist").run()
+    app.run()
+    assert not app.exception and not app.error
+    # No PORTFOLIO_WATCHLIST_RANGE: a configuration notice, no credential access.
+    assert [info.value for info in app.info] == [ui.WATCHLIST_NOT_CONFIGURED_TEXT]
+    assert calls.count("build_production_watchlist_coordinator") == 1
+    calls.clear()
+    monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
+    app.run()
+    assert_closed(app, calls)  # revoked owner: no builder, no renderer, no Watchlist
+
+
+def test_production_watchlist_uses_the_service_account_secret_after_the_gate(protected_app, monkeypatch):
+    from datetime import UTC, datetime
+
+    from portfolio_dashboard.sheet_parser import NumberLocale
+    from portfolio_dashboard.watchlist_quotes import WatchlistBundle, sheet_entry
+    from portfolio_dashboard.watchlist_sheet import BASIC_HEADERS, parse_watchlist_rows
+
+    make_app, calls = protected_app
+    monkeypatch.setenv("PORTFOLIO_WATCHLIST_RANGE", "Synthetic!A1:J400")
+    now = datetime(2026, 10, 28, 9, 0, tzinfo=UTC)
+    snapshot = parse_watchlist_rows(
+        BASIC_HEADERS, [["Synthetik AG", "12,50", "1,5", "0,18"]],
+        imported_at=now, number_locale=NumberLocale.GERMAN,
+    ).snapshot
+    bundle = WatchlistBundle(True, snapshot, tuple(sheet_entry(i) for i in snapshot.items), now)
+    seen = []
+
+    class Loader:
+        def load(self, *, refresh=False):
+            return bundle
+
+    def build(config, service_account, session=None):
+        seen.append((config.source.watchlist_range, dict(service_account)))
+        return Loader()
+
+    monkeypatch.setattr(watchlist_refresh, "build_production_watchlist_coordinator", build)
+    app = make_app(owner_claims()).run()
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Watchlist").run()
+    assert not app.exception and not app.error
+    assert app.dataframe[0].value["Name"].tolist() == ["Synthetik AG"]
+    assert len(seen) == 1 and seen[0][1] == {"type": "service_account", "synthetic": True}
+    assert seen[0][0] is not None
+    app.run()
+    assert len(seen) == 1  # once per session

@@ -117,7 +117,9 @@ versioniertem JSON-Payload. Migration von Schema 1 prüft zunächst dessen genau
 Struktur, erhält die ungenutzte Altwatchlist-Tabelle samt Zeilen unverändert und legt die neue Tabelle atomar an.
 Fehlgeschlagene Migrationen rollen vollständig zurück. Unbekannte Fassungen und
 Schemaabweichungen werden abgelehnt. Eine ältere App mit Schema 1 kann einen
-Store mit Schema 2 nicht öffnen; kein automatischer Downgrade.
+Store mit Schema 2 nicht öffnen; kein automatischer Downgrade. Schema 3 (#74) ergänzt
+`fundamentals_cache` für rohe Providerabrufe ([FUNDAMENTALS_CACHE.md](FUNDAMENTALS_CACHE.md)),
+ohne diese Tabelle zu verändern.
 
 `scenario_codec.CODEC_VERSION = 1` kennzeichnet das Payloadformat. Endliche
 Decimal-Zahlen werden als Strings ohne Float-Umweg und Zeitpunkte mit Zeitzone

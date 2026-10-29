@@ -39,6 +39,8 @@ class CacheTTLs:
     quotes_seconds: int = 60
     holdings_seconds: int = 300
     history_seconds: int = 21_600
+    # Retrieval window of the fundamentals cache (M8-05); statements are annual.
+    fundamentals_seconds: int = 86_400
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +52,8 @@ class SourceConfig:
     listings_file: str | None = field(default=None, repr=False)
     # Optional separate Watchlist tab (ADR 0011); unset means no Sheet watchlist.
     watchlist_range: str | None = field(default=None, repr=False)
+    # Local mode only: private TOML file with the fundamentals identities (M8-05).
+    fundamentals_file: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +164,9 @@ def load_config(
         quotes_seconds=_positive_seconds(values, "PORTFOLIO_QUOTES_TTL_SECONDS", 60),
         holdings_seconds=_positive_seconds(values, "PORTFOLIO_HOLDINGS_TTL_SECONDS", 300),
         history_seconds=_positive_seconds(values, "PORTFOLIO_HISTORY_TTL_SECONDS", 21_600),
+        fundamentals_seconds=_positive_seconds(
+            values, "PORTFOLIO_FUNDAMENTALS_TTL_SECONDS", 86_400
+        ),
     )
     if mode is Mode.DEMO:
         return AppConfig(mode, SourceConfig(), Provider.SYNTHETIC, ttls, LoginConfig())
@@ -197,8 +204,18 @@ def load_config(
             listings_file.startswith("<") or listings_file == "CHANGE_ME"
         ):
             raise ConfigurationError("Lokale Konfiguration ungültig: PORTFOLIO_LISTINGS_FILE.")
+        fundamentals_file = _text(values, "PORTFOLIO_FUNDAMENTALS_FILE") or None
+        if fundamentals_file is not None and (
+            fundamentals_file.startswith("<") or fundamentals_file == "CHANGE_ME"
+        ):
+            raise ConfigurationError(
+                "Lokale Konfiguration ungültig: PORTFOLIO_FUNDAMENTALS_FILE."
+            )
         source = replace(
-            source, credentials_file=credentials_file, listings_file=listings_file
+            source,
+            credentials_file=credentials_file,
+            listings_file=listings_file,
+            fundamentals_file=fundamentals_file,
         )
         return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig(), private_data_dir)
 

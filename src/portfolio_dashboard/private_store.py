@@ -28,7 +28,7 @@ from portfolio_dashboard.config import (
 )
 
 APPLICATION_ID = 0x50574442
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # Retired by #95: the Sheet tab is the only watchlist. Nothing reads or writes this
 # table any more. It stays in the schema so existing databases keep validating and
 # no stored row is ever dropped automatically; new databases get it empty.
@@ -43,10 +43,24 @@ SCENARIO_SCHEMA = (
     "revision INTEGER NOT NULL CHECK (revision >= 1), payload TEXT NOT NULL, "
     "PRIMARY KEY (instrument_id, revision))"
 )
-MIGRATIONS = {1: (WATCHLIST_SCHEMA,), 2: (SCENARIO_SCHEMA,)}
+# M8-05: raw provider statements per verified security (JSON payload, one row).
+FUNDAMENTALS_CACHE_SCHEMA = (
+    "CREATE TABLE fundamentals_cache (fetch_key TEXT PRIMARY KEY NOT NULL, "
+    "payload TEXT NOT NULL)"
+)
+MIGRATIONS = {
+    1: (WATCHLIST_SCHEMA,),
+    2: (SCENARIO_SCHEMA,),
+    3: (FUNDAMENTALS_CACHE_SCHEMA,),
+}
 SCHEMAS = {
     1: [("table", "watchlist", WATCHLIST_SCHEMA)],
     2: [
+        ("table", "scenario_versions", SCENARIO_SCHEMA),
+        ("table", "watchlist", WATCHLIST_SCHEMA),
+    ],
+    3: [
+        ("table", "fundamentals_cache", FUNDAMENTALS_CACHE_SCHEMA),
         ("table", "scenario_versions", SCENARIO_SCHEMA),
         ("table", "watchlist", WATCHLIST_SCHEMA),
     ],
@@ -224,20 +238,33 @@ class PrivateDatabase:
         self._temporary: TemporaryDirectory | None = None
         self._closed = False
 
-    def _directory(self) -> str | Path:
-        config = self._config()
+    def _authorize(self, config: AppConfig) -> None:
         if config.mode is Mode.PRODUCTION:
             if not owner_is_authorized(self._user(), config.login):
                 raise PrivateStorageError("access")
         elif config.mode is Mode.LOCAL:
             if self._server_address() not in LOOPBACK_ADDRESSES:
                 raise PrivateStorageError("local")
-        elif config.mode is Mode.DEMO:
+        else:
+            raise PrivateStorageError("access")
+
+    def require_real_access(self) -> None:
+        """Raise unless the current run may touch real private data and providers.
+
+        Production needs the validated owner session, local the loopback address.
+        Demo and every other mode are refused: demo data stays synthetic and
+        offline. Nothing is cached; callers repeat the check before each use and
+        no filesystem access happens here.
+        """
+        self._authorize(self._config())
+
+    def _directory(self) -> str | Path:
+        config = self._config()
+        if config.mode is Mode.DEMO:
             if self._temporary is None:
                 self._temporary = TemporaryDirectory(prefix="portfolio-demo-")
             return Path(self._temporary.name).resolve()
-        else:
-            raise PrivateStorageError("access")
+        self._authorize(config)
         if not config.private_data_dir:
             raise PrivateStorageError("path")
         return config.private_data_dir
