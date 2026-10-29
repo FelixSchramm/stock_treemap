@@ -19,6 +19,7 @@ from portfolio_dashboard.ui import (
     FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
     HIDE_MISSING_COURSE_KEY,
+    PERIOD_RADIO_KEY,
     SORT_DIRECTION_ASC,
     SORT_FIELD_KEY,
     SORT_ORDER_KEY,
@@ -55,9 +56,9 @@ def offline_demo(monkeypatch):
 def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline_demo):
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception
-    assert app.radio[0].label == "Zeitraum"
-    assert app.radio[0].options == [*COURSE_PERIODS, "Seit Kauf"]
-    assert app.radio[0].value == "Heute"
+    assert app.radio(key=PERIOD_RADIO_KEY).label == "Zeitraum"
+    assert app.radio(key=PERIOD_RADIO_KEY).options == [*COURSE_PERIODS, "Seit Kauf"]
+    assert app.radio(key=PERIOD_RADIO_KEY).value == "Heute"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
     # The percentage is the value; the unique ticker sits below as a gray,
     # arrowless note, and the full name is the metric's help text.
@@ -77,13 +78,13 @@ def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline
 @pytest.mark.parametrize("period", COURSE_PERIODS)
 def test_since_purchase_period_switches_to_personal_view_and_back(offline_demo, period):
     app = AppTest.from_file(str(APP_PATH)).run()
-    app.radio[0].set_value(period).run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value(period).run()
     assert not app.exception
     assert app.session_state[COURSE_PERIOD_KEY] == period
     assert app.subheader[0].value == f"Kursentwicklung · {period}"
     course_rows = app.dataframe[0].value.copy()
 
-    app.radio[0].set_value("Seit Kauf").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
     # A second hidden rerun exercises Streamlit's widget-state cleanup.
     app.run()
     assert not app.exception
@@ -94,22 +95,22 @@ def test_since_purchase_period_switches_to_personal_view_and_back(offline_demo, 
     assert personal_df[invariant_cols].equals(course_rows[invariant_cols])
     assert personal_df["Entwicklung (%)"].tolist() == ["n. v.", "n. v."]
 
-    app.radio[0].set_value(period).run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value(period).run()
     assert not app.exception
-    assert app.radio[0].value == period
+    assert app.radio(key=PERIOD_RADIO_KEY).value == period
     assert app.subheader[0].value == f"Kursentwicklung · {period}"
     assert app.dataframe[0].value.equals(course_rows)
 
 
 def test_new_session_does_not_inherit_the_previous_view_or_period(offline_demo):
     previous = AppTest.from_file(str(APP_PATH)).run()
-    previous.radio[0].set_value("Jahr").run()
-    previous.radio[0].set_value("Seit Kauf").run()
+    previous.radio(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
+    previous.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
 
     fresh = AppTest.from_file(str(APP_PATH)).run()
     assert not fresh.exception
     assert fresh.subheader[0].value == "Kursentwicklung · Heute"
-    assert fresh.radio[0].value == "Heute"
+    assert fresh.radio(key=PERIOD_RADIO_KEY).value == "Heute"
 
 
 def test_demo_snapshot_cannot_claim_verified_cost_or_provider_quotes():
@@ -231,7 +232,7 @@ def test_course_toggle_hides_only_selected_period_tiles_and_keeps_complete_data(
     assert not any("ohne Kursentwicklung ausgeblendet" in c.value for c in app.caption)
 
     app.toggle[0].set_value(True).run()
-    app.radio[0].set_value("Woche").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Woche").run()
     assert not app.exception
     assert _chart_trace(app)["values"] == [800.0]
     assert "1 Positionen (1.200,00 EUR) ohne Kursentwicklung ausgeblendet" in [
@@ -241,7 +242,7 @@ def test_course_toggle_hides_only_selected_period_tiles_and_keeps_complete_data(
     assert app.dataframe[0].value[WEIGHT_COLUMN_LABEL].tolist() == [60.0, 40.0]
 
     # All course tiles can disappear without losing positions, KPIs or status.
-    app.radio[0].set_value("Monat").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Monat").run()
     assert not app.exception
     assert len(app.get("plotly_chart")) == 0
     assert "2 Positionen (2.000,00 EUR) ohne Kursentwicklung ausgeblendet" in [
@@ -252,7 +253,7 @@ def test_course_toggle_hides_only_selected_period_tiles_and_keeps_complete_data(
     assert any("Datenstatus & Hinweise (2)" == e.label for e in app.expander)
 
     # A measured zero return is available and must remain visible.
-    app.radio[0].set_value("Jahr").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
     assert not app.exception
     assert _chart_trace(app)["values"] == [1200.0]
 
@@ -260,20 +261,20 @@ def test_course_toggle_hides_only_selected_period_tiles_and_keeps_complete_data(
 def test_course_toggle_is_inactive_since_purchase_and_retains_its_session_preference():
     app = AppTest.from_function(_course_coverage_app).run()
     app.toggle[0].set_value(False).run()
-    app.radio[0].set_value("Seit Kauf").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
     app.run()  # Exercise widget cleanup while the course toggle is absent.
     assert not app.exception
     assert len(app.toggle) == 0
     assert _chart_trace(app)["values"] == [1200.0, 800.0]
     assert not any("ohne Kursentwicklung ausgeblendet" in c.value for c in app.caption)
-    app.radio[0].set_value("Heute").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Heute").run()
     assert not app.exception
     assert app.toggle[0].value is False
     assert app.session_state[HIDE_MISSING_COURSE_KEY] is False
     assert _chart_trace(app)["values"] == [1200.0, 800.0]
 
     app.toggle[0].set_value(True).run()
-    app.radio[0].set_value("Seit Kauf").run()
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
     assert _chart_trace(app)["values"] == [1200.0, 800.0]
     fresh = AppTest.from_function(_course_coverage_app).run()
     assert fresh.toggle[0].value is True

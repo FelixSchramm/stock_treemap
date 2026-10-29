@@ -3,8 +3,9 @@
 Umsetzung von Issue #84 (Epic #82) nach [ADR 0011](adr/0011-watchlist.md): Die
 Watchlist-Zeilen aus dem Sheet-Blatt ([Schema](DATA_SOURCE.md#watchlist-blatt),
 [Parser](SHEET_PARSER.md#watchlist-parser)) erhalten über yfinance die vier
-Kursperioden nach [ADR 0006](adr/0006-kursentwicklung.md). Die Ansicht folgt in #85,
-die Heatmap in #86; dieses Modul enthält keine UI.
+Kursperioden nach [ADR 0006](adr/0006-kursentwicklung.md). Die Ansicht ist in #85
+umgesetzt ([WATCHLIST_VIEW.md](WATCHLIST_VIEW.md)), die Heatmap folgt in #86; dieses Modul
+enthält keine UI.
 
 ## Bausteine
 
@@ -131,9 +132,10 @@ Parser-`warnings`.
   `PORTFOLIO_HISTORY_TTL_SECONDS`). Abschätzung: bei 0,3-1 s je Yahoo-Anfrage grob
   1,5-8 Minuten für 250 Zeilen mit laufender Sitzung (nicht gemessen); bei völligem
   Ausfall begrenzt der Backoff nach drei Fehlern die Dauer (ca. 30 s bei 10-s-Timeouts).
-  Hinweis für #85: `load()` blockiert und darf nicht ungeschützt im Renderpfad stehen
-  (Spinner bzw. Hintergrund-Vorwärmen, Statusmeldung, ggf. Zeitbudget je Durchgang);
-  parallele Sitzungen warten auf die Sperre.
+  `load()` blockiert und darf nicht ungeschützt im Renderpfad stehen; die Ansicht (#85)
+  ruft es nur hinter einem Spinner mit Statushinweis auf, einmal je Sitzung bzw. bei
+  `Aktualisieren` (ein Zeitbudget je Durchgang gibt es nicht). Parallele Sitzungen warten
+  auf die Sperre des jeweiligen Koordinators.
 - Ein Anbieter-Backoff (drei Fehler in Folge) pausiert weitere Abrufe providerweit. Auch
   vom Anbieter abgelehnte Symbole (z. B. Tippfehler, delistet) zählen als Fehler, und die
   Erholungsprobe nach dem Backoff nimmt den ersten fälligen Schlüssel. Damit abgelehnte
@@ -187,15 +189,20 @@ Parser-`warnings`.
     höher sind; die Historie ist davon nicht betroffen. Ebenso warten geheilte Zeilen mit
     einem echten, älteren Fehlerzähler hinter neu abgelehnten Symbolen, wenn ein
     Totalausfall ihren erneuten Abruf verhindert hat, bis eine Historien-TTL abläuft (in
-    der Zufallssimulation mit 3600-s-TTL einzelne Verläufe mit 3660-4980 s; endlich).
+    der Zufallssimulation mit 3600-s-TTL einzelne Verläufe mit 3660-4980 s; endlich). Mit
+    den Produktions-TTLs dauert das Muster am Folgetag („alle gültigen Zeilen mit
+    eingefrorenem Quotezähler, mindestens drei neu abgelehnte davor“) bis zu einer
+    Historien-TTL (Standard 6 h); die Zeilen zeigen währenddessen `SHEET_VALUE` mit
+    `stale_quote`. Eine Aktualitätsinformation je Schlüssel (Issue #111) würde das beheben.
   - Bei einem echten Totalausfall gilt der Backoff unverändert (gemessen: 30 Anbieter-
     aufrufe in zwei Stunden bei 60 Zeilen); nach dem Ende des Ausfalls sind alle Zeilen
     nach etwa vier Minuten wieder `LIVE`.
 - Der Kalender (`venue_calendars(date.today())`) entsteht einmal beim Bau des
   Koordinators. In einem langlebigen Prozess rückt das Fenster nicht nach: nach etwa
   35 Tagen liegt der Zieltag für `Jahr` vor dem ersten Kalendertag (`calendar_incomplete`),
-  nach gut einem Jahr endet der Kalender. Hinweis für #85: den Koordinator bei Tageswechsel
-  bzw. mit einer TTL neu bauen (der Cache geht dabei verloren).
+  nach gut einem Jahr endet der Kalender. Die Ansicht (#85) baut den Koordinator deshalb
+  bei Datumswechsel neu (`watchlist_session.session_loader`; der Cache geht dabei
+  verloren, der nächste Lauf lädt hinter dem Spinner neu).
 - Der Koordinator ist threadsicher serialisiert (`load` hält eine Sperre); der Cache lebt
   nur im Prozess.
 

@@ -173,3 +173,10 @@ def demo_watchlist_bundle() -> WatchlistBundle:
     return WatchlistBundle(
         True, demo_watchlist_snapshot(), demo_watchlist_entries(), DEMO_TIMESTAMP
     )
+
+
+class DemoWatchlist:
+    """Static loader with the demo bundle; same ``load`` interface as the coordinator."""
+
+    def load(self, *, refresh: bool = False) -> WatchlistBundle:
+        return demo_watchlist_bundle()
