@@ -24,6 +24,7 @@ from portfolio_dashboard.demo import (
     demo_valuation,
 )
 from portfolio_dashboard.fundamentals_config import FundamentalsConfigError
+from portfolio_dashboard.fundamentals_demo import demo_fundamentals_loader
 from portfolio_dashboard.fundamentals_loader import (
     LOADER_STATE_KEY as FUNDAMENTALS_LOADER_KEY,
 )
@@ -40,6 +41,8 @@ from portfolio_dashboard.models import PortfolioSnapshot, SnapshotStatus
 from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
 from portfolio_dashboard.ui import COURSE_VIEW, render_dashboard
+from portfolio_dashboard.valuation_demo import demo_valuation_source
+from portfolio_dashboard.valuation_view import private_source
 from portfolio_dashboard.valuations import value_portfolio
 from portfolio_dashboard.watchlist_refresh import (
     build_local_watchlist_coordinator,
@@ -103,6 +106,9 @@ def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals)
         coordinator=st.session_state[OWN_COORDINATOR_KEY],
         demo=False,
         watchlist=build_watchlist,
+        overview=private_source(
+            getattr(st.session_state[OWN_COORDINATOR_KEY], "listings", ())
+        ),
     )
     st.stop()
 
@@ -137,7 +143,10 @@ if config.mode is Mode.PRODUCTION:
         ),
     )
 
-# Only demo reaches this point: synthetic data without secrets or login.
+# Only demo reaches this point: synthetic data without secrets or login. The demo
+# fundamentals loader is the invented, in-memory one (no store, no provider).
+if FUNDAMENTALS_LOADER_KEY not in st.session_state:
+    st.session_state[FUNDAMENTALS_LOADER_KEY] = demo_fundamentals_loader()
 demo_data = demo_snapshot()
 demo_values = demo_valuation(demo_data)
 render_dashboard(
@@ -150,4 +159,5 @@ render_dashboard(
         else demo_personal_performances(demo_values)
     ),
     watchlist=DemoWatchlist,
+    overview=demo_valuation_source(),
 )
