@@ -1,7 +1,9 @@
 """Offline tests with entirely invented frames; no provider response is used."""
 
+import ast
 import importlib.util
 import json
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -82,7 +84,8 @@ def balance(**overrides) -> pd.DataFrame:
         "Current Assets": [500.0, 450.0, 400.0, 350.0],
         "Current Liabilities": [300.0, 280.0, 260.0, 240.0],
         "Cash Cash Equivalents And Short Term Investments": [150.0, 140.0, 130.0, 120.0],
-        "Current Debt": [20.0, 20.0, 20.0, 20.0],
+        "Current Debt And Capital Lease Obligation": [20.0, 20.0, 20.0, 20.0],
+        "Long Term Debt And Capital Lease Obligation": [180.0, 170.0, 160.0, 150.0],
         "Total Debt": [200.0, 190.0, 180.0, 170.0],
         "Capital Lease Obligations": [30.0, 30.0, 30.0, 30.0],
         "Minority Interest": [5.0, 5.0, 5.0, 5.0],
@@ -237,13 +240,62 @@ def test_tax_needs_expense_and_pretax_and_is_flagged_effective_only():
 
 def test_nwc_needs_all_four_components_on_four_dates():
     assert check(run(), "nwc").status is Status.OK
-    data = balance(**{"Current Debt": [20.0, 20.0, NAN, 20.0]})
+    data = balance(**{"Current Debt And Capital Lease Obligation": [20.0, 20.0, NAN, 20.0]})
     result = check(run(annual_balance=data), "nwc")
     assert result.status is Status.PARTIAL
     assert result.codes == ("component_missing",)
-    assert "Current Debt" in result.detail
+    assert "Current Debt And Capital Lease Obligation" in result.detail
     short = balance().iloc[:, :3]
     assert check(run(annual_balance=short), "nwc").status is Status.PARTIAL
+
+
+def test_fallback_and_mixed_rows_are_marked_not_plain_ok():
+    fallback = income().drop(["Operating Income"]).copy()
+    fallback.loc["Total Operating Income As Reported"] = [110.0, 100.0, 90.0, 80.0]
+    result = check(run(annual_income=fallback), "ebit")
+    assert result.status is Status.OK
+    assert result.codes == ("fallback_row_used",)
+    assert "Total Operating Income As Reported" in result.detail
+    mixed = income().copy()
+    mixed.loc["Total Operating Income As Reported"] = [110.0, 100.0, 90.0, 80.0]
+    mixed.loc["Operating Income", "2023-12-31"] = NAN
+    result = check(run(annual_income=mixed), "ebit")
+    assert result.status is Status.OK
+    assert result.codes == ("fallback_row_used", "mixed_row_labels")
+    clean = check(run(), "ebit")
+    assert clean.codes == ()
+    da = cashflow().rename(index={"Depreciation And Amortization": "Depreciation Amortization Depletion"})
+    assert check(run(annual_cashflow=da), "da").codes == ("fallback_row_used",)
+    capex = cashflow().rename(index={"Capital Expenditure": "Purchase Of PPE"})
+    assert check(run(annual_cashflow=capex), "capex").codes == ("fallback_row_used",)
+
+
+def test_fallback_rows_are_marked_for_balance_fields_and_counted_in_the_aggregate():
+    narrow = balance().rename(
+        index={"Cash Cash Equivalents And Short Term Investments": "Cash And Cash Equivalents"}
+    )
+    coverage = run(annual_balance=narrow)
+    assert check(coverage, "cash").codes == ("fallback_row_used",)
+    assert "fallback_row_used" in check(coverage, "nwc").codes
+    assert check(coverage, "nwc").status is Status.OK
+    other_preferred = balance().rename(index={"Preferred Stock Equity": "Preferred Stock"})
+    assert check(run(annual_balance=other_preferred), "preferred").codes == ("fallback_row_used",)
+    summary = aggregate([coverage, run()])
+    assert summary["codes"][("cash", "fallback_row_used")] == 1
+    assert summary["per_check"]["cash"] == {"ok": 2}
+
+
+def test_financial_debt_sum_identity_is_checked_or_reported_unchecked():
+    assert "debt_identity_holds" in check(run(), "financial_debt").codes
+    broken = balance(**{"Total Debt": [260.0, 190.0, 180.0, 170.0]})
+    result = check(run(annual_balance=broken), "financial_debt")
+    assert result.status is Status.PROBLEM
+    assert "debt_identity_failed" in result.codes
+    missing = balance().drop(["Long Term Debt And Capital Lease Obligation"])
+    result = check(run(annual_balance=missing), "financial_debt")
+    assert result.status is Status.OK
+    assert "debt_identity_not_checked" in result.codes
+    assert "debt_identity_holds" not in result.codes
 
 
 # --- units, signs, currencies and periods -----------------------------------
@@ -263,6 +315,29 @@ def test_capex_sign_conventions_and_identity():
     assert check(run(annual_cashflow=zero), "capex_sign").status is Status.PARTIAL
 
 
+def test_capex_sign_is_not_ok_without_a_passed_fcf_control():
+    result = check(run(), "capex_sign")
+    assert result.status is Status.OK
+    assert "3/3 years" in result.detail
+    no_fcf = cashflow().drop(["Free Cash Flow"])
+    unchecked = check(run(annual_cashflow=no_fcf), "capex_sign")
+    assert unchecked.status is Status.PARTIAL
+    assert unchecked.codes == ("capex_outflow_negative", "fcf_identity_not_checked")
+    other_label = cashflow().rename(index={"Capital Expenditure": "Purchase Of PPE"})
+    assert check(run(annual_cashflow=other_label), "capex_sign").status is Status.PARTIAL
+
+
+def test_fcf_identity_is_checked_in_every_year_not_only_the_first():
+    late_break = cashflow(**{"Free Cash Flow": [80.0, 72.0, 10.0, 56.0]})
+    result = check(run(annual_cashflow=late_break), "capex_sign")
+    assert result.status is Status.PROBLEM
+    assert "fcf_identity_failed" in result.codes
+    one_year = cashflow(**{"Free Cash Flow": [80.0, NAN, NAN, NAN]})
+    partly = check(run(annual_cashflow=one_year), "capex_sign")
+    assert partly.status is Status.OK
+    assert "1/3 years" in partly.detail
+
+
 def test_missing_capex_with_fcf_equal_to_operating_cash_flow_is_exposed():
     dropped = cashflow(**{"Capital Expenditure": [NAN] * 4, "Free Cash Flow": [120.0, 110.0, 100.0, 90.0]})
     coverage = run(annual_cashflow=dropped)
@@ -273,9 +348,9 @@ def test_missing_capex_with_fcf_equal_to_operating_cash_flow_is_exposed():
 
 
 def test_reporting_currency_checks():
-    other = {"quoteType": "EQUITY", "currency": "HKD", "financialCurrency": "CNY"}
-    hk = target(trading_currency="HKD", expected_reporting_currency="CNY")
-    result = check(run(hk, info=other), "reporting_currency")
+    other = {"quoteType": "EQUITY", "currency": "AAA", "financialCurrency": "BBB"}
+    cross = target(trading_currency="AAA", expected_reporting_currency="BBB")
+    result = check(run(cross, info=other), "reporting_currency")
     assert result.status is Status.OK
     assert result.codes == ("cross_currency",)
     wrong = check(run(target(), info={**other, "currency": "EUR"}), "reporting_currency")
@@ -355,6 +430,8 @@ def test_share_count_dating_conflict_and_fallbacks():
     assert check(undated, "shares").codes == ("shares_date_unknown",)
     stale = pd.Series([10.0], index=pd.to_datetime(["2026-01-01"]))
     assert check(run(shares_full=stale), "shares").codes == ("shares_date_stale",)
+    unsorted = pd.Series([10.0, 10.0], index=pd.to_datetime(["2026-10-01", "2026-08-01"]))
+    assert check(run(shares_full=unsorted), "shares").detail == "dated count, 28 days old"
     conflict = check(run(info={**snapshot().info, "sharesOutstanding": 12.0}), "shares")
     assert conflict.status is Status.PROBLEM
     assert conflict.codes == ("share_sources_conflict",)
@@ -425,11 +502,11 @@ def entry(**changes) -> dict:
 
 
 def test_load_universe_requires_approval_and_valid_entries():
-    approved = {"live_test_approved": True, "instruments": [entry(), entry(venue="HKEX", trading_currency="HKD", expected_reporting_currency="CNY")]}
+    approved = {"live_test_approved": True, "instruments": [entry(), entry(venue="XYZX", trading_currency="AAA", expected_reporting_currency="BBB")]}
     targets = load_universe(approved)
     assert [t.case_id for t in targets] == ["F-01", "F-02"]
     assert targets[0].market_class == "Xetra EUR"
-    assert targets[1].market_class == "Hongkong HKD (Berichtswährung CNY)"
+    assert targets[1].market_class == "sonstige Börse AAA (Berichtswährung BBB)"
     assert "SYN1.XX" not in repr(targets)
     with pytest.raises(ValueError, match="not approved"):
         load_universe({**approved, "live_test_approved": False})
@@ -546,3 +623,65 @@ def test_runner_refetches_only_a_stubbed_info_and_keeps_statements(tmp_path, mon
     repaired = module.load_or_fetch(target(), directory, 0)
     assert repaired.info["quoteType"] == "EQUITY"
     assert repaired.annual_income is stubbed.annual_income or repaired.annual_income.equals(stubbed.annual_income)
+
+
+def test_private_location_must_be_a_directory_named_private(tmp_path):
+    module = load_runner()
+    assert module.inside_private_dir(tmp_path / "private" / "r.md")
+    assert module.inside_private_dir(tmp_path / "docs" / "private" / "snapshots")
+    assert module.inside_private_dir(tmp_path / "private")
+    assert not module.inside_private_dir(tmp_path / "public" / "r.md")
+    (tmp_path / "private").write_text("a file, not a directory")
+    assert not module.inside_private_dir(tmp_path / "private")
+    assert not module.inside_private_dir(tmp_path / "private" / "r.md")
+
+
+def test_runner_refuses_output_named_private_when_it_is_a_file(tmp_path, monkeypatch):
+    module = load_runner()
+    universe = tmp_path / "universe.json"
+    universe.write_text(json.dumps({"live_test_approved": True, "instruments": [entry()]}))
+    (tmp_path / "private").write_text("a file, not a directory")
+    monkeypatch.setattr(
+        sys, "argv", ["probe", str(universe), "--confirm-live", "--output", str(tmp_path / "private")]
+    )
+    with pytest.raises(SystemExit) as refused:
+        module.main()
+    assert refused.value.code == 2
+
+
+def test_importing_coverage_module_and_runner_does_not_import_yfinance_or_network():
+    probe = str(ROOT / "scripts" / "fundamentals_coverage_probe.py")
+    code = f"""
+import importlib.abc
+import importlib.util
+import socket
+import sys
+class Boundary(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname.split('.')[0] in {{'streamlit', 'yfinance', 'requests', 'gspread'}}:
+            raise AssertionError(f'Unexpected dependency: {{fullname}}')
+sys.meta_path.insert(0, Boundary())
+def no_network(*args, **kwargs):
+    raise AssertionError('Import attempted a network connection')
+socket.socket = no_network
+socket.create_connection = no_network
+import portfolio_dashboard.fundamentals_coverage
+spec = importlib.util.spec_from_file_location('probe', {probe!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert 'yfinance' not in sys.modules
+"""
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_no_app_or_package_module_imports_the_probe_script():
+    sources = [ROOT / "app.py", *(ROOT / "src" / "portfolio_dashboard").glob("*.py")]
+    imported: set[str] = set()
+    for path in sources:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+                imported.update(f"{node.module}.{alias.name}" for alias in node.names)
+    assert not [name for name in imported if "fundamentals_coverage_probe" in name]

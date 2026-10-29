@@ -46,6 +46,8 @@ CASH_ROWS = (
 )
 CURRENT_DEBT_ROWS = ("Current Debt And Capital Lease Obligation", "Current Debt")
 DEBT_ROWS = ("Total Debt",)
+LONG_DEBT_ROWS = ("Long Term Debt And Capital Lease Obligation",)
+DEBT_IDENTITY_TOLERANCE = 0.005
 LEASE_ROWS = ("Capital Lease Obligations",)
 MINORITY_ROWS = ("Minority Interest",)
 PREFERRED_ROWS = (
@@ -190,11 +192,26 @@ def cell(frame: pd.DataFrame | None, rows: Sequence[str], end: date) -> float | 
     return None
 
 
-def _row_used(frame: pd.DataFrame | None, rows: Sequence[str], ends: Sequence[date]):
-    for row in rows:
-        if any(cell(frame, (row,), end) is not None for end in ends):
-            return row
-    return None
+def row_labels_used(
+    frame: pd.DataFrame | None, rows: Sequence[str], ends: Sequence[date]
+) -> list[str | None]:
+    """Row label that supplied the value at each period end (None where none did)."""
+    return [next((r for r in rows if cell(frame, (r,), end) is not None), None) for end in ends]
+
+
+def row_codes(labels: Sequence[str | None], rows: Sequence[str]) -> tuple[str, ...]:
+    """Mark values taken from a fallback row or from different rows in different years.
+
+    A fallback label can use another definition, and mixing labels across years
+    mixes definitions inside one series; neither may count as a plain OK.
+    """
+    used = [label for label in labels if label is not None]
+    codes = []
+    if any(label != rows[0] for label in used):
+        codes.append("fallback_row_used")
+    if len(set(used)) > 1:
+        codes.append("mixed_row_labels")
+    return tuple(codes)
 
 
 def consecutive_chain(ends: Sequence[date], low: int, high: int) -> int:
@@ -247,15 +264,21 @@ def _result_for_ends(
         return CheckResult(check, Status.MISSING, f"{dataset} unavailable", ("fetch_failed",))
     present = _coverage(frame, rows, ends)
     status = _grade(present, len(ends))
-    label = _row_used(frame, rows, ends)
+    labels = row_labels_used(frame, rows, ends)
+    via = ", ".join(f"'{r}'" for r in rows if r in labels)
     if status is Status.OK:
-        return CheckResult(check, status, f"{present}/{len(ends)} years via '{label}'", codes)
-    if label is None:
+        return CheckResult(
+            check, status, f"{present}/{len(ends)} years via {via}", (*codes, *row_codes(labels, rows))
+        )
+    if not via:
         absent = [r for r in rows if frame is None or r not in frame.index]
         reason = "row_absent" if len(absent) == len(rows) else "nan_values"
         return CheckResult(check, status, f"0/{len(ends)} years; {reason}", (reason,))
     return CheckResult(
-        check, status, f"{present}/{len(ends)} years via '{label}'", ("gaps_in_years",)
+        check,
+        status,
+        f"{present}/{len(ends)} years via {via}",
+        ("gaps_in_years", *row_codes(labels, rows)),
     )
 
 
@@ -319,6 +342,8 @@ def _nwc(snapshot: ProviderSnapshot, balance_ends: list[date]) -> CheckResult:
     ]
     if missing_parts:
         codes.append("component_missing")
+    for rows in parts:
+        codes.extend(c for c in row_codes(row_labels_used(frame, rows, wanted), rows) if c not in codes)
     return CheckResult(
         "nwc",
         status,
@@ -342,11 +367,29 @@ def _bridge(
     latest = balance_ends[0]
     value = cell(snapshot.annual_balance, rows, latest)
     if value is not None:
-        return CheckResult(check, Status.OK, "present at latest annual balance date", extra_codes)
+        labels = row_labels_used(snapshot.annual_balance, rows, [latest])
+        return CheckResult(
+            check,
+            Status.OK,
+            "present at latest annual balance date",
+            (*extra_codes, *row_codes(labels, rows)),
+        )
     frame = snapshot.annual_balance
     row_known = frame is not None and any(r in frame.index for r in rows)
     code = "nan_at_latest" if row_known else "row_absent_not_zero"
     return CheckResult(check, Status.MISSING, f"not reported by provider ({code})", (code,))
+
+
+def _financial_debt(snapshot: ProviderSnapshot, balance_ends: list[date]) -> CheckResult:
+    latest = balance_ends[0] if balance_ends else None
+    lease = cell(snapshot.annual_balance, LEASE_ROWS, latest) if latest else None
+    codes = ("lease_row_visible",) if lease is not None else ("lease_split_not_visible",)
+    result = _bridge("financial_debt", snapshot, DEBT_ROWS, balance_ends, codes)
+    if result.status is not Status.OK:
+        return result
+    identity = _debt_identity_codes(snapshot, balance_ends)
+    status = Status.PROBLEM if identity == ("debt_identity_failed",) else result.status
+    return CheckResult("financial_debt", status, result.detail, (*result.codes, *identity))
 
 
 def _shares(snapshot: ProviderSnapshot, balance_ends: list[date], as_of: date):
@@ -362,8 +405,9 @@ def _shares(snapshot: ProviderSnapshot, balance_ends: list[date], as_of: date):
         clean = series.dropna()
         clean = clean[clean > 0]
         if len(clean):
-            sources["shares_full"] = float(clean.iloc[-1])
-            last = _as_date(clean.index[-1])
+            newest = clean.index.max()  # Independent of the provider's sort order.
+            sources["shares_full"] = float(clean[clean.index == newest].iloc[-1])
+            last = _as_date(newest)
             dated_age = (as_of - last).days if last else None
     if balance_ends:
         value = cell(snapshot.annual_balance, BALANCE_SHARE_ROWS, balance_ends[0])
@@ -552,8 +596,8 @@ def _capex_sign(snapshot: ProviderSnapshot, ends: list[date]) -> CheckResult:
         sign_code = "capex_outflow_positive"
     else:
         return CheckResult("capex_sign", Status.PROBLEM, "mixed signs across years", ("capex_sign_mixed",))
-    # Control: FCF should equal operating cash flow plus (negative) capex.
-    codes = [sign_code]
+    # Control: FCF should equal operating cash flow plus (negative) capex, every year.
+    checked = 0
     for end in ends:
         capex = cell(snapshot.annual_cashflow, CAPEX_ROWS[:1], end)
         operating = cell(snapshot.annual_cashflow, OPERATING_CASH_ROWS, end)
@@ -567,9 +611,36 @@ def _capex_sign(snapshot: ProviderSnapshot, ends: list[date]) -> CheckResult:
                 "provider FCF does not equal operating cash flow plus capex",
                 (sign_code, "fcf_identity_failed"),
             )
-        codes.append("fcf_identity_holds")
-        break
-    return CheckResult("capex_sign", Status.OK, "single sign convention across years", tuple(codes))
+        checked += 1
+    if not checked:
+        return CheckResult(
+            "capex_sign",
+            Status.PARTIAL,
+            "single sign convention, but FCF identity could not be checked",
+            (sign_code, "fcf_identity_not_checked"),
+        )
+    return CheckResult(
+        "capex_sign",
+        Status.OK,
+        f"single sign convention; FCF identity holds in {checked}/{len(ends)} years",
+        (sign_code, "fcf_identity_holds"),
+    )
+
+
+def _debt_identity_codes(snapshot: ProviderSnapshot, balance_ends: list[date]) -> tuple[str, ...]:
+    """Total debt = current + long-term debt incl. leases, on every balance date."""
+    frame = snapshot.annual_balance
+    checked = 0
+    for end in balance_ends[:BALANCE_DATES]:
+        total = cell(frame, DEBT_ROWS, end)
+        current = cell(frame, CURRENT_DEBT_ROWS[:1], end)
+        long_term = cell(frame, LONG_DEBT_ROWS, end)
+        if None in (total, current, long_term):
+            continue
+        if abs(total - current - long_term) > DEBT_IDENTITY_TOLERANCE * abs(total):
+            return ("debt_identity_failed",)
+        checked += 1
+    return ("debt_identity_holds",) if checked else ("debt_identity_not_checked",)
 
 
 def _scale_consistency(snapshot: ProviderSnapshot, ends: list[date]) -> CheckResult:
@@ -632,16 +703,7 @@ def evaluate_instrument(
         ),
         _nwc(snapshot, balance_ends),
         _bridge("cash", snapshot, CASH_ROWS, balance_ends),
-        _bridge(
-            "financial_debt",
-            snapshot,
-            DEBT_ROWS,
-            balance_ends,
-            ("lease_row_visible",)
-            if cell(snapshot.annual_balance, LEASE_ROWS, balance_ends[0] if balance_ends else as_of)
-            is not None
-            else ("lease_split_not_visible",),
-        ),
+        _financial_debt(snapshot, balance_ends),
         _bridge("minority", snapshot, MINORITY_ROWS, balance_ends),
         _bridge("preferred", snapshot, PREFERRED_ROWS, balance_ends),
         _shares(snapshot, balance_ends, as_of),
