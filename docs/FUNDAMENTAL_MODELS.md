@@ -111,3 +111,5 @@ Prüfung ausschließlich mit erfundenen Daten:
 
 Die tatsächliche Abdeckung dieser Felder durch yfinance ist getrennt in
 [FUNDAMENTALS_COVERAGE.md](FUNDAMENTALS_COVERAGE.md) (M8-02, #71) dokumentiert.
+Abruf und Normalisierung dieser Felder aus yfinance beschreibt
+[FUNDAMENTALS_PROVIDER.md](FUNDAMENTALS_PROVIDER.md) (M8-04, #73).
