@@ -294,6 +294,9 @@ def test_identity_flags_non_equity_currency_and_unit_tokens():
         "sub_unit_quote_token",
     }
     assert check(run(info=None), "identity").status is Status.MISSING
+    stub = check(run(info={"trailingPegRatio": None}), "identity")
+    assert stub.status is Status.MISSING
+    assert stub.codes == ("info_stub",)
 
 
 def test_scale_consistency_catches_share_scale_errors():
@@ -523,3 +526,23 @@ def test_runner_refuses_public_snapshot_directory(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as refused:
         module.main()
     assert refused.value.code == 2
+
+
+def test_runner_refetches_only_a_stubbed_info_and_keeps_statements(tmp_path, monkeypatch):
+    module = load_runner()
+    directory = tmp_path / "private" / "snapshots"
+    stubbed = snapshot(info={"trailingPegRatio": None})
+    directory.mkdir(parents=True)
+    with (directory / "F-01.pickle").open("wb") as handle:
+        module.pickle.dump(stubbed, handle)
+
+    class FakeTicker:
+        info = {"quoteType": "EQUITY", "currency": "EUR"}
+
+    import types
+
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Ticker=lambda symbol: FakeTicker()))
+    monkeypatch.setattr(module, "fetch_snapshot", lambda *a: pytest.fail("statements refetched"))
+    repaired = module.load_or_fetch(target(), directory, 0)
+    assert repaired.info["quoteType"] == "EQUITY"
+    assert repaired.annual_income is stubbed.annual_income or repaired.annual_income.equals(stubbed.annual_income)

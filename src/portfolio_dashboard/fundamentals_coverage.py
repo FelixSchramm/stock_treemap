@@ -410,6 +410,11 @@ def _identity(target: CoverageTarget, snapshot: ProviderSnapshot) -> CheckResult
     info = snapshot.info
     if not info:
         return CheckResult("identity", Status.MISSING, "no metadata", ("no_metadata",))
+    if not info.get("quoteType") and not info.get("currency"):
+        # Throttled quote summaries can return a stub; that is absence, not a mismatch.
+        return CheckResult(
+            "identity", Status.MISSING, "metadata stub without type and currency", ("info_stub",)
+        )
     codes: list[str] = []
     if info.get("quoteType") != "EQUITY":
         codes.append("quote_type_not_equity")

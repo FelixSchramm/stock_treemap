@@ -20,6 +20,7 @@ import logging
 import pickle
 import time
 import warnings
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from importlib import metadata
 from pathlib import Path
@@ -52,6 +53,25 @@ ATTRIBUTES = {
 }
 
 
+def info_usable(info) -> bool:
+    """A throttled quote summary can silently come back as a one-key stub."""
+    return bool(info) and bool(info.get("quoteType")) and bool(info.get("currency"))
+
+
+def fetch_info(ticker, pause: float, failed: list[str], attempts: int = 3):
+    info = None
+    for attempt in range(attempts):
+        try:
+            info = dict(ticker.info)
+        except Exception as error:
+            info = None
+            failed.append(f"info:{type(error).__name__}")
+        if info_usable(info):
+            return info
+        time.sleep(pause * 4 * (attempt + 1))
+    return info
+
+
 def fetch_snapshot(symbol: str, pause: float) -> ProviderSnapshot:
     """One read per dataset; failures are recorded by exception class name only."""
     import yfinance
@@ -66,12 +86,7 @@ def fetch_snapshot(symbol: str, pause: float) -> ProviderSnapshot:
             frames[name] = None
             failed.append(f"{name}:{type(error).__name__}")
         time.sleep(pause)
-    try:
-        info = dict(ticker.info)
-    except Exception as error:
-        info = None
-        failed.append(f"info:{type(error).__name__}")
-    time.sleep(pause)
+    info = fetch_info(ticker, pause, failed)
     try:
         shares = ticker.get_shares_full()
     except Exception as error:
@@ -104,7 +119,18 @@ def load_or_fetch(target, directory: Path | None, pause: float) -> ProviderSnaps
     path = None if directory is None else directory / f"{target.case_id}.pickle"
     if path is not None and path.exists():
         with path.open("rb") as handle:
-            return pickle.load(handle)  # Own file in an ignored private directory.
+            cached = pickle.load(handle)  # Own file in an ignored private directory.
+        if info_usable(cached.info):
+            return cached
+        # Only the stubbed metadata is read again; statements are reused.
+        import yfinance
+
+        failed: list[str] = []
+        info = fetch_info(yfinance.Ticker(target.symbol), pause, failed)
+        snapshot = replace(cached, info=info)
+        with path.open("wb") as handle:
+            pickle.dump(snapshot, handle)
+        return snapshot
     snapshot = fetch_snapshot(target.symbol, pause)
     if path is not None:
         directory.mkdir(parents=True, exist_ok=True)
