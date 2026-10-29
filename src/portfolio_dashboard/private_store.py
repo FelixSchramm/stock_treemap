@@ -29,6 +29,9 @@ from portfolio_dashboard.config import (
 
 APPLICATION_ID = 0x50574442
 SCHEMA_VERSION = 2
+# Retired by #95: the Sheet tab is the only watchlist. Nothing reads or writes this
+# table any more. It stays in the schema so existing databases keep validating and
+# no stored row is ever dropped automatically; new databases get it empty.
 WATCHLIST_SCHEMA = (
     "CREATE TABLE watchlist (entry_id TEXT PRIMARY KEY NOT NULL, "
     "payload TEXT NOT NULL, instrument_id TEXT UNIQUE, "

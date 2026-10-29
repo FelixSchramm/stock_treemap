@@ -123,4 +123,6 @@ Handelsplätze: [DATA_SOURCE.md](DATA_SOURCE.md#watchlist-blatt).
 - Warncodes der Zuordnung: `incomplete_mapping`, `invalid_yahoo_symbol`, `unknown_exchange`, `invalid_currency`, `symbol_exchange_conflict`, `currency_exchange_conflict`, `duplicate_yahoo_symbol`, `unsupported_derivative`, `invalid_instrument_type`, `invalid_text`; Zahlen: `invalid_price`, `invalid_change`, `invalid_net_change`; Schema: `missing_column`, `duplicate_column`; Zeile: `invalid_name`.
 - Leere Zeilen stehen in `excluded_rows`. Das Bereichsformat prüft `config.parse_watchlist_range` (`WatchlistRange` mit `first_row`, `last_row`, `column_count`); ein Abruf des Blatts ist nicht Teil dieses Moduls.
 
+Zuordnung zu Portfolio und Bewertungsschlüssel (#95): [PRIVATE_WATCHLIST.md](PRIVATE_WATCHLIST.md).
+
 Prüfung: `uv run --locked pytest tests/test_watchlist_sheet.py` (synthetisch, auch 280 Zeilen).

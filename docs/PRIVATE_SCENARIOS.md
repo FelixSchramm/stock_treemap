@@ -8,8 +8,8 @@ in Tests; neue Datensätze enthalten keine vorgegebenen Finanzannahmen.
 
 ## Ein gemeinsamer Stand pro geprüfter Aktie
 
-`ScenarioRepository(PrivateDatabase())` verwendet für jede Operation denselben
-[privaten Transaktions- und Zugriffspfad](PRIVATE_WATCHLIST.md) wie die Watchlist.
+`ScenarioRepository(PrivateDatabase())` verwendet für jede Operation den
+[privaten Transaktions- und Zugriffspfad](PRIVATE_WATCHLIST.md) der SQLite-Ablage.
 `get(identity, revision=None)` verlangt eine `VerifiedFundamentalIdentity` und
 liefert den aktuellen `ScenarioDocument` oder `None`. Mit einer positiven
 `revision` lässt sich ein früherer unveränderter Stand laden. Alternative
@@ -114,7 +114,7 @@ FCFF-/Terminalgleichungen, Reinvestition und Rechenergebnisse prüft erst #77.
 
 Schema 2 ergänzt `scenario_versions` mit Instrument-ID, Revision und
 versioniertem JSON-Payload. Migration von Schema 1 prüft zunächst dessen genaue
-Struktur, erhält sämtliche Watchlist-Daten und legt die neue Tabelle atomar an.
+Struktur, erhält die ungenutzte Altwatchlist-Tabelle samt Zeilen unverändert und legt die neue Tabelle atomar an.
 Fehlgeschlagene Migrationen rollen vollständig zurück. Unbekannte Fassungen und
 Schemaabweichungen werden abgelehnt. Eine ältere App mit Schema 1 kann einen
 Store mit Schema 2 nicht öffnen; kein automatischer Downgrade.

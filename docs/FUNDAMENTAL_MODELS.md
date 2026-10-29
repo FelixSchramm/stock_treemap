@@ -26,7 +26,8 @@ bleibt die vorhandene Marktpreisbeobachtung.
   geprüften Listings exakt derselben Aktie. Andere Instrument-IDs, Klassen,
   ADRs und ungeprüfte Listings übernehmen diesen Satz nicht. Widersprüchliche
   Zuordnungen und mehrere ausgewählte Versionen derselben Aktie werden abgelehnt.
-  Portfolio und spätere Watchlist können diesen Lookup gleichermaßen verwenden;
+  Portfolio und Sheet-Watchlist verwenden diesen Lookup gleichermaßen
+  ([PRIVATE_WATCHLIST.md](PRIVATE_WATCHLIST.md));
   weder Registry noch Berichtssatz enthalten Bestandsmenge oder Einstand.
 
 ## Beobachtungen, Perioden und Änderungen

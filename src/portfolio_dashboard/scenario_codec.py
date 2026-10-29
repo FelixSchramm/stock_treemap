@@ -32,6 +32,7 @@ from portfolio_dashboard.fundamentals import (
     VerifiedFundamentalIdentity,
     WeightedSharesPeriod,
 )
+from portfolio_dashboard.instruments import EquityForm, VerifiedListing
 from portfolio_dashboard.intrinsic_models import (
     ForecastYear,
     InputReference,
@@ -39,7 +40,13 @@ from portfolio_dashboard.intrinsic_models import (
     ScenarioAssumptions,
     TerminalPlan,
 )
-from portfolio_dashboard.models import ValueStatus
+from portfolio_dashboard.models import (
+    Instrument,
+    InstrumentType,
+    ProviderMapping,
+    QuoteUnit,
+    ValueStatus,
+)
 from portfolio_dashboard.private_store import PrivateStorageError
 from portfolio_dashboard.scenarios import (
     ManualPriority,
@@ -48,7 +55,6 @@ from portfolio_dashboard.scenarios import (
     SavedScenario,
     ScenarioDocument,
 )
-from portfolio_dashboard.watchlist import _listing_data, _listing_from_data
 
 CODEC_VERSION = 1
 
@@ -82,6 +88,76 @@ def _object(value, keys):
     if type(value) is not dict or set(value) != set(keys.split()):
         raise ValueError("invalid stored structure")
     return value
+
+
+def _listing_data(listing):
+    """Stored shape of a verified listing; unchanged since the first codec version."""
+    if listing is None:
+        return None
+    instrument = listing.instrument
+    unit, mapping = instrument.quote_unit, instrument.provider_mapping
+    return {
+        "instrument": {
+            "instrument_type": instrument.instrument_type.value,
+            "instrument_id": instrument.instrument_id,
+            "display_ticker": instrument.display_ticker,
+            "source_symbol": instrument.source_symbol,
+            "trading_venue": instrument.trading_venue,
+            "source_isin": instrument.source_isin,
+            "source_venue": instrument.source_venue,
+            "quote_unit": None
+            if unit is None
+            else {
+                "currency": unit.currency,
+                "scale_to_currency": None
+                if unit.scale_to_currency is None
+                else str(unit.scale_to_currency),
+            },
+            "provider_mapping": None
+            if mapping is None
+            else {"provider": mapping.provider, "symbol": mapping.symbol},
+        },
+        "equity_form": None
+        if listing.equity_form is None
+        else listing.equity_form.value,
+        "isin": listing.isin,
+        "wkn": listing.wkn,
+        "share_class": listing.share_class,
+        "product_id": listing.product_id,
+    }
+
+
+def _listing_from_data(value):
+    if value is None:
+        return None
+    listing = _object(value, "instrument equity_form isin wkn share_class product_id")
+    instrument = _object(
+        listing["instrument"],
+        "instrument_type instrument_id display_ticker source_symbol trading_venue "
+        "source_isin source_venue quote_unit provider_mapping",
+    ).copy()
+    unit = instrument["quote_unit"]
+    if unit is not None:
+        unit = _object(unit, "currency scale_to_currency")
+        scale = unit["scale_to_currency"]
+        if scale is not None and not isinstance(scale, str):
+            raise ValueError("invalid stored scale")
+        instrument["quote_unit"] = QuoteUnit(
+            unit["currency"], None if scale is None else Decimal(scale)
+        )
+    mapping = instrument["provider_mapping"]
+    if mapping is not None:
+        instrument["provider_mapping"] = ProviderMapping(
+            **_object(mapping, "provider symbol")
+        )
+    instrument["instrument_type"] = InstrumentType(instrument["instrument_type"])
+    return VerifiedListing(
+        instrument=Instrument(**instrument),
+        equity_form=None
+        if listing["equity_form"] is None
+        else EquityForm(listing["equity_form"]),
+        **{key: listing[key] for key in ("isin", "wkn", "share_class", "product_id")},
+    )
 
 
 def _array(value, decode):
