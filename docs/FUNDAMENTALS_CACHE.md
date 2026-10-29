@@ -80,7 +80,9 @@ Berichtssatzes (`<report_set_id>/c<Anzahl>f<Flags>`), nicht der Abruf.
 validierte Besitzersitzung (`owner_is_authorized`, inkl. Ablauf), lokal die
 Loopback-Adresse; **Demo und jeder andere Modus werden abgelehnt**. Danach liest
 jeder Cache-Zugriff die Konfiguration und Sitzung erneut (je Transaktion), und vor
-**jedem** Providerabruf wird die Prüfung wiederholt. Es wird nichts zwischengespeichert.
+**jedem** Providerabruf wird die Prüfung wiederholt, und zwar nach der Pause
+unmittelbar vor dem Abruf: endet die Sitzung während der Pause, wird die nächste
+Aktie nicht mehr abgerufen. Es wird nichts zwischengespeichert.
 Fehlt `PORTFOLIO_PRIVATE_DATA_DIR`, schlägt bereits das Lesen des Caches fehl
 (`PrivateStorageError("path")`): ohne geschützte Ablage gibt es keinen Abruf, weil sich
 das Ergebnis nicht sichern ließe. Anonyme, fremde oder abgelaufene Sitzungen lesen
@@ -115,7 +117,11 @@ initial 86 400 s = 24 h):
 - **Keine Wiederholung bei `access_restricted`:** der Fehler öffnet eine längere
   Sperre für die Aktie **und** stoppt alle weiteren Abrufe im Prozess
   (`provider_backoff`). Es gibt keinen Wiederholungsversuch im selben Lauf und keinen
-  Ausweichanbieter; ein Abruf umgeht keine providerseitige Grenze.
+  Ausweichanbieter; ein Abruf umgeht keine providerseitige Grenze. Die Sperre über
+  alle Aktien gilt **je Prozess** (sie liegt im `FetchGate`, nicht in der Ablage).
+  Nach einem Neustart greift nur der gespeicherte Backoff der betroffenen Aktie;
+  andere Aktien können dann einmal abgerufen werden, bis ein erneuter
+  `access_restricted` die Sperre im neuen Prozess wieder setzt.
 - **Beschränkte Wiederholung:** zwischen zwei Versuchen liegt mindestens der Backoff;
   Zähler und Zeitpunkt liegen in der Ablage und überstehen einen Neustart.
 - Eine geänderte Paketversion (`yfinance`) macht den gespeicherten Abruf fällig

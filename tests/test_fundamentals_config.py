@@ -212,6 +212,17 @@ def test_file_loading_reports_no_path_or_content(tmp_path):
         assert "secret" not in str(error.value)
 
 
+def test_file_that_is_not_utf8_gives_only_the_safe_message(tmp_path):
+    binary = tmp_path / "secret-binary-name.toml"
+    binary.write_bytes(b'[[fundamental]]\nsecret = "\xff\xfe\x80"\n')
+    with pytest.raises(FundamentalsConfigError) as error:
+        load_fundamental_subjects(str(binary))
+    assert str(error.value) == (
+        "Fundamentaldaten-Zuordnungsdatei fehlt oder ist ungültig."
+    )
+    assert error.value.__cause__ is None and error.value.__suppress_context__
+
+
 def test_ttl_and_file_settings_in_the_runtime_configuration():
     assert load_config({}).ttls.fundamentals_seconds == 86_400
     values = {"PORTFOLIO_FUNDAMENTALS_TTL_SECONDS": "3600"}
