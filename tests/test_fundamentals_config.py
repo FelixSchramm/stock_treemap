@@ -62,7 +62,10 @@ def test_a_complete_entry_becomes_a_verified_subject():
     assert subject.identity.source.entity_id == "SYN.A"
     assert subject.identity.issuer_kind is IssuerKind.NONFINANCIAL
     assert subject.expectation.reporting_currency == "EUR"
-    assert (subject.expectation.fiscal_year_end_month, subject.expectation.fiscal_year_end_day) == (12, 31)
+    assert (
+        subject.expectation.fiscal_year_end_month,
+        subject.expectation.fiscal_year_end_day,
+    ) == (12, 31)
     assert subject.confirmations == OwnerConfirmations()  # Unconfirmed by default.
     assert subject.class_count == 1
     assert subject.capital_structure(MOMENT.date()).issues == ()
@@ -86,7 +89,13 @@ def test_datetimes_may_be_iso_strings_and_confirmations_are_explicit():
 
 def test_unknown_class_count_stays_unknown_and_blocks():
     subject = parse_fundamental_subjects(
-        [entry(ordinary_share_classes=None, class_count_evidence=None, class_count_verified_at=None)]
+        [
+            entry(
+                ordinary_share_classes=None,
+                class_count_evidence=None,
+                class_count_verified_at=None,
+            )
+        ]
     ).resolve(instrument())
     assert subject.class_count is None
     assert [i.code for i in subject.capital_structure(MOMENT.date()).issues] == [
@@ -106,11 +115,22 @@ def test_listings_of_one_security_must_agree_in_owner_inputs():
     second = entry(venue="SYN2", symbol="SYN.A2", source_symbol="SYN.A")
     first = entry(source_symbol="SYN.A")
     subjects = parse_fundamental_subjects([first, second])
-    one, two = subjects.resolve(instrument()), subjects.resolve(instrument(venue="SYN2"))
+    one, two = (
+        subjects.resolve(instrument()),
+        subjects.resolve(instrument(venue="SYN2")),
+    )
     assert one.fetch_key == two.fetch_key  # One retrieval for both listings.
     with pytest.raises(FundamentalsConfigError, match="widersprechen"):
         parse_fundamental_subjects(
-            [first, entry(venue="SYN2", symbol="SYN.A2", source_symbol="SYN.A", reporting_currency="USD")]
+            [
+                first,
+                entry(
+                    venue="SYN2",
+                    symbol="SYN.A2",
+                    source_symbol="SYN.A",
+                    reporting_currency="USD",
+                ),
+            ]
         )
 
 
@@ -150,8 +170,14 @@ def test_incomplete_or_doubtful_entries_raise_without_echoing_values(bad):
 def test_conflicting_or_duplicate_entries_are_rejected():
     for entries in (
         [entry(), entry()],  # Same listing twice.
-        [entry(), entry(isin="XX0000000002", symbol="SYN.B")],  # One issuer, two classes.
-        [entry(), entry(isin="XX0000000002", symbol="SYN.A", venue="SYN2")],  # Symbol reuse.
+        [
+            entry(),
+            entry(isin="XX0000000002", symbol="SYN.B"),
+        ],  # One issuer, two classes.
+        [
+            entry(),
+            entry(isin="XX0000000002", symbol="SYN.A", venue="SYN2"),
+        ],  # Symbol reuse.
     ):
         with pytest.raises(FundamentalsConfigError):
             parse_fundamental_subjects(entries)
@@ -191,7 +217,9 @@ def test_ttl_and_file_settings_in_the_runtime_configuration():
     values = {"PORTFOLIO_FUNDAMENTALS_TTL_SECONDS": "3600"}
     assert load_config(values).ttls.fundamentals_seconds == 3600
     for invalid in ("0", "-5", "1.5", "synthetic-secret"):
-        with pytest.raises(ConfigurationError, match="PORTFOLIO_FUNDAMENTALS_TTL_SECONDS") as error:
+        with pytest.raises(
+            ConfigurationError, match="PORTFOLIO_FUNDAMENTALS_TTL_SECONDS"
+        ) as error:
             load_config({"PORTFOLIO_FUNDAMENTALS_TTL_SECONDS": invalid})
         assert invalid not in str(error.value)
     local = {
@@ -205,7 +233,12 @@ def test_ttl_and_file_settings_in_the_runtime_configuration():
     assert config.mode is Mode.LOCAL
     assert config.source.fundamentals_file == local["PORTFOLIO_FUNDAMENTALS_FILE"]
     assert "fundamentals.toml" not in repr(config)
-    assert load_config(local | {"PORTFOLIO_FUNDAMENTALS_FILE": ""}).source.fundamentals_file is None
+    assert (
+        load_config(
+            local | {"PORTFOLIO_FUNDAMENTALS_FILE": ""}
+        ).source.fundamentals_file
+        is None
+    )
     with pytest.raises(ConfigurationError, match="PORTFOLIO_FUNDAMENTALS_FILE"):
         load_config(local | {"PORTFOLIO_FUNDAMENTALS_FILE": "<PLACEHOLDER>"})
     # Demo discards the real mapping like every other real source setting.
@@ -253,7 +286,9 @@ def local_app(monkeypatch, tmp_path):
     )
     original = st.get_option
     monkeypatch.setattr(
-        st, "get_option", lambda key: "127.0.0.1" if key == "server.address" else original(key)
+        st,
+        "get_option",
+        lambda key: "127.0.0.1" if key == "server.address" else original(key),
     )
     return monkeypatch, tmp_path
 
@@ -283,13 +318,17 @@ def test_app_builds_a_loader_after_the_gate_without_retrieving(local_app, monkey
     def forbidden(self, *args, **kwargs):
         raise AssertionError("construction must not contact the provider")
 
-    monkeypatch.setattr(provider_module.YFinanceFundamentalsProvider, "fetch", forbidden)
+    monkeypatch.setattr(
+        provider_module.YFinanceFundamentalsProvider, "fetch", forbidden
+    )
     app = AppTest.from_file(str(APP_PATH)).run()
     assert not app.exception
     held = app.session_state[loader_module.LOADER_STATE_KEY]
     assert isinstance(held, loader_module.FundamentalsLoader)
     app.run()
-    assert app.session_state[loader_module.LOADER_STATE_KEY] is held  # Once per session.
+    assert (
+        app.session_state[loader_module.LOADER_STATE_KEY] is held
+    )  # Once per session.
 
 
 def test_app_shows_only_a_safe_message_for_a_broken_mapping(local_app, monkeypatch):

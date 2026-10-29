@@ -162,6 +162,19 @@ class FundamentalSubjects:
             raise FundamentalsConfigError(
                 "Fundamentaldaten-Zuordnung: widersprüchliche Einträge."
             ) from None
+        # A share class is one security; two ISINs in one class contradict each other.
+        owner_of_class: dict[str, str] = {}
+        for subject in self.subjects:
+            identity = subject.identity
+            if (
+                owner_of_class.setdefault(
+                    identity.share_class_id, identity.listing.instrument.instrument_id
+                )
+                != identity.listing.instrument.instrument_id
+            ):
+                raise FundamentalsConfigError(
+                    "Fundamentaldaten-Zuordnung: widersprüchliche Einträge."
+                )
         first: dict[tuple, FundamentalSubject] = {}
         for subject in self.subjects:
             prior = first.setdefault(subject.fetch_key, subject)
