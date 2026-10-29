@@ -64,7 +64,14 @@ DETAIL_KEY = "valuation.detail_key"
 # Fundamentals held for the session (``LoadedFundamentals``); #80 calls
 # ``reset_loaded_state`` after saving so the next run reads the stored scenarios.
 LOADED_STATE_KEY = "valuation.loaded"
-WIDGET_KEYS = (SCOPE_KEY, QUERY_KEY, SHOW_KEY, SORT_FIELD_KEY, SORT_ORDER_KEY, LAYOUT_KEY)
+WIDGET_KEYS = (
+    SCOPE_KEY,
+    QUERY_KEY,
+    SHOW_KEY,
+    SORT_FIELD_KEY,
+    SORT_ORDER_KEY,
+    LAYOUT_KEY,
+)
 
 LAYOUT_TABLE = "Tabelle"
 LAYOUT_COMPACT = "Kompakt (Karten)"
@@ -170,7 +177,9 @@ def render_load_button(*, loaded: bool, configured: bool) -> bool:
     """The explicit load/refresh action; nothing is fetched without it (real mode)."""
     if not configured:
         return False
-    return st.button(LOAD_LABEL_AGAIN if loaded else LOAD_LABEL_FIRST, key=LOAD_BUTTON_KEY)
+    return st.button(
+        LOAD_LABEL_AGAIN if loaded else LOAD_LABEL_FIRST, key=LOAD_BUTTON_KEY
+    )
 
 
 def current_state(
@@ -188,7 +197,9 @@ def current_state(
     wanted = frozenset(verified_instruments(subjects))
     if explicit or (auto and (held is None or not wanted <= held.instruments)):
         with st.spinner(LOAD_SPINNER_TEXT):
-            held = load_fundamentals(source, loader, subjects, refresh=explicit and held is not None)
+            held = load_fundamentals(
+                source, loader, subjects, refresh=explicit and held is not None
+            )
         st.session_state[LOADED_STATE_KEY] = held
     if held is None:
         return FundamentalsState(None, True), None
@@ -243,19 +254,24 @@ def render_kpis(rows: Sequence[OverviewRow]) -> None:
         "im Nenner; ETFs und Derivate sind ausgeschlossen)."
     )
     if figures.excluded:
-        kinds = ", ".join(f"{kind}: {count}" for kind, count in figures.excluded_by_kind)
+        kinds = ", ".join(
+            f"{kind}: {count}" for kind, count in figures.excluded_by_kind
+        )
         st.caption(f"Ausgeschlossene Produktarten (nicht gezählt): {kinds}.")
 
 
 def render_table(rows: Sequence[OverviewRow], layout: str) -> None:
     """Sortable table or wrapping cards; the details never need hover."""
     if layout == LAYOUT_TABLE:
-        st.dataframe([row.to_display_dict() for row in rows], hide_index=True, width="stretch")
+        st.dataframe(
+            [row.to_display_dict() for row in rows], hide_index=True, width="stretch"
+        )
     blocks = []
     for row in rows:
         head, *lines = row.detail_lines()
         blocks.append(
-            f"**{markdown_text(head)}**  \n" + "  \n".join(markdown_text(x) for x in lines)
+            f"**{markdown_text(head)}**  \n"
+            + "  \n".join(markdown_text(x) for x in lines)
         )
     if layout == LAYOUT_COMPACT:
         st.markdown("\n\n".join(blocks))
@@ -285,11 +301,15 @@ def render_notes(rows: Sequence[OverviewRow], global_notes: Sequence[str]) -> No
     count = len(open_rows) + len(global_notes)
     with st.expander(f"Datenstatus & Hinweise ({count})", expanded=False):
         if not count:
-            st.caption("Alle betrachteten Aktien sind mit allen drei Szenarien bewertet.")
+            st.caption(
+                "Alle betrachteten Aktien sind mit allen drei Szenarien bewertet."
+            )
         lines = [f"- {markdown_text(n)}" for n in global_notes]
         for row in open_rows:
             reasons = "; ".join(row.reasons) or row.status.value
-            lines.append(f"- **{markdown_text(row.name)}**: {markdown_text(row.status_text)} – {markdown_text(reasons)}")
+            lines.append(
+                f"- **{markdown_text(row.name)}**: {markdown_text(row.status_text)} – {markdown_text(reasons)}"
+            )
         if lines:
             st.markdown("\n".join(lines))
 
@@ -356,7 +376,9 @@ def render_overview(
         if len(visible) != len(rows)
         else f"Alle {len(considered)} Aktien"
     )
-    st.caption(f"{shown} · Modellwerte je Aktie in Berichtswährung · Kurs in Handelswährung.")
+    st.caption(
+        f"{shown} · Modellwerte je Aktie in Berichtswährung · Kurs in Handelswährung."
+    )
     if considered:
         render_table(considered, layout)
     else:
@@ -365,4 +387,3 @@ def render_overview(
     notes = [] if state.configured else [NOT_CONFIGURED_TEXT]
     render_notes(ordered, notes)
     render_detail_entry(considered)
-

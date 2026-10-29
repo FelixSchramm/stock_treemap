@@ -18,6 +18,7 @@ from portfolio_dashboard.demo import (
     demo_watchlist_bundle,
     demo_watchlist_entries,
 )
+from portfolio_dashboard.fundamentals_cache import MemoryFundamentalsStore
 from portfolio_dashboard.fundamentals_demo import (
     DEMO_VALUED_ID,
     SyntheticFundamentalsProvider,
@@ -26,7 +27,6 @@ from portfolio_dashboard.fundamentals_demo import (
     demo_subjects,
 )
 from portfolio_dashboard.fundamentals_loader import FetchGate, FundamentalsLoader
-from portfolio_dashboard.fundamentals_cache import MemoryFundamentalsStore
 from portfolio_dashboard.instruments import EquityForm, VerifiedListing
 from portfolio_dashboard.intrinsic_models import Scenario
 from portfolio_dashboard.models import (
@@ -231,7 +231,20 @@ def test_unverified_watchlist_rows_explain_which_assignment_is_missing():
     no_candidate = rows["Demo-Krypto"].reasons[0]
     assert "Yahoo-Symbol" in no_candidate and "Handelsplatz" in no_candidate
     unmatched = watchlist_items(
-        [["Fremd AG", "10,00", "0,5", "0,05", "FREMD", "Aktie", "ZZZ.DE", "GER", "EUR", None]]
+        [
+            [
+                "Fremd AG",
+                "10,00",
+                "0,5",
+                "0,05",
+                "FREMD",
+                "Aktie",
+                "ZZZ.DE",
+                "GER",
+                "EUR",
+                None,
+            ]
+        ]
     )
     entries = tuple(sheet_entry(i) for i in unmatched)
     row = evaluate(portfolio=None, entries=entries)[0]
@@ -275,8 +288,30 @@ def test_a_listing_without_its_own_fundamentals_entry_is_not_guessed_from_the_is
 def test_two_watchlist_rows_of_one_security_become_one_row():
     items = watchlist_items(
         [
-            ["Demo-Aktie DE", "45,20", "1,1", "0,5", "A", "Aktie", "DEMOA.DE", "GER", "EUR", None],
-            ["Demo-Aktie FRA", "45,30", "1,0", "0,4", "A2", "Aktie", "DEMOA.F", "FRA", "EUR", None],
+            [
+                "Demo-Aktie DE",
+                "45,20",
+                "1,1",
+                "0,5",
+                "A",
+                "Aktie",
+                "DEMOA.DE",
+                "GER",
+                "EUR",
+                None,
+            ],
+            [
+                "Demo-Aktie FRA",
+                "45,30",
+                "1,0",
+                "0,4",
+                "A2",
+                "Aktie",
+                "DEMOA.F",
+                "FRA",
+                "EUR",
+                None,
+            ],
         ]
     )
     entries = tuple(sheet_entry(i) for i in items)
@@ -309,7 +344,20 @@ def test_discount_and_distance_are_two_labelled_quantities_from_the_comparison()
 
 def test_without_a_price_the_model_values_stay_and_the_comparison_says_why():
     item = watchlist_items(
-        [["Demo-Aktie DE", None, None, None, "A", "Aktie", "DEMOA.DE", "GER", "EUR", None]]
+        [
+            [
+                "Demo-Aktie DE",
+                None,
+                None,
+                None,
+                "A",
+                "Aktie",
+                "DEMOA.DE",
+                "GER",
+                "EUR",
+                None,
+            ]
+        ]
     )[0]
     row = evaluate(portfolio=None, entries=(sheet_entry(item),))[0]
     assert row.status is Status.VALUED and row.price_label == "n. v."
@@ -336,7 +384,12 @@ def test_a_price_in_another_currency_without_fx_blocks_only_the_comparison():
     from portfolio_dashboard.fundamentals_demo import _stock
 
     extra = _stock(
-        DEMO_VALUED_ID, "NMS", "DEMOA", "USD", suffix="e", confirmed=True,
+        DEMO_VALUED_ID,
+        "NMS",
+        "DEMOA",
+        "USD",
+        suffix="e",
+        confirmed=True,
         source_symbol="DEMO-E.SYN",
     )
     from portfolio_dashboard.fundamentals_config import FundamentalSubjects
@@ -404,9 +457,7 @@ def test_sorting_puts_missing_values_last_and_never_treats_them_as_zero():
             assert all(r.discount is None for r in ordered[1:])
             assert sorted(r.index for r in ordered) == sorted(r.index for r in rows)
     ticker = sort_rows(rows, SORT_BY_TICKER)
-    assert [r.ticker for r in ticker][:5] == sorted(
-        r.ticker for r in rows if r.ticker
-    )
+    assert [r.ticker for r in ticker][:5] == sorted(r.ticker for r in rows if r.ticker)
     assert [r.name for r in ticker][-2:] == ["Demo-Krypto", "Demo-ohne Kurs"]
     names = [r.name for r in sort_rows(rows, SORT_BY_NAME, descending=True)]
     assert names == sorted((r.name for r in rows), key=str.casefold, reverse=True)
@@ -420,11 +471,14 @@ def test_sorting_orders_two_figures_by_value():
     cheaper_base = replace(
         first.base,
         comparison=replace(
-            first.base.comparison, discount_to_model_percent=D("30"),
+            first.base.comparison,
+            discount_to_model_percent=D("30"),
             distance_to_model_percent=D("40"),
         ),
     )
-    cheaper = replace(cheaper, scenarios=(first.scenarios[0], cheaper_base, first.scenarios[2]))
+    cheaper = replace(
+        cheaper, scenarios=(first.scenarios[0], cheaper_base, first.scenarios[2])
+    )
     ordered = sort_rows((first, cheaper), SORT_BY_DISCOUNT, descending=True)
     assert [r.name for r in ordered] == ["Zweite Aktie", "Demo-Aktie A"]
     ordered = sort_rows((first, cheaper), SORT_BY_DISTANCE, descending=False)
@@ -453,8 +507,13 @@ def test_data_stand_keeps_retrieval_age_and_business_age_apart():
     row = by_name(evaluate())["Demo-Aktie A"]
     text = "\n".join(row.stand_lines)
     assert "Abrufalter: Abruf 23.10.2026, 12:00 UTC" in text
-    assert "Fachliches Alter: Jahresabschluss bis 31.12.2025 (fachliches Alter 296 Tage)" in text
-    assert "Annahmenstand: Version demo-assumptions-v1" in text and "synthetisch" in text
+    assert (
+        "Fachliches Alter: Jahresabschluss bis 31.12.2025 (fachliches Alter 296 Tage)"
+        in text
+    )
+    assert (
+        "Annahmenstand: Version demo-assumptions-v1" in text and "synthetisch" in text
+    )
     assert row.stand_short == "Abruf vor 0 Sek.; Abschluss bis 31.12.2025"
 
 
@@ -462,9 +521,15 @@ def test_a_fresh_retrieval_of_old_reports_does_not_make_them_recent():
     later = datetime(2027, 6, 1, 12, 0, tzinfo=timezone.utc)
     source = demo_valuation_source()
     subjects = collect_subjects(source.portfolio, (), source.listings)
-    loaded = load_fundamentals(source, demo_fundamentals_loader(), subjects, refresh=False)
+    loaded = load_fundamentals(
+        source, demo_fundamentals_loader(), subjects, refresh=False
+    )
     context = EvaluationContext(
-        source.listings, later, FundamentalsState(loaded.bundle), loaded.documents, demo=True
+        source.listings,
+        later,
+        FundamentalsState(loaded.bundle),
+        loaded.documents,
+        demo=True,
     )
     row = build_rows(subjects, context)[0]
     text = "\n".join(row.stand_lines)
@@ -579,7 +644,15 @@ def test_a_failed_retrieval_leaves_no_value_and_names_the_failure():
 
 
 def test_no_row_contains_a_buy_or_sell_signal():
-    banned = ("kaufen", "verkaufen", "kaufsignal", "verkaufssignal", "unterbewertet", "überbewertet", "empfehl")
+    banned = (
+        "kaufen",
+        "verkaufen",
+        "kaufsignal",
+        "verkaufssignal",
+        "unterbewertet",
+        "überbewertet",
+        "empfehl",
+    )
     for row in evaluate():
         text = " ".join((*row.detail_lines(), *row.to_display_dict().values())).lower()
         assert not any(word in text for word in banned)
@@ -587,7 +660,9 @@ def test_no_row_contains_a_buy_or_sell_signal():
 
 def test_instruments_for_the_loader_are_the_verified_listings_only():
     source = demo_valuation_source()
-    subjects = collect_subjects(source.portfolio, demo_watchlist_bundle().entries, source.listings)
+    subjects = collect_subjects(
+        source.portfolio, demo_watchlist_bundle().entries, source.listings
+    )
     instruments = verified_instruments(subjects)
     assert {(i.instrument_id, i.trading_venue) for i in instruments} == {
         (DEMO_VALUED_ID, "FRA"),

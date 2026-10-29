@@ -398,6 +398,22 @@ def test_watchlist_loader_is_built_only_for_the_owner_and_only_when_opened(prote
     assert_closed(app, calls)  # revoked owner: no builder, no renderer, no Watchlist
 
 
+def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    app = make_app(owner_claims()).run()
+    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Innerer Wert"]
+    calls.clear()
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Innerer Wert").run()
+    assert not app.exception and not app.error
+    # No Watchlist range and no fundamentals mapping: nothing is built or fetched.
+    assert "build_production_watchlist_coordinator" not in calls
+    assert [s.value for s in app.subheader][:1] == ["Innerer Wert"]
+    monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
+    calls.clear()
+    app.run()
+    assert_closed(app, calls)  # revoked owner: no area, no table, no private figure
+
+
 def test_production_watchlist_uses_the_service_account_secret_after_the_gate(protected_app, monkeypatch):
     from datetime import UTC, datetime
 
