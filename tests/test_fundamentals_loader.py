@@ -401,6 +401,36 @@ def test_an_answer_that_contradicts_the_owner_does_not_replace_the_old_state():
     assert entry.report_set == first.report_set
 
 
+def renamed_income(now):
+    """A changed layout: the tables are present but no known row label matches."""
+    income = statements().annual_income
+    renamed = StatementTable(
+        {label.replace(" ", ""): cells for label, cells in income.rows.items()}
+    )
+    return statements(retrieved_at=now, annual_income=renamed)
+
+
+def test_an_unrecognizable_layout_does_not_replace_the_old_state():
+    subject = make_subject()
+    loader, _, clock = build(subject, script=[good(), renamed_income])
+    first = loader.load([instrument(subject)]).entry(instrument(subject))
+    clock.advance(DAY)
+    entry = loader.load([instrument(subject)]).entry(instrument(subject))
+    assert entry.status is FundamentalsStatus.CACHED
+    assert "no_usable_base" in entry.failures
+    assert "annual_income_unexpected_schema" in entry.failures
+    assert entry.report_set == first.report_set and entry.retrieved_at == START
+
+
+def test_an_unrecognizable_first_layout_stays_unavailable():
+    subject = make_subject()
+    loader, _, _ = build(subject, script=[renamed_income])
+    entry = loader.load([instrument(subject)]).entry(instrument(subject))
+    assert entry.status is FundamentalsStatus.UNAVAILABLE
+    assert "annual_income_unexpected_schema" in entry.failures
+    assert entry.report_set is None and entry.last_checked_at is None
+
+
 def test_first_answer_that_contradicts_the_owner_stays_unavailable():
     subject = make_subject()
     loader, _, _ = build(

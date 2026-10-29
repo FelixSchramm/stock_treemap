@@ -423,6 +423,14 @@ class FundamentalsLoader:
                 # The new answer contradicts the owner's expectations: keep the
                 # previous state rather than replacing it with withheld numbers.
                 codes = ["numbers_withheld", *(i.code for i in normalized.issues)]
+            elif (
+                normalized.bridge_date is None
+                or normalized.shares_period is None
+                or any(i.code.endswith("_unexpected_schema") for i in normalized.issues)
+            ):
+                # Complete tables without recognizable rows or an annual period
+                # (a changed layout) are no basis either; the old state stays.
+                codes = ["no_usable_base", *(i.code for i in normalized.issues)]
         return tuple(
             dict.fromkeys(sorted(c for c in codes if CODE_PATTERN.fullmatch(c)))
         )
