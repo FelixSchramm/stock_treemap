@@ -4,7 +4,7 @@ M8-05 ([#74](https://github.com/FelixSchramm/stock_treemap/issues/74)). Dieser T
 holt die Jahresabschlüsse aus [FUNDAMENTALS_PROVIDER.md](FUNDAMENTALS_PROVIDER.md)
 (#73) nur nach Besitzerprüfung, hält sie in der geschützten privaten Ablage und
 stellt Portfolio und Watchlist denselben Datenstand zur Verfügung. Es gibt keinen
-Hintergrunddienst und keine Oberfläche (Ansicht: #79/#80), keinen zweiten
+Hintergrunddienst und keine eigene Oberfläche (Übersicht: [VALUATION_OVERVIEW.md](VALUATION_OVERVIEW.md), #79; Details: #80), keinen zweiten
 Anbieter und keinen kostenpflichtigen Zugang. Reale Zuordnungen stehen nicht im
 Repository.
 

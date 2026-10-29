@@ -6,7 +6,7 @@ ist rein und deterministisch: Es nutzt nur die vorhandenen Verträge
 (`ScenarioCalculation`/`ScenarioValuationSet`, `Valuation` mit `QuoteUnit`, `FxRate`
 aus [EUR_VALUATION.md](EUR_VALUATION.md), die Registry geprüfter Listings) und die
 Standardbibliothek. Es gibt keine Abhängigkeit von Streamlit, Providern, Netzwerk,
-Systemzeit, Bestandsmenge oder Einstand, und keine Oberfläche (#79/#80). Der
+Systemzeit, Bestandsmenge oder Einstand, und keine Oberfläche (Übersicht: [VALUATION_OVERVIEW.md](VALUATION_OVERVIEW.md), #79; Details: #80). Der
 vergleichende Zeitpunkt ist ausdrücklich `ComparisonPolicy.as_of`.
 
 ## Öffentliche Namen (für #79/#80)

@@ -196,7 +196,7 @@ def test_demo_starts_on_the_depot_course_view_and_offers_the_watchlist(offline_d
     app = new_app().run()
     assert not app.exception
     assert app.radio(key=AREA_RADIO_KEY).label == "Ansicht"
-    assert app.radio(key=AREA_RADIO_KEY).options == ["Depot", "Watchlist"]
+    assert app.radio(key=AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Innerer Wert"]
     assert app.radio(key=AREA_RADIO_KEY).value == "Depot"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
     assert app.radio(key=PERIOD_RADIO_KEY).value == "Heute"

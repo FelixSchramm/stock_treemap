@@ -52,7 +52,7 @@ Stammaktionärswert = Σ PV(FCFF) + PV(TV) + überschüssiges Cash + nichtoperat
 Wert je Aktie = Stammaktionärswert / verwässerte Aktien
 ```
 
-Drei Szenarien (vorsichtig, Basis, optimistisch) und eine WACC-/Wachstums-Sensitivitätsmatrix. Gerechnet wird mit `Decimal` ohne Zwischenrundung. Ungültige Annahmen wie `g ≥ WACC` oder ein negativer nachhaltiger Cashflow sperren das Ergebnis mit einem expliziten Grund, statt eine Zahl auszugeben. Ein dominanter Terminalwert wird gekennzeichnet. Der Vergleich mit dem Börsenkurs weist Abschlag und Abstand zum Modellwert getrennt aus. Die Oberfläche dafür ist noch in Arbeit. Details: [ADR 0010](docs/adr/0010-innerer-wert-fcff.md), [DCF-Rechner](docs/DCF_CALCULATION.md), [Kursvergleich](docs/PRICE_COMPARISON.md).
+Drei Szenarien (vorsichtig, Basis, optimistisch) und eine WACC-/Wachstums-Sensitivitätsmatrix. Gerechnet wird mit `Decimal` ohne Zwischenrundung. Ungültige Annahmen wie `g ≥ WACC` oder ein negativer nachhaltiger Cashflow sperren das Ergebnis mit einem expliziten Grund, statt eine Zahl auszugeben. Ein dominanter Terminalwert wird gekennzeichnet. Der Vergleich mit dem Börsenkurs weist Abschlag und Abstand zum Modellwert getrennt aus. Die Ansicht **Innerer Wert** zeigt Kurs, drei Szenariowerte und beide Bezugsgrößen für Depot und Watchlist, auch Aktien ohne Bewertung mit Grund; die Detail- und Annahmenansicht ist noch in Arbeit. Details: [Bewertungsübersicht](docs/VALUATION_OVERVIEW.md), [ADR 0010](docs/adr/0010-innerer-wert-fcff.md), [DCF-Rechner](docs/DCF_CALCULATION.md), [Kursvergleich](docs/PRICE_COMPARISON.md).
 
 ### 5. Datenqualität
 
@@ -83,9 +83,9 @@ flowchart LR
 | Treemap, Kennzahlen, Filter, Tabelle, Datenstatus | umgesetzt, als Demo mit synthetischen Daten verfügbar |
 | Google-Sheet-Import, Live-Kurse (yfinance), EUR-Bewertung, Renditen | umgesetzt; nur im privaten Modus mit Login |
 | Login und Besitzerprüfung | umgesetzt |
-| FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Oberfläche offen |
+| FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Übersicht „Innerer Wert“ umgesetzt, Detail- und Annahmenansicht offen |
 | Watchlist aus dem Sheet | Kursabruf und Ansicht umgesetzt |
-| Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsoberfläche in Arbeit |
+| Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsübersicht umgesetzt, Annahmenerfassung offen |
 
 Kursdaten stammen aus `yfinance`, einer inoffiziellen Schnittstelle; Kurse können verzögert sein. Das Dashboard ist ein privates Analysewerkzeug und keine Anlageberatung.
 
@@ -108,4 +108,4 @@ uv run --locked pytest
 - Datenvertrag: [Importschema](docs/DATA_SOURCE.md), [Fachmodelle](docs/DOMAIN_MODELS.md), [Sheet-Parser](docs/SHEET_PARSER.md), [Sheets-Adapter](docs/SHEETS_ADAPTER.md), [Instrumentzuordnung](docs/INSTRUMENT_MAPPING.md)
 - Marktdaten und Rechenregeln: [Marktdaten](docs/MARKET_DATA.md), [EUR-Bewertung](docs/EUR_VALUATION.md), [Kursperioden](docs/PRICE_PERIODS.md), [Persönliche Rendite](docs/PERSONAL_RETURNS.md), [Regressionen](docs/DOMAIN_REGRESSIONS.md)
 - Innerer Wert: [Fundamentaldaten](docs/FUNDAMENTAL_MODELS.md), [Feldvertrag](docs/INTRINSIC_VALUE.md), [Abdeckung](docs/FUNDAMENTALS_COVERAGE.md), [Adapter und Normalisierung](docs/FUNDAMENTALS_PROVIDER.md), [Cache und Ladepfad](docs/FUNDAMENTALS_CACHE.md), [DCF-Rechner](docs/DCF_CALCULATION.md), [Kursvergleich](docs/PRICE_COMPARISON.md)
-- Oberfläche und Betrieb: [Treemap](docs/TREEMAP.md), [Watchlist-Ansicht](docs/WATCHLIST_VIEW.md), [Watchlist-Kurse](docs/WATCHLIST_QUOTES.md), [Mobile Bedienung](docs/MOBILE_ACCESSIBILITY.md), [Container](docs/CONTAINER.md), [Streamlit Community Cloud](docs/COMMUNITY_CLOUD.md)
+- Oberfläche und Betrieb: [Treemap](docs/TREEMAP.md), [Watchlist-Ansicht](docs/WATCHLIST_VIEW.md), [Bewertungsübersicht „Innerer Wert“](docs/VALUATION_OVERVIEW.md), [Watchlist-Kurse](docs/WATCHLIST_QUOTES.md), [Mobile Bedienung](docs/MOBILE_ACCESSIBILITY.md), [Container](docs/CONTAINER.md), [Streamlit Community Cloud](docs/COMMUNITY_CLOUD.md)

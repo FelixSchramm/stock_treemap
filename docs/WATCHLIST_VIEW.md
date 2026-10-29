@@ -5,6 +5,8 @@ Umsetzung von Issue #85 (Epic #82) nach [ADR 0011](adr/0011-watchlist.md) und
 Handelswährung (Kursabruf: [WATCHLIST_QUOTES.md](WATCHLIST_QUOTES.md)); sie kennt keine
 Stückzahlen, keinen Einstand und keine Verknüpfung mit dem Depot. Die Heatmap folgt in #86.
 
+Die Bewertungsübersicht für Depot und Watchlist ist die dritte Ansicht **Innerer Wert** ([VALUATION_OVERVIEW.md](VALUATION_OVERVIEW.md), #79); sie nutzt das Watchlist-Bundle dieser Ansicht, ändert sie aber nicht.
+
 ## Bausteine
 
 | Modul | Inhalt |

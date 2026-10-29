@@ -300,6 +300,11 @@ class PortfolioRefreshCoordinator:
         self._last_bundle: DashboardBundle | None = None
 
     @property
+    def listings(self) -> tuple[VerifiedListing, ...]:
+        """The verified listing registry this coordinator was built with."""
+        return self._listings
+
+    @property
     def last_bundle(self) -> DashboardBundle | None:
         """Return the last successfully assembled atomic bundle, if any.
 
