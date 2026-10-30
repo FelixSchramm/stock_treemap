@@ -660,8 +660,14 @@ def heal_then_reject_after_ttls(env):
     reject(env)
 
 
-def seconds_until_valid_rows_are_live(env, *, step=60, limit=900):
-    """Load every ``step`` seconds; returns the seconds until all valid rows are LIVE."""
+def seconds_until_valid_rows_are_live(
+    env, *, step=60, limit=900, rejected_status=WatchlistEntryStatus.CACHED
+):
+    """Load every ``step`` seconds; returns the seconds until all valid rows are LIVE.
+
+    The rejected rows must show ``rejected_status``: their earlier valid state with its
+    age, or the Sheet value once that state belongs to an earlier day.
+    """
     start = env.now
     while (env.now - start).total_seconds() <= limit:
         bundle = env.load()
@@ -670,8 +676,8 @@ def seconds_until_valid_rows_are_live(env, *, step=60, limit=900):
         if all(e.status is WatchlistEntryStatus.LIVE for e in valid):
             for entry, kind in zip(bundle.entries, env.kinds):
                 if kind == "b":  # earlier valid state stays visible with its age
-                    assert entry.status is WatchlistEntryStatus.CACHED
-                    assert entry.age_text
+                    assert entry.status is rejected_status
+                    assert rejected_status is not WatchlistEntryStatus.CACHED or entry.age_text
             assert SECRET not in repr(bundle)
             return int((env.now - start).total_seconds())
         env.now += timedelta(seconds=step)
@@ -822,6 +828,157 @@ def test_failure_ranks_are_kept_per_fetch_kind_and_instrument():
     )
     ranks = env.coordinator._failure_ranks()
     assert ranks == {("history", bad): 1, ("quote", bad): 1}
+
+
+# Recovery probe while the provider-wide backoff is open (#111). One probe per window goes
+# to the first row of the common order: rows without a failure first, then the one whose
+# last attempt lies furthest back. The failure count never ranks.
+SHORT_HISTORY_TTLS = CacheTTLs(quotes_seconds=60, holdings_seconds=300, history_seconds=600)
+
+
+@pytest.mark.parametrize("now", [CLOSED, RUNNING], ids=["closed", "running"])
+@pytest.mark.parametrize("neighbours", [2, 5])
+def test_repaired_row_with_a_long_failure_history_is_probed_within_one_round(now, neighbours):
+    env = warm_env("gD" * (neighbours + 1), now=now)
+    env.coordinator._cache.ttls = SHORT_HISTORY_TTLS
+    assert {e.status for e in env.load().entries} == {WatchlistEntryStatus.LIVE}
+    first, others = env.symbols[0], set(env.symbols[1:])
+    env.yahoo.rejected = {first}  # fails alone for a long time, the others keep the provider up
+    for _ in range(12):
+        env.now += timedelta(minutes=10)
+        env.load()
+    series = env.coordinator._failure_ranks()
+    assert max(count for (kind, _), count in series.items() if kind == "history") >= 12
+    env.yahoo.rejected = {first} | others  # now nothing succeeds: the backoff stays open
+    healed = None
+    for minute in range(0, 600, 10):
+        if minute == 40:
+            env.yahoo.rejected = others  # the first row is repaired at +40 min
+        env.now += timedelta(minutes=10)
+        bundle = env.load()
+        if minute >= 40 and bundle.entries[0].status is WatchlistEntryStatus.LIVE:
+            healed = minute
+            break
+    # One probe per refresh and every failing row once per round. Ranked by failure
+    # count the repaired row waited behind each neighbour until their counts passed its own.
+    assert healed is not None and healed - 40 <= neighbours * 10
+
+
+@pytest.mark.parametrize("rows", [60, 250])
+def test_total_outage_keeps_the_provider_backoff_for_60_and_250_rows(rows):
+    env = warm_env("gD" * rows, now=CLOSED)
+    env.yahoo.fail = True
+    for _ in range(360):  # two hours, a refresh every 20 s
+        env.load()
+        env.now += timedelta(seconds=20)
+    assert len(env.yahoo.calls) == 30  # backoff windows 15 s ... 300 s, one probe each
+    assert len({symbol for symbol, _ in env.yahoo.calls}) == 30  # went round, no repeats
+    env.yahoo.fail = False
+    assert seconds_until_valid_rows_are_live(env, limit=900) <= 300
+
+
+@pytest.mark.parametrize(
+    "layout, flaky, limit",
+    [
+        ("gD" * 9 + "bD" * 3, range(9), 300),  # every valid row carries a quote counter
+        ("bD" * 3 + "gD" * 9, range(3, 12), 300),  # of the previous day's session
+        ("bD" * 5 + "gD" * 7, range(5, 12), 300),
+        ("gD" * 3 + "bD" * 3 + "gD" * 6, range(6, 12), 300),  # block in the middle
+    ],
+    ids=["block-at-end", "block-at-start", "five-rejected", "block-in-the-middle"],
+)
+def test_next_day_valid_rows_with_frozen_quote_counters_are_live_within_five_minutes(
+    layout, flaky, limit
+):
+    env = warm_env(layout, now=RUNNING)
+    frozen_quote_counters_then_reject(env, flaky)
+    # The rejected block shows up in the next day's running session, production TTLs.
+    env.now = datetime(2026, 10, 29, 9, 0, tzinfo=UTC)
+    assert seconds_until_valid_rows_are_live(
+        env, limit=limit, rejected_status=WatchlistEntryStatus.SHEET_VALUE
+    ) <= limit
+
+
+def test_quote_counters_of_the_same_session_keep_their_weight_after_a_long_pause():
+    # Rows whose quote keeps failing in the open session stay behind the others after a
+    # pause of hours inside that session: no way back to the cold-start recovery table.
+    env = warm_env("bU" * 4 + "gU" * 8, now=datetime(2026, 10, 28, 14, 0, tzinfo=UTC))
+    env.coordinator._cache.ttls = PRODUCTION_TTLS
+    assert {e.status for e in env.load().entries} == {WatchlistEntryStatus.LIVE}
+    reject(env)
+    for _ in range(30):
+        env.now += timedelta(seconds=60)
+        env.load()
+    assert min(
+        count for (kind, _), count in env.coordinator._failure_ranks().items() if kind == "quote"
+    ) >= 3
+    env.now += timedelta(hours=3)  # NYSE session (14:30-21:00 UTC) still running
+    env.yahoo.calls.clear()
+    env.load()
+    first = [symbol for symbol, _ in env.yahoo.calls][:4]
+    assert not {symbol for symbol in first if symbol.startswith("B")}  # valid rows first
+
+
+def test_a_quote_counter_from_before_the_close_is_not_counted_after_it():
+    env = warm_env("bU" * 3 + "gU" * 5, now=datetime(2026, 10, 28, 14, 0, tzinfo=UTC))
+    env.coordinator._cache.ttls = PRODUCTION_TTLS
+    env.load()
+    reject(env)
+    for _ in range(10):
+        env.now += timedelta(seconds=60)
+        env.load()
+    items = env.coordinator.last_bundle.snapshot.items
+    plan = [
+        watchlist_refresh._Planned(
+            item, watchlist_listing(item), env.coordinator._calendars["NMS"], True
+        )
+        for item in items
+    ]
+    rejected = {watchlist_listing(item).instrument for item in items[:3]}
+    during = env.coordinator._probe_order(plan, env.now)
+    assert all(during[inst][0] == 1 for inst in rejected)  # failing: behind the others
+    assert all(key[0] == 0 for inst, key in during.items() if inst not in rejected)
+    after_close = datetime(2026, 10, 28, 22, 0, tzinfo=UTC)  # NYSE closed at 21:00 UTC
+    after = env.coordinator._probe_order(plan, after_close)
+    assert {key[0] for key in after.values()} == {0}  # the frozen series no longer counts
+
+
+def seed_history_series(env, symbols, failures, attempted_ago, *, due=True):
+    """Constructed state: ``symbols`` carry a history failure series (see Seed 164 of #108).
+
+    Reproducing it by chance needs a chaos run; the series is written directly, the rest
+    (ordering, backoff, fetching) is the real flow.
+    """
+    for key, entry in env.coordinator._cache._entries.items():
+        if key[0] == "history" and key[1].provider_mapping.symbol in symbols:
+            entry.failures = failures
+            entry.last_attempt_at = env.now - attempted_ago
+            entry.retry_after = None
+            if due:
+                entry.fetched_at = env.now - timedelta(
+                    seconds=env.coordinator._cache.ttls.history_seconds + 1
+                )
+
+
+def test_valid_rows_with_an_older_history_series_beat_freshly_rejected_rows():
+    # Valid rows hold a real history series (2 failures); eight freshly rejected rows have
+    # only a quote series of 6 and their history is due too. Ranked by history count alone
+    # each rejected row took three probes (to 3 > 2) before the valid rows came: 4860 s.
+    env = warm_env("gU" * 6 + "bU" * 8, now=datetime(2026, 10, 28, 14, 0, tzinfo=UTC))
+    env.coordinator._cache.ttls = CacheTTLs(60, 300, 3600)
+    assert {e.status for e in env.load().entries} == {WatchlistEntryStatus.LIVE}
+    reject(env)
+    for _ in range(20):  # quote series of the rejected rows climb in the open session
+        env.now += timedelta(seconds=60)
+        env.load()
+    series = env.coordinator._failure_ranks()
+    assert min(series[("quote", inst)] for (kind, inst) in series if kind == "quote") >= 3
+    valid = {s for s, kind in zip(env.symbols, env.kinds) if kind == "g"}
+    seed_history_series(env, valid, 2, timedelta(minutes=20))
+    for key, entry in env.coordinator._cache._entries.items():  # rejected histories due too
+        if key[0] == "history" and key[1].provider_mapping.symbol not in valid:
+            entry.fetched_at = env.now - timedelta(seconds=3601)
+    assert seconds_until_valid_rows_are_live(env, limit=1800) <= 360
 
 
 def test_cached_quote_of_the_same_session_is_kept_but_not_across_days():

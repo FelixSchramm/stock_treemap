@@ -456,3 +456,34 @@ def test_real_provider_outage_still_triggers_and_respects_provider_wide_backoff(
     set_time(coordinator, NOW + timedelta(minutes=10, seconds=5))
     assert coordinator.load(refresh=True).available
     assert len(quote_attempts(market)) == 8
+
+
+def test_repaired_position_with_a_long_failure_history_is_probed_within_one_round(monkeypatch, tmp_path):
+    """Depot path of #111: a position that failed for a long time heals at its next probe.
+
+    Position 3 (app listing and replacement) fails for twelve refreshes while 1 and 2 keep
+    the provider healthy. Then 1 and 2 break for good, so nothing succeeds and the
+    provider-wide backoff stays open: one probe per refresh. Position 3 is repaired at
+    +40 minutes. Ranked by failure count it waited behind positions 1 and 2 until their
+    counts passed twelve; by oldest attempt it is probed within one round (3 positions).
+    """
+    broken = {"quote_error": True}
+    coordinator, _, market = listing_setup(monkeypatch, tmp_path, {
+        "PRIMARY3.DE": broken, "ALTERNATIVE3.DE": broken}, 3)
+    for refresh in range(12):
+        set_time(coordinator, NOW + timedelta(minutes=10 * refresh))
+        coordinator.load(refresh=refresh > 0)
+    start = NOW + timedelta(minutes=120)
+    for symbol in ("PRIMARY1.DE", "ALTERNATIVE1.DE", "PRIMARY2.DE", "ALTERNATIVE2.DE"):
+        market.cases[symbol] = broken
+    healed = None
+    for minute in range(0, 400, 10):
+        if minute == 40:
+            del market.cases["PRIMARY3.DE"], market.cases["ALTERNATIVE3.DE"]
+        set_time(coordinator, start + timedelta(minutes=minute))
+        bundle = coordinator.load(refresh=True)
+        third = [perfs[2].percent for perfs in bundle.course_performances.values()]
+        if minute >= 40 and set(third) == {Decimal(10)}:
+            healed = minute
+            break
+    assert healed is not None and healed - 40 <= 20  # at most two further refreshes

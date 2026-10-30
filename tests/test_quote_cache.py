@@ -27,8 +27,10 @@ from portfolio_dashboard.models import (
     ValueStatus,
 )
 from portfolio_dashboard.quote_cache import (
+    FetchAttempts,
     QuoteCache,
     choose_valuation,
+    probe_order_key,
     supports_period_return,
 )
 
@@ -561,3 +563,127 @@ def test_manual_sheet_price_creates_no_period_return(env):
     assert not supports_period_return(sheet())
     provider.fail = True
     assert not supports_period_return(provider.latest_quote(instrument()).valuation)
+
+
+# --- recovery probe while the provider-wide backoff is open (#111) ------------------
+
+
+def healing_minute(env, *, history, neighbours, refresh_minutes=10, repair_minute=40):
+    """Minute at which the position X is served again; ``None`` within ten hours.
+
+    X fails alone for ``history`` refreshes while the others keep the provider healthy
+    (a long failure series). Then the neighbours break for good, so nothing succeeds any
+    more and the backoff stays open: one probe per refresh. X is repaired at
+    ``repair_minute`` after the neighbours broke.
+    """
+    clock, provider, cache = env
+    x, others = instrument("X"), [instrument(f"N{i}") for i in range(neighbours)]
+    items = [x, *others]
+    provider.rejected = {x}
+    for _ in range(history):
+        cache.quotes(items)
+        clock.advance(refresh_minutes * 60)
+    assert cache.attempts()[("quote", x)].failures == history
+    provider.rejected = {x, *others}
+    for minute in range(0, 600, refresh_minutes):
+        if minute == repair_minute:
+            provider.rejected = set(others)
+        result = cache.quotes(items)
+        if minute >= repair_minute and result[x].valuation.status is ValueStatus.AVAILABLE:
+            return minute
+        clock.advance(refresh_minutes * 60)
+    return None
+
+
+@pytest.mark.parametrize(
+    "history, neighbours", [(6, 2), (12, 2), (24, 2), (12, 5), (24, 8)]
+)
+def test_repaired_key_with_a_long_failure_history_is_probed_within_one_round(
+    env, history, neighbours
+):
+    failing = neighbours + 1  # X and the neighbours
+    healed = healing_minute(env, history=history, neighbours=neighbours)
+    # One probe per refresh and every failing key once per round: at most `failing`
+    # refreshes after the repair. By failure count it took about 2 x history refreshes.
+    assert healed is not None and healed - 40 <= (failing - 1) * 10
+
+
+def test_real_outage_keeps_one_probe_per_backoff_window_and_still_visits_every_key(env):
+    clock, provider, cache = env
+    items = [instrument(f"I{n}") for n in range(60)]
+    provider.fail = True
+    probed = []
+    for step in range(2 * 3 * 60):  # two hours, a refresh every 20 s
+        before = provider.calls
+        cache.quotes(items, refresh=True)
+        assert provider.calls - before <= (3 if step == 0 else 1)
+        probed.append(provider.calls - before)
+        clock.advance(20)
+    # 3 failures open the backoff (15, 30, 60, 120, 240 s, then 300 s windows).
+    assert provider.calls == 30
+    attempted = {
+        key[1] for key, entry in cache._entries.items() if entry.last_attempt_at is not None
+    }
+    assert len(attempted) == 30  # the probes went round instead of repeating one key
+    provider.fail = False
+    clock.advance(300)
+    recovered = cache.quotes(items)
+    assert all(o.valuation.status is ValueStatus.AVAILABLE for o in recovered.values())
+
+
+def test_attempts_report_failure_series_and_last_attempt_per_kind_and_instrument(env):
+    clock, provider, cache = env
+    a, b = instrument("A"), instrument("B")
+    assert cache.attempts() == {}
+    cache.quote(a)
+    first = clock.now
+    assert cache.attempts() == {("quote", a): FetchAttempts(0, first)}
+    provider.rejected = {a}
+    clock.advance(120)
+    cache.quote(a)  # TTL over: fetched and failed
+    failed = clock.now
+    clock.advance(1)
+    cache.quote(a)  # own backoff (15 s): nothing is asked
+    cache.quote(b)
+    clock.advance(1)
+    cache.fx(PAIR)  # not a quote or history key
+    cache.history(a, START, END)
+    clock.advance(20)
+    cache.history(a, START, END)  # second failure of this window
+    cache.history(a, START, date(2026, 10, 21))  # first failure of another window
+    attempts = cache.attempts()
+    assert attempts[("quote", a)] == FetchAttempts(1, failed)
+    assert attempts[("quote", b)] == FetchAttempts(0, failed + timedelta(seconds=1))
+    # Several windows of one instrument combine to the highest count, latest attempt.
+    assert attempts[("history", a)] == FetchAttempts(2, clock.now)
+    assert set(attempts) == {("quote", a), ("quote", b), ("history", a)}
+
+
+def test_probe_order_key_puts_failure_free_first_then_the_oldest_attempt():
+    early, late = T0, T0 + timedelta(minutes=5)
+    assert probe_order_key(0, None) == probe_order_key(0, late)  # no failure: tie
+    assert probe_order_key(0, late) < probe_order_key(1, early)
+    assert probe_order_key(30, early) < probe_order_key(1, late)  # count does not rank
+    assert probe_order_key(1, early) < probe_order_key(1, late)
+    keys = [("late", 2, late), ("free", 0, late), ("early", 9, early), ("also free", 0, None)]
+    ordered = sorted(keys, key=lambda k: probe_order_key(k[1], k[2]))
+    assert [k[0] for k in ordered] == ["free", "also free", "early", "late"]
+
+
+def test_replacement_position_with_the_oldest_attempt_is_probed_first(env):
+    clock, provider, cache = env
+    primaries = [instrument(f"P{n}") for n in range(3)]
+    replacements = {p: [instrument(f"R{n}")] for n, p in enumerate(primaries)}
+    provider.fail = True
+    cache.quotes(primaries, replacements=replacements)  # all three positions fail
+    assert provider.calls == 6
+    probed = []
+    for _ in range(6):  # one position (primary and replacement) per backoff window
+        clock.advance(300)
+        before = provider.calls
+        cache.quotes(primaries, replacements=replacements)
+        assert provider.calls - before == 2
+        probed.append(max(
+            (entry.last_attempt_at, key[1].display_ticker) for key, entry in cache._entries.items()
+        )[1])
+    assert probed == ["R0", "R1", "R2", "R0", "R1", "R2"]

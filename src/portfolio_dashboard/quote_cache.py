@@ -24,6 +24,12 @@ listings precede it. If all candidates fail (a real outage), the provider-wide
 backoff opens as before.
 A history fetched during a session is outdated once that session has closed
 (history(sessions=...)), however young it is; see #110.
+While the provider-wide backoff is open each window admits exactly one recovery
+probe, the first due key of the caller's order. Keys without a failure come first
+(a success clears the backoff for everyone); the failing ones follow, the one whose
+last attempt lies furthest back first (probe_order_key). Every failing key is thus
+probed again within as many windows as there are failing keys, however long its
+failure history; the number of failures does not rank keys (#111).
 """
 
 from collections.abc import Callable, Iterable, Mapping
@@ -75,6 +81,33 @@ class _Entry(Generic[T]):
     failures: int = 0
     retry_after: datetime | None = None
     last_failure: T | None = None
+    last_attempt_at: datetime | None = None  # last fetch actually made, hit or miss
+
+
+@dataclass(frozen=True, slots=True)
+class FetchAttempts:
+    """Failure series of one fetch kind and instrument, as the cache holds it."""
+
+    failures: int  # consecutive failed fetches; a success resets it
+    last_attempt_at: datetime | None  # when the provider was last actually asked
+
+
+_EPOCH = datetime.min.replace(tzinfo=UTC)
+
+
+def probe_order_key(
+    failures: int, last_attempt_at: datetime | None
+) -> tuple[int, datetime]:
+    """Sort key for the recovery probe: no failure first, then the oldest attempt.
+
+    Keys without a failure series all tie (a stable sort keeps the caller's order);
+    failing keys follow, the one asked longest ago first. The failure count does not
+    rank: a key with a long history would otherwise wait behind every newer failing
+    key until their counts passed its own (#111).
+    """
+    if not failures:
+        return (0, _EPOCH)
+    return (1, last_attempt_at or _EPOCH)
 
 
 @dataclass(slots=True)
@@ -121,9 +154,10 @@ class QuoteCache:
             entry.retry_after is None or now >= entry.retry_after
         ):
             fetched = fetch()
+            entry.last_attempt_at = now
             if is_ok(fetched):
                 was_healthy = entry.failures == 0
-                self._entries[key] = _Entry(fetched, now)
+                self._entries[key] = _Entry(fetched, now, last_attempt_at=now)
                 if provider_wide:
                     if self._deferred:
                         self._deferred = False  # a fresh success clears the position
@@ -195,12 +229,14 @@ class QuoteCache:
         refresh: bool = False,
         replacements: Mapping[Instrument, Iterable[Instrument]] | None = None,
     ) -> dict[Instrument, PriceObservation]:
-        """Fetch due positions with fewer failures first; return in input order.
+        """Fetch due positions, failure-free first, then oldest attempt first.
 
         A position is an input plus its replacement listings. A replacement is
         fetched directly after the failed primary; it is not an input and is
         appended after the inputs. A position counts at most one provider
-        failure, and only if all of its candidates fail.
+        failure, and only if all of its candidates fail. Positions are ordered
+        by their best candidate under ``probe_order_key``; the result is
+        returned in input order.
         """
         items = list(instruments)
         alternatives = {
@@ -211,14 +247,18 @@ class QuoteCache:
             for item in items
         }
 
-        def failures(item):
-            return min(
-                self._entries.get(("quote", c), _Entry()).failures
+        def probe_order(item):
+            candidates = (
+                self._entries.get(("quote", c), _Entry())
                 for c in (item, *alternatives[item])
+            )
+            return min(
+                probe_order_key(entry.failures, entry.last_attempt_at)
+                for entry in candidates
             )
 
         results = {}
-        for item in sorted(items, key=failures):
+        for item in sorted(items, key=probe_order):
             self._deferred = False
             try:
                 for candidate in (item, *alternatives[item]):
@@ -235,6 +275,29 @@ class QuoteCache:
                 self._deferred = None
         extras = {key: value for key, value in results.items() if key not in items}
         return {item: results[item] for item in items} | extras
+
+    def attempts(self) -> dict[tuple[str, Instrument], FetchAttempts]:
+        """Failure series of every quote and history key, per ``(kind, instrument)``.
+
+        Read-only view for callers that order their own fetches (the Watchlist);
+        ``kind`` is ``"quote"`` or ``"history"``. Several history windows of one
+        instrument combine to the highest count and the latest attempt. A key that
+        was never fetched is absent. The series only moves when the provider was
+        actually asked: a result served from the cache or blocked by a backoff
+        changes neither field.
+        """
+        merged: dict[tuple[str, Instrument], FetchAttempts] = {}
+        for key, entry in self._entries.items():
+            if key[0] not in ("quote", "history") or entry.last_attempt_at is None:
+                continue
+            seen = merged.get((key[0], key[1]))
+            merged[(key[0], key[1])] = FetchAttempts(
+                max(entry.failures, seen.failures) if seen else entry.failures,
+                max(entry.last_attempt_at, seen.last_attempt_at)
+                if seen
+                else entry.last_attempt_at,
+            )
+        return merged
 
     def fx(self, pair: VerifiedFxPair, *, refresh: bool = False) -> FxObservation:
         return self._get(

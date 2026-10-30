@@ -143,21 +143,31 @@ Parser-`warnings`.
   vom Anbieter abgelehnte Symbole (z. B. Tippfehler, delistet) zählen als Fehler, und die
   Erholungsprobe nach dem Backoff nimmt den ersten fälligen Schlüssel. Damit abgelehnte
   Symbole die gültigen Zeilen dahinter nicht sperren, ruft der Koordinator Historie und
-  (bei laufender Sitzung) Quote in **einer gemeinsamen Reihenfolge** ab: zuerst Schlüssel
-  ohne gescheiterte Abrufe (Historien vor Quotes, dann Blattreihenfolge), zuletzt bekannte
-  defekte. Der Rang gilt **je Abrufart und Instrument**: Ein Historien-Abruf wird nach dem
-  Fehlerzähler seines eigenen Schlüssels (`("history", Instrument)`) im `QuoteCache`
-  gereiht, ein Quote-Abruf nach dem Zähler seines Quote-Schlüssels plus dem Historienzähler
-  derselben Zeile (ein abgelehntes Symbol scheitert an beidem, der Historienzähler ist
-  immer aktuell). Der Quotezähler beeinflusst nie die Historie: Er wird nur durch einen
-  erfolgreichen Quote bei laufender Sitzung zurückgesetzt und bleibt nach Börsenschluss
-  eingefroren; eine geheilte gültige Zeile mit hohem, eingefrorenem Quotezähler würde sonst
-  bis zur nächsten Historien-TTL (Standard 6 h) hinter neu abgelehnten Symbolen warten.
-  Bei Gleichstand gilt: Historien vor Quotes, dann Blattreihenfolge (stabile Sortierung).
+  (bei laufender Sitzung) Quote in **einer gemeinsamen Reihenfolge** ab, die zeilenweise
+  aus dem `QuoteCache` abgeleitet wird (`QuoteCache.attempts()`, öffentliche Lesesicht auf
+  Fehlerserie und Zeitpunkt des letzten Abrufversuchs je Abrufart und Instrument):
+  zuerst Zeilen ohne Fehlerserie (Historien vor Quotes, dann Blattreihenfolge), danach
+  Zeilen mit Fehlerserie, **die am längsten nicht mehr versuchte zuerst**
+  (`quote_cache.probe_order_key`). Die Fehlerserie einer Zeile ist ihr Historienzähler
+  plus ihr Quotezähler; beide Abrufe einer Zeile haben denselben Rang. Die Fehlerzahl
+  selbst ordnet nicht: Eine wieder gesunde Zeile mit langer Fehlerhistorie kommt so
+  innerhalb einer Runde über die fehlerhaften Zeilen wieder an die Reihe (#111), statt
+  hinter jeder neueren, dauerhaft fehlerhaften Zeile zu warten, bis deren Zähler den
+  eigenen übersteigen.
+  **Höchstzahl:** Bei offenem Backoff erhält jede fehlerhafte Zeile ihre Probe nach
+  höchstens so vielen Backoff-Fenstern (je höchstens 300 s), wie Zeilen gerade
+  fehlschlagen; Zeilen ohne bisherigen Fehler (gültig oder noch nie versucht) kommen
+  vorher einmal an die Reihe. Der Quotezähler gilt nur innerhalb der Sitzung, in der er
+  entstand: Er steigt nur bei laufender Sitzung und bleibt nach Börsenschluss auch dann
+  eingefroren, wenn das Symbol wieder funktioniert. Liegt zwischen seinem letzten Versuch
+  und jetzt der Schluss einer regulären Sitzung (`price_periods.session_closed_between`),
+  zählt er nicht mehr. Eine Pause innerhalb derselben Sitzung ändert nichts an seinem
+  Gewicht (kein Rückfall auf die Kaltstart-Tabelle); der Historienzähler gilt immer.
   Gezählt werden nur tatsächlich versuchte und gescheiterte Abrufe; ein wegen Backoff
   übersprungener Abruf (Anzeige weiter `cached_provider_value` bzw. `provider_backoff`)
   erhöht ihn nicht, ein Erfolg setzt ihn zurück. Der Koordinator führt keinen eigenen
-  Fehlerzustand. Die `entries` bleiben in Blattreihenfolge.
+  Fehlerzustand und liest nicht mehr die privaten Einträge des Caches. Die `entries`
+  bleiben in Blattreihenfolge.
   - **Erholungszeit wächst mit der Zahl defekter Zeilen.** Defekte Zeilen ohne bisher
     gescheiterten Abruf haben Rang 0 wie gültige Zeilen (Kaltstart: noch kein Erfolg;
     Warmzustand: Zeilen waren früher gültig, Yahoo lehnt sie jetzt erstmals ab) und nehmen je
@@ -180,23 +190,16 @@ Parser-`warnings`.
     die defekten Zeilen bleiben `provider_failure` (Kaltstart: `SHEET_VALUE`) bzw. `CACHED`.
   - **Warmzustand**: Nach der Erholung rufen die gültigen Zeilen ihre Daten wieder normal
     ab. Ein eingefrorener Quotezähler (Quote-Fehler in der Sitzung, Heilung nach
-    Börsenschluss) verzögert die Historie einer geheilten Zeile nicht mehr: Gemessen mit den
-    Produktions-TTLs (60 s / 300 s / 21600 s) sind die gültigen Zeilen auch dann sofort
-    wieder `LIVE`, wenn danach ein Block Symbole abgelehnt wird (vorher bis zu einer
-    Historien-TTL, 21840 s); ebenso, wenn Defekte an einer offenen und gültige Zeilen nur an
-    einer geschlossenen Börse liegen. Nicht abgedeckt (unverändert, auch vor dieser
-    Änderung): Der Quotezähler gilt weiter für den Quote-Abruf selbst. Hat eine Zeile am
-    Vortag in der Sitzung viele Quote-Fehler gesammelt und wird am nächsten Handelstag in
-    der laufenden Sitzung ein Block Symbole abgelehnt, bleibt der Quote dieser Zeile
-    (Anzeige `SHEET_VALUE`, `stale_quote`) hinter dem Block, solange dessen Zähler nicht
-    höher sind; die Historie ist davon nicht betroffen. Ebenso warten geheilte Zeilen mit
-    einem echten, älteren Fehlerzähler hinter neu abgelehnten Symbolen, wenn ein
-    Totalausfall ihren erneuten Abruf verhindert hat, bis eine Historien-TTL abläuft (in
-    der Zufallssimulation mit 3600-s-TTL einzelne Verläufe mit 3660-4980 s; endlich). Mit
-    den Produktions-TTLs dauert das Muster am Folgetag („alle gültigen Zeilen mit
-    eingefrorenem Quotezähler, mindestens drei neu abgelehnte davor“) bis zu einer
-    Historien-TTL (Standard 6 h); die Zeilen zeigen währenddessen `SHEET_VALUE` mit
-    `stale_quote`. Eine Aktualitätsinformation je Schlüssel (Issue #111) würde das beheben.
+    Börsenschluss) verzögert weder Historie noch Quote einer geheilten Zeile: Am Folgetag
+    (laufende Sitzung, Produktions-TTLs 60 s / 300 s / 21600 s) sind die gültigen Zeilen
+    auch dann innerhalb von 5 Minuten wieder `LIVE`, wenn alle Quotezähler der Vortagssitzung
+    tragen und mindestens drei Symbole neu abgelehnt werden (vorher bis zu einer Historien-TTL,
+    Standard 6 h, in dieser Zeit `SHEET_VALUE` mit `stale_quote`). Geheilte Zeilen mit einem
+    echten älteren Historienzähler warten nicht mehr hinter frisch abgelehnten Zeilen, die nur
+    einen Quotezähler haben. Nicht abgedeckt bleibt: Eine nie versuchte defekte Zeile ist
+    von einer gültigen nicht zu unterscheiden (siehe Tabelle); und Zeilen, deren Quote
+    dauerhaft scheitert, während ihre Historie funktioniert, nehmen nach dem Ende einer Sitzung
+    wieder eine Probe im ersten Backoff-Fenster der nächsten Sitzung.
   - Bei einem echten Totalausfall gilt der Backoff unverändert (gemessen: 30 Anbieter-
     aufrufe in zwei Stunden bei 60 Zeilen); nach dem Ende des Ausfalls sind alle Zeilen
     nach etwa vier Minuten wieder `LIVE`.
