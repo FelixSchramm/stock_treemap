@@ -8,6 +8,8 @@ document. Nothing here touches the protected store, a provider or a real identit
 
 from dataclasses import replace
 
+import streamlit as st
+
 from portfolio_dashboard.demo import DEMO_TIMESTAMP, demo_snapshot
 from portfolio_dashboard.fundamentals_demo import (
     DEMO_VALUED_ID,
@@ -15,6 +17,8 @@ from portfolio_dashboard.fundamentals_demo import (
     demo_fundamentals_loader,
     demo_registry,
 )
+from portfolio_dashboard.private_store import PrivateDatabase
+from portfolio_dashboard.scenarios import ScenarioRepository
 from portfolio_dashboard.valuation_overview import OverviewSource
 from portfolio_dashboard.valuations import PortfolioValuation, value_portfolio
 
@@ -48,11 +52,38 @@ def demo_overview_valuation() -> PortfolioValuation:
     return value_portfolio(replace(snapshot, positions=positions), registry)
 
 
+DEMO_REPOSITORY_KEY = "valuation.demo_repository"
+
+
+class _LazyRepository:
+    """Demo scenario store of this session, created on first use.
+
+    ``PrivateDatabase`` in demo mode owns an empty temporary database per handle, so
+    the handle lives in the session: edits survive reruns, never the session, and never
+    touch the protected store. Construction does no IO.
+    """
+
+    def _repository(self) -> ScenarioRepository:
+        held = st.session_state.get(DEMO_REPOSITORY_KEY)
+        if held is None:
+            held = ScenarioRepository(PrivateDatabase())
+            st.session_state[DEMO_REPOSITORY_KEY] = held
+        return held
+
+    def get(self, identity, **kwargs):
+        return self._repository().get(identity, **kwargs)
+
+    def save(self, document):
+        return self._repository().save(document)
+
+
 def demo_valuation_source() -> OverviewSource:
+    source = DemoScenarioSource(demo_fundamentals_loader(), _LazyRepository())
     return OverviewSource(
         demo_registry(),
-        DemoScenarioSource(demo_fundamentals_loader()).get,
+        source.get,
         lambda: DEMO_TIMESTAMP,
         demo_overview_valuation(),
         True,
+        source.save,
     )

@@ -159,6 +159,9 @@ _LIMITATION_TEXT = {
     "terminal_value_dominant": "Terminalwertanteil ab 75 %: Wert hängt überwiegend vom Restwert ab",
     "negative_forecast_fcff": "negativer FCFF in einem Prognosejahr",
     "scenario_values_not_ordered": "Szenariowerte nicht in der Reihenfolge vorsichtig ≤ Basis ≤ optimistisch",
+    "model_value_as_of_valuation_date_not_rolled_forward": (
+        "Modellwert gilt zum Annahmen-Stichtag und ist nicht auf heute fortgeschrieben"
+    ),
 }
 _NOTE_TEXT = {
     ComparisonNote.PRICE_CACHED: "Kurs: letzter gültiger Anbieterstand (zwischengespeichert)",
@@ -208,8 +211,9 @@ _NOTE_CODE_TEXT = {
 
 DEMO_NOTE = "Demo: Annahmen, manuelle Werte und Zahlen sind erfunden (synthetisch)"
 NOT_LOADED_EXPLANATION = (
-    "Die Fundamentaldaten sind noch nicht geladen. „Bewertungsdaten laden“ liest sie aus "
-    "der geschützten Ablage und ruft sie, soweit fällig, neu ab."
+    "Die Fundamentaldaten sind noch nicht geladen. Die Schaltfläche „Bewertungsdaten laden“ "
+    "(nach dem ersten Laden „Fundamentaldaten aktualisieren“) liest sie aus der geschützten "
+    "Ablage und ruft sie, soweit fällig, neu ab."
 )
 NO_ASSUMPTIONS_LINE = "Annahmenstand: keine gespeicherten Annahmen"
 IDENTITY_MISSING_PORTFOLIO = (
@@ -482,6 +486,8 @@ class OverviewSource:
     ``scenario_reader`` returns the stored scenario document of a verified identity
     (``ScenarioRepository.get`` in production) or ``None``. ``portfolio`` replaces
     the loaded depot valuation (demo only); ``demo`` marks all data as invented.
+    ``scenario_saver`` stores a new revision (``ScenarioRepository.save``: owner check,
+    versioning and conflict as there); without it the detail view (#80) cannot save.
     """
 
     listings: tuple[VerifiedListing, ...]
@@ -489,6 +495,7 @@ class OverviewSource:
     clock: Callable[[], datetime]
     portfolio: PortfolioValuation | None = None
     demo: bool = False
+    scenario_saver: Callable[[ScenarioDocument], ScenarioDocument] | None = None
 
 
 # --- evaluation inputs -------------------------------------------------------------
@@ -599,7 +606,8 @@ class OverviewRow:
             "Name": self.name,
             "Ticker": self.ticker or NO_VALUE,
             "Bestand": self.membership,
-            "Kurs": self.price_label,
+            "Kurs": self.price_label
+            + (f" ({self.price_source})" if self.price_source else ""),
             "Vorsichtig": self.scenarios[0].value_label,
             "Basis": self.scenarios[1].value_label,
             "Optimistisch": self.scenarios[2].value_label,
@@ -712,7 +720,12 @@ def _fmt_date(value) -> str:
 
 
 def _stand(
-    entry: FundamentalsEntry | None, as_of: datetime, assumptions: str | None
+    entry: FundamentalsEntry | None,
+    as_of: datetime,
+    assumptions: str | None,
+    *,
+    assumptions_at: datetime | None = None,
+    over_limit: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
     """Retrieval age and business age, kept apart, plus the assumptions stand."""
     if entry is None or entry.last_checked_at is None:
@@ -736,6 +749,10 @@ def _stand(
             )
         age = format_snapshot_age(entry.last_checked_at, as_of)
         short = f"Abruf {age}; {business}"
+        if assumptions_at is not None:
+            short += f"; Annahmen vom {_fmt_date(assumptions_at)}"
+        if over_limit:
+            short += "; Altersgrenze überschritten"
         lines = [f"Abrufalter: {retrieved}", f"Fachliches Alter: {business_long}"]
         if entry.bridge_date is not None:
             lines.append(
@@ -794,8 +811,10 @@ def _row(
     target_currency: str | None = None,
     margin: Decimal | None = None,
     text: str | None = None,
+    price_note: str = "",
 ) -> OverviewRow:
     price_label, price_source = _price_view(price)
+    price_source = ", ".join(x for x in (price_source, price_note) if x)
     return OverviewRow(
         index,
         subject.key,
@@ -948,9 +967,11 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
         )
 
     document = context.documents.get(subject.key)
-    stand_without = _stand(entry, as_of, NO_ASSUMPTIONS_LINE)
+    as_of_issues = entry.report_set.issues_at(as_of)
+    over_limit = any(i.status is QualityStatus.STALE for i in as_of_issues)
+    stand_without = _stand(entry, as_of, NO_ASSUMPTIONS_LINE, over_limit=over_limit)
     notes = base_notes + entry_notes
-    notes.extend(_issue_notes(entry.report_set.issues_at(as_of)))
+    notes.extend(_issue_notes(as_of_issues))
     if document is None or not document.scenarios:
         return _row(
             index,
@@ -1070,6 +1091,12 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
     if context.demo:
         notes.append(DEMO_NOTE)
     base_cmp = next(v for v in views if v.scenario is Scenario.BASE).comparison
+    if base_cmp is not None:
+        notes.extend(
+            _LIMITATION_TEXT[code]
+            for code in base_cmp.limitations
+            if code in _LIMITATION_TEXT
+        )
     comparison_text = "kein Basiswert, kein Vergleich"
     position_text = ""
     if base_cmp is not None:
@@ -1104,7 +1131,21 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
         + (f"bestätigt am {_fmt_date(confirmed)}" if confirmed else "nicht bestätigt")
         + (" (synthetisch)" if context.demo else "")
     )
-    stand = _stand(entry, as_of, assumption_line)
+    stand = _stand(
+        entry,
+        as_of,
+        assumption_line,
+        assumptions_at=base_assumptions.valuation_at,
+        over_limit=over_limit,
+    )
+    if over_limit and status in _COVERED:
+        text = f"{text or status.value} – Altersgrenze überschritten"
+    price_note = (
+        f"Kurs älter als {MAX_PRICE_AGE.days} Tage"
+        if base_cmp is not None
+        and ComparisonNote.PRICE_OLDER_THAN_LIMIT in base_cmp.notes
+        else ""
+    )
     return _row(
         index,
         subject,
@@ -1121,6 +1162,7 @@ def _evaluate(index: int, subject: Subject, context: EvaluationContext) -> Overv
         target_currency=target_currency,
         margin=margin,
         text=text,
+        price_note=price_note,
     )
 
 

@@ -414,6 +414,20 @@ def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_ap
     assert_closed(app, calls)  # revoked owner: no area, no table, no private figure
 
 
+def test_detail_view_state_opens_nothing_for_a_revoked_owner(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    app = make_app(owner_claims()).run()
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Innerer Wert").run()
+    # A pre-set request and an open detail view must not outlive the owner check.
+    app.session_state["valuation.detail_key"] = "synthetic-instrument"
+    app.session_state["valuation.detail_current"] = "synthetic-instrument"
+    monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
+    calls.clear()
+    app.run()
+    assert_closed(app, calls)
+    assert not app.subheader and not app.text_input and not app.table
+
+
 def test_production_watchlist_uses_the_service_account_secret_after_the_gate(protected_app, monkeypatch):
     from datetime import UTC, datetime
 
