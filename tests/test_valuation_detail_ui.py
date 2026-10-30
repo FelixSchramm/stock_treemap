@@ -552,3 +552,80 @@ def test_ui_text_has_no_buy_sell_or_analyst_target_wording(demo):
         "kursziel",
     ):
         assert forbidden not in shown
+
+
+# --- wiring: the protected store, owner/loopback rules ------------------------------------------
+
+
+def test_production_wiring_saves_through_the_protected_store_only_on_loopback(
+    monkeypatch, tmp_path
+):
+    import streamlit as st
+    from test_valuation_ui import LOCAL
+
+    from portfolio_dashboard.fundamentals_demo import (
+        demo_fundamentals_loader,
+        demo_registry,
+    )
+    from portfolio_dashboard.private_store import PrivateStorageError
+
+    clean_environment(monkeypatch)
+    for key, value in LOCAL.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("PORTFOLIO_PRIVATE_DATA_DIR", str(tmp_path / "private"))
+    address = {"value": "127.0.0.1"}
+    original = st.get_option
+    monkeypatch.setattr(
+        st,
+        "get_option",
+        lambda key: address["value"] if key == "server.address" else original(key),
+    )
+    loader = demo_fundamentals_loader()
+    instrument = next(
+        listing.instrument
+        for listing in demo_registry()
+        if listing.instrument.instrument_id == DEMO_VALUED_ID
+    )
+    entry = loader.load([instrument]).entry(instrument)
+    source = view.private_source(demo_registry())
+    assert source.scenario_saver is not None and source.demo is False
+
+    document = vd.new_document(entry.report_set, source.clock())
+    saved = source.scenario_saver(document)
+    assert saved.revision == 1
+    assert source.scenario_reader(entry.identity) == saved
+    assert (tmp_path / "private" / "private.sqlite3").exists()
+
+    # A stale editor (revision 0 again) gets the store's conflict, nothing is overwritten.
+    from portfolio_dashboard.scenarios import ScenarioConflict
+
+    with pytest.raises(ScenarioConflict):
+        source.scenario_saver(document)
+
+    # Not loopback: neither read nor write reaches the protected store.
+    address["value"] = "0.0.0.0"
+    for call in (
+        lambda: source.scenario_saver(saved),
+        lambda: source.scenario_reader(entry.identity),
+    ):
+        with pytest.raises(PrivateStorageError) as error:
+            call()
+        assert error.value.code == "local"
+
+
+def test_saving_a_storage_failure_shows_the_fixed_message_and_keeps_the_input(demo):
+    from portfolio_dashboard.private_store import PrivateStorageError
+
+    app = open_detail()
+    app.text_input(key=WACC).set_value("9").run()
+    repository = app.session_state[DEMO_REPOSITORY_KEY]
+
+    def failing(document):
+        raise PrivateStorageError("busy")
+
+    repository.save = failing  # the next write fails like a locked database
+    app.button(key=SAVE).click().run()
+    assert not app.exception
+    assert any("Private Datenbank wird gerade verwendet" in e.value for e in app.error)
+    assert "Nicht gespeichert" in " ".join(e.value for e in app.error)
+    assert app.text_input(key=WACC).value == "9"
