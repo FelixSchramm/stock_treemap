@@ -1,8 +1,9 @@
 # Private Szenarien und manuelle Ergänzungen
 
 M8-07 (#76) speichert Eingaben für die spätere Rechnung in #77 und den
-Kursvergleich in #78. Es gibt keinen Providerabruf, Editor, DCF-Rechner oder
-fertigen Bewertungswert. Reale Annahmen, Normalisierungen und Bestätigungen
+Kursvergleich in #78. Es gibt keinen Providerabruf, DCF-Rechner oder
+fertigen Bewertungswert in diesem Teil; den Editor liefert die
+[Detail- und Annahmenansicht](VALUATION_DETAIL.md) (#80). Reale Annahmen, Normalisierungen und Bestätigungen
 kommen ausdrücklich vom Besitzer. Synthetische Vorlagen stehen ausschließlich
 in Tests; neue Datensätze enthalten keine vorgegebenen Finanzannahmen.
 

@@ -462,6 +462,10 @@ def test_first_save_for_a_new_security_creates_revision_one_with_a_gap_state(dem
     document = stored(app, "DEMO-FUNDAMENTALS-C")
     assert document.revision == 1 and document.scenario(Scenario.BASE) is not None
     assert document.scenario(Scenario.CAUTIOUS) is None
+    # Scenarios stay with their own security: the other demo stock is untouched.
+    other = stored(app)
+    assert other.revision == 1
+    assert other.scenario(Scenario.BASE).assumptions.version == "demo-assumptions-v1"
     # Data gaps still block: a valid plan is not a finished valuation.
     app.button(key=dv.BACK_KEY).click().run()
     table = app.dataframe[0].value
@@ -629,3 +633,60 @@ def test_saving_a_storage_failure_shows_the_fixed_message_and_keeps_the_input(de
     assert any("Private Datenbank wird gerade verwendet" in e.value for e in app.error)
     assert "Nicht gespeichert" in " ".join(e.value for e in app.error)
     assert app.text_input(key=WACC).value == "9"
+
+
+# --- a new report ---------------------------------------------------------------------------
+
+
+def with_new_report(app):
+    """Make the loader deliver a newer report set than the stored scenario document."""
+    held = app.session_state[view.LOADED_STATE_KEY]
+    instrument = next(
+        i for i in held.bundle.entries if i.instrument_id == DEMO_VALUED_ID
+    )
+    entry = held.bundle.entries[instrument]
+    newer = replace(entry.report_set, input_version="newer-report")
+    entries = {
+        i: (
+            replace(e, report_set=newer)
+            if e.report_set is not None and i.instrument_id == DEMO_VALUED_ID
+            else e
+        )
+        for i, e in held.bundle.entries.items()
+    }
+    app.session_state[view.LOADED_STATE_KEY] = replace(
+        held, bundle=replace(held.bundle, entries=entries)
+    )
+    return newer
+
+
+def test_a_new_report_blocks_editing_until_it_is_adopted_and_then_flags_everything(
+    demo,
+):
+    app = open_detail()
+    newer = with_new_report(app)
+    app.run()
+    assert not app.exception
+    shown = text(app)
+    assert (
+        "Neuer Bericht" in shown
+        and "werden nicht auf die neuen Zahlen angewendet" in shown
+    )
+    assert not app.text_input and not app.text_area  # no editor on stale data
+    assert [b.label for b in app.button if b.key == dv.ADOPT_KEY] == [
+        "Neuen Berichtssatz übernehmen"
+    ]
+    assert stored(app).revision == 1  # nothing changed without the explicit action
+    app.button(key=dv.ADOPT_KEY).click().run()
+    assert not app.exception
+    document = stored(app)
+    assert document.revision == 2
+    assert document.originals.input_version == "newer-report"
+    # The prompt from #76: manual values and plans are flagged, nothing moved silently.
+    assert len(vd.review_needed(document)) == 9
+    codes = {i.code for i in document.issues_for(Scenario.BASE) if i.blocking}
+    assert {"assumptions_input_mismatch", "manual_review_required"} <= codes
+    assert document.scenario(Scenario.BASE).assumptions.inputs != document.inputs
+    first = app.session_state[DEMO_REPOSITORY_KEY].get(identity(), revision=1)
+    assert first.originals.input_version != "newer-report"  # history kept
+    assert newer.input_version == "newer-report"

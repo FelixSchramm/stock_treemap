@@ -12,7 +12,7 @@ Konfidenzintervall, keine Änderung an Treemap, Kursperioden oder Seit-Kauf-Rend
 | Modul | Aufgabe |
 | --- | --- |
 | `valuation_overview` | rein fachlich (ohne Streamlit, Netzwerk, Uhr): Zeilen, Filter, Sortierung, Abdeckung, Statustexte |
-| `valuation_view` | Streamlit-Darstellung, explizites Laden, Sitzungszustand, Einstieg für #80 |
+| `valuation_view` | Streamlit-Darstellung, explizites Laden, Sitzungszustand, Einstieg zur Detailansicht (#80) |
 | `ui.render_valuation_area` | Ansicht **Innerer Wert** im Ansichtsradio; lädt Depot-/Watchlist-Stand der eigenen Ansichten |
 | `valuation_demo`, `fundamentals_demo` | ausdrücklich synthetische Demo-Daten über denselben Ladepfad |
 | `app.py` | übergibt `overview=` (Produktiv: `valuation_view.private_source(coordinator.listings)`, Demo: `valuation_demo.demo_valuation_source()`) |
@@ -143,13 +143,25 @@ umgesetzt.
 
 ## Einstieg für die Detailansicht (#80)
 
-Die Ansicht merkt nur die Wahl; es gibt keinen Editor. Auswahlfeld `Aktie für die Detailansicht` (nur Aktien mit
-Fundamentaldaten-Identität) und Knopf `Detail- und Annahmenansicht vormerken` setzen
-`st.session_state[valuation_view.DETAIL_KEY]` (`"valuation.detail_key"`) auf die `instrument_id` der geprüften Aktie
-(`OverviewRow.detail_key`). #80 liest und löscht den Schlüssel, öffnet die Szenarioansicht über
-`ScenarioRepository.get(identity)` und ruft nach jedem Speichern `valuation_view.reset_loaded_state(st.session_state)` auf,
-damit die Übersicht beim nächsten Lauf die gespeicherten Szenarien liest. `valuation_overview.collect_subjects`,
-`build_rows` und `entry_for` liefern dafür den Eintrag des Laders (`FundamentalsEntry.identity`, `report_set`).
+Auswahlfeld `Aktie für die Detailansicht` (nur Aktien mit Fundamentaldaten-Identität) und Knopf `Detail- und Annahmenansicht öffnen`
+setzen `st.session_state[valuation_view.DETAIL_KEY]` (`"valuation.detail_key"`) auf die `instrument_id` der geprüften Aktie
+(`OverviewRow.detail_key`) und öffnen die Ansicht sofort. Die Übersicht liest den Schlüssel, löscht ihn und hält die geöffnete Aktie in
+`valuation.detail_current`. Die Ansicht ([VALUATION_DETAIL.md](VALUATION_DETAIL.md)) liest die Szenarien über `ScenarioRepository.get(identity)` bzw.
+`OverviewSource.scenario_reader`, speichert über `OverviewSource.scenario_saver` und ruft nach jedem Speichern
+`valuation_view.reset_loaded_state(st.session_state)` auf, damit die Übersicht beim nächsten Lauf die gespeicherten Szenarien liest.
+
+## Hinweise aus dem #79-Review (mit #80 aufgenommen)
+
+- **Altersgrenze und Stichtag sichtbar:** Ist ein Abschluss, die Kapitalbrücke oder die Aktienzahl zum Vergleichszeitpunkt älter als die
+  Altersgrenze (ADR 0010), steht das als `Altersgrenze überschritten` im `Datenstand` und im Status (`Bewertet – Altersgrenze überschritten`;
+  der Status selbst und die Abdeckung bleiben unverändert). Der `Datenstand` nennt den Annahmen-Stichtag (`Annahmen vom …`). Der Erklärtext und jede
+  Zeile weisen darauf hin, dass der Modellwert **zum Annahmen-Stichtag gilt und nicht auf heute fortgeschrieben** wird.
+- **Kursquelle in der Tabelle:** Die Spalte `Kurs` nennt die Quelle (`120,00 EUR (Sheet-Wert, Kursstand unbekannt)`, bei sehr altem Kurs
+  `Kurs älter als 4 Tage`).
+- **`Aktualisieren`:** Ein Hinweis unter dem Erklärtext stellt klar, dass die Schaltfläche in dieser Ansicht nur die Fundamentaldaten neu lädt (und
+  Watchlist-Kurse, falls sie noch fehlen); Kurse von Depot und Watchlist werden in deren Ansichten aktualisiert.
+- **Ladetext:** `Fundamentaldaten noch nicht geladen` nennt beide Beschriftungen der Schaltfläche (`Bewertungsdaten laden`, nach dem ersten Laden
+  `Fundamentaldaten aktualisieren`).
 
 ## Demo
 
