@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import streamlit as st
 
-from portfolio_dashboard import valuation_detail
+from portfolio_dashboard import valuation_detail, valuation_detail_view
 from portfolio_dashboard.fundamentals_loader import (
     FundamentalsBundle,
     FundamentalsLoader,
@@ -61,6 +61,8 @@ DETAIL_BUTTON_KEY = "valuation.detail_open"
 # Entry to the detail/assumption view (#80): the ``instrument_id`` of the verified
 # security the user wants to open, or absent. The view of #80 reads and clears it.
 DETAIL_KEY = "valuation.detail_key"
+# The security whose detail view is open (set from DETAIL_KEY, which is consumed).
+DETAIL_OPEN_KEY = "valuation.detail_open"
 # Fundamentals held for the session (``LoadedFundamentals``); #80 calls
 # ``reset_loaded_state`` after saving so the next run reads the stored scenarios.
 LOADED_STATE_KEY = "valuation.loaded"
@@ -124,19 +126,33 @@ def reset_loaded_state(state) -> None:
     state.pop(LOADED_STATE_KEY, None)
 
 
-def private_reader():
-    """Scenario reader on the protected store (owner/loopback checked per read)."""
+def private_repository():
+    """Scenario store on the protected database (owner/loopback checked per operation)."""
     from portfolio_dashboard.private_store import PrivateDatabase
     from portfolio_dashboard.scenarios import ScenarioRepository
 
-    return ScenarioRepository(PrivateDatabase()).get
+    return ScenarioRepository(PrivateDatabase())
+
+
+def private_reader():
+    """Scenario reader on the protected store (owner/loopback checked per read)."""
+    return private_repository().get
 
 
 def private_source(listings: tuple[VerifiedListing, ...]) -> OverviewSource:
-    """Production wiring: stored scenarios from the private store, system clock."""
+    """Production wiring: stored scenarios from the private store, system clock.
+
+    The same repository saves new revisions from the detail view (#80).
+    """
     from datetime import UTC, datetime
 
-    return OverviewSource(listings, private_reader(), lambda: datetime.now(UTC))
+    repository = private_repository()
+    return OverviewSource(
+        listings,
+        repository.get,
+        lambda: datetime.now(UTC),
+        scenario_saver=repository.save,
+    )
 
 
 def load_fundamentals(
@@ -190,7 +206,12 @@ def current_state(
         return FundamentalsState(None, False), None
     held: LoadedFundamentals | None = st.session_state.get(LOADED_STATE_KEY)
     wanted = frozenset(verified_instruments(subjects))
-    if explicit or (auto and (held is None or not wanted <= held.instruments)):
+    # After a save (#80) the held state was dropped: read the stored scenarios again from
+    # the shared loader (cache first, same limits) without another click.
+    reloading = bool(st.session_state.pop(valuation_detail_view.RELOAD_KEY, False))
+    if explicit or reloading or (
+        auto and (held is None or not wanted <= held.instruments)
+    ):
         with st.spinner(LOAD_SPINNER_TEXT):
             held = load_fundamentals(
                 source, loader, subjects, refresh=explicit and held is not None
@@ -310,7 +331,7 @@ def render_notes(rows: Sequence[OverviewRow], global_notes: Sequence[str]) -> No
 
 
 def render_detail_entry(rows: Sequence[OverviewRow]) -> None:
-    """Entry to the detail/assumption view (#80): only remembers the chosen security."""
+    """Entry to the detail/assumption view (#80): remembers the choice, then opens it."""
     openable = [r for r in rows if r.detail_key is not None]
     st.subheader("Details und Annahmen")
     if not openable:
@@ -323,13 +344,21 @@ def render_detail_entry(rows: Sequence[OverviewRow]) -> None:
         format_func=lambda i: labels[i],
         key=DETAIL_SELECT_KEY,
     )
-    if st.button("Detail- und Annahmenansicht vormerken", key=DETAIL_BUTTON_KEY):
+    if st.button("Detail- und Annahmenansicht öffnen", key=DETAIL_BUTTON_KEY):
         st.session_state[DETAIL_KEY] = openable[chosen].detail_key
-    if st.session_state.get(DETAIL_KEY) is not None:
-        st.info(
-            "Die Detail- und Annahmenansicht (Szenarien bearbeiten, Rechenweg) folgt mit "
-            "Issue #80. Die Auswahl ist vorgemerkt."
-        )
+        st.rerun()
+
+
+def open_detail_key(state) -> str | None:
+    """Read and consume the requested security; it stays open in its own key."""
+    requested = state.pop(DETAIL_KEY, None)
+    if requested is not None:
+        state[DETAIL_OPEN_KEY] = requested
+    return state.get(DETAIL_OPEN_KEY)
+
+
+def close_detail(state) -> None:
+    state.pop(DETAIL_OPEN_KEY, None)
 
 
 def render_overview(
@@ -351,6 +380,25 @@ def render_overview(
         demo=source.demo,
     )
     rows = build_rows(subjects, context)
+    opened = open_detail_key(st.session_state)
+    if opened is not None:
+        row = next((r for r in rows if r.detail_key == opened), None)
+        subject = next((s for s in subjects if s.key == opened), None)
+        if row is not None and subject is not None:
+            valuation_detail_view.render_detail(
+                valuation_detail_view.DetailContext(
+                    source,
+                    row,
+                    entry_for(subject, state.bundle),
+                    loaded.documents.get(opened) if loaded is not None else None,
+                    source.clock(),
+                    lambda: reset_loaded_state(st.session_state),
+                    lambda: close_detail(st.session_state),
+                )
+            )
+            return
+        close_detail(st.session_state)
+        valuation_detail_view.clear_drafts()
     st.caption(EXPLAIN_TEXT)
     for stamp in stamps:
         st.caption(stamp)
