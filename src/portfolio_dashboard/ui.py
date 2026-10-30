@@ -145,6 +145,11 @@ div[role="radiogroup"] {
     flex-wrap: wrap;
     row-gap: 0.4rem;
 }
+/* Detail view tables (#80): scroll inside their box, never the page */
+div[data-testid="stTable"] {
+    overflow-x: auto;
+    max-width: 100%;
+}
 /* Keyboard focus ring visibility */
 div.stButton > button:focus-visible,
 div[role="radiogroup"] input:focus-visible + div,
@@ -161,6 +166,13 @@ details > summary:focus-visible {
     }
     div[data-testid="stHorizontalBlock"] {
         flex-wrap: wrap;
+    }
+    div[data-testid="stTable"] table {
+        font-size: 0.78rem;
+    }
+    div[data-testid="stTable"] th,
+    div[data-testid="stTable"] td {
+        padding: 0.25rem 0.35rem !important;
     }
 }
 </style>
