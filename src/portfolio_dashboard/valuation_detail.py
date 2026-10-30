@@ -731,15 +731,18 @@ def build_assumptions(
         positive=True,
         message="Der nachhaltige ROIC muss größer als 0 % sein.",
     )
+    growth_problems = []
     if growth is not None and wacc is not None and growth >= wacc:
-        errors["growth"] = (
+        growth_problems.append(
             "Das Wachstum g muss unter dem WACC liegen, sonst ist der Restwert nicht definiert."
         )
     if growth is not None and roic is not None and growth >= roic:
-        errors["growth"] = (
+        growth_problems.append(
             "Das Wachstum g muss unter dem nachhaltigen ROIC liegen "
             "(Wachstum braucht Reinvestition)."
         )
+    if growth_problems:
+        errors["growth"] = " ".join(growth_problems)
     margin = None
     if form.text("margin").strip():
         margin = _read(

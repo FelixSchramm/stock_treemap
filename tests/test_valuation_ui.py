@@ -277,7 +277,7 @@ def test_notes_list_every_stock_without_full_valuation(demo):
     assert "Demo-Aktie A" not in text  # fully valued
 
 
-def test_detail_entry_only_remembers_the_security_for_issue_80(demo):
+def test_detail_entry_opens_the_detail_view_and_consumes_the_requested_key(demo):
     app = opened()
     assert view.DETAIL_KEY not in app.session_state
     select = app.selectbox(key=view.DETAIL_SELECT_KEY)
@@ -285,8 +285,9 @@ def test_detail_entry_only_remembers_the_security_for_issue_80(demo):
         len(select.options) == 3
     )  # verified stocks only: valued, unsupported, no assumptions
     app.button(key=view.DETAIL_BUTTON_KEY).click().run()
-    assert app.session_state[view.DETAIL_KEY] == DEMO_VALUED_ID
-    assert any("#80" in i.value for i in app.info)
+    assert view.DETAIL_KEY not in app.session_state  # read and cleared (#80)
+    assert app.session_state[view.DETAIL_OPEN_KEY] == DEMO_VALUED_ID
+    assert app.subheader[1].value == "Details und Annahmen: Demo-Aktie A"
     assert not app.exception
 
 

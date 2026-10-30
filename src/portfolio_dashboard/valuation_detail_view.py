@@ -16,13 +16,11 @@ save and when another revision is loaded.
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import pandas as pd
 import streamlit as st
 
 from portfolio_dashboard import valuation_detail as vd
-from portfolio_dashboard.fundamentals import FundamentalField
 from portfolio_dashboard.fundamentals_loader import FundamentalsEntry
 from portfolio_dashboard.intrinsic_models import Scenario
 from portfolio_dashboard.private_store import PrivateStorageError
@@ -39,12 +37,14 @@ NOTICE_KEY = "valuation.notice"
 CONFLICT_KEY = "valuation.conflict"
 BACK_KEY = "valuation.detail_back"
 SCENARIO_KEY = EDIT_PREFIX + "scenario"
-SAVE_KEY = EDIT_PREFIX + "save"
-COPY_CAPEX_KEY = EDIT_PREFIX + "copy_capex"
+ACTION_PREFIX = "valuation.act."
+SAVE_KEY = ACTION_PREFIX + "save"
+COPY_CAPEX_KEY = ACTION_PREFIX + "copy_capex"
 ADOPT_KEY = "valuation.adopt_report"
 RELOAD_KEY = "valuation.reload_after_save"
 MANUAL_SELECT_KEY = MANUAL_PREFIX + "select"
-MANUAL_SAVE_KEY = MANUAL_PREFIX + "save"
+MANUAL_SAVE_KEY = ACTION_PREFIX + "manual_save"
+RESET_KEY = ACTION_PREFIX + "reset."
 SENS_WACC_KEY = SENS_PREFIX + "wacc_step"
 SENS_GROWTH_KEY = SENS_PREFIX + "growth_step"
 
@@ -284,8 +284,6 @@ def _suggestions(ctx: DetailContext, item: vd.ManualItem) -> list[str]:
     entry = ctx.entry
     if entry is None or entry.normalized is None:
         return []
-    currency = item.original.report and (ctx.document or None) and ""
-    _ = currency
     result = []
     for s in entry.normalized.suggestions:
         if s.field is item.original.field and s.period in (None, item.original.period):
@@ -324,7 +322,7 @@ def _render_manual(ctx: DetailContext, doc: ScenarioDocument, editable: bool) ->
         if editable and st.button(
             f"Zurücksetzen: {vd.FIELD_NAMES[manual.adjustment.original.field]} "
             f"({vd.period_label(manual.adjustment.original.period)})",
-            key=f"{MANUAL_PREFIX}reset.{index}",
+            key=f"{RESET_KEY}{index}",
         ):
             _commit(
                 ctx,
@@ -348,7 +346,7 @@ def _render_manual(ctx: DetailContext, doc: ScenarioDocument, editable: bool) ->
     item = items[chosen]
     field_ = item.original.field
     st.markdown(
-        f"**{markdown_text(FIELD_LABEL(field_))}** · {markdown_text(vd.period_label(item.original.period))}"
+        f"**{markdown_text(vd.FIELD_NAMES[field_])}** · {markdown_text(vd.period_label(item.original.period))}"
     )
     st.caption(vd.FIELD_HELP.get(field_, ""))
     st.caption(
@@ -408,10 +406,6 @@ def _render_manual(ctx: DetailContext, doc: ScenarioDocument, editable: bool) ->
                 vd.add_manual(doc, manual, ctx.now),
                 "Ergänzung gespeichert; Annahmen müssen auf die neue Datenbasis geprüft werden",
             )
-
-
-def FIELD_LABEL(field_: FundamentalField) -> str:  # noqa: N802 - readable constant-like helper
-    return vd.FIELD_NAMES[field_]
 
 
 def _render_field_help(currency: str) -> None:
@@ -705,11 +699,17 @@ def _render_calculation(
         )
         calc = vd.preview_calculation(doc, draft)
     elif saved is not None:
-        assumptions, basis = (
-            saved.assumptions,
-            "gespeicherter Stand (der Entwurf ist ungültig)",
+        stored = calculate_scenario(doc.effective_report_set(), saved.assumptions)
+        usable = not vd.blocking_texts(doc.issues_for(scenario))
+        st.caption(
+            "Der Entwurf ist ungültig, daher gibt es keine Vorschau. Der gespeicherte Stand ist "
+            f"unverändert (Revision {doc.revision}): Wert je Aktie "
+            + vd.format_per_share(
+                stored.result.value_per_share if usable else None, currency
+            )
+            + "."
         )
-        calc = calculate_scenario(doc.effective_report_set(), saved.assumptions)
+        return
     else:
         st.caption(
             "Der Rechenweg erscheint, sobald ein Szenario vollständig und gültig eingetragen ist."
@@ -893,6 +893,3 @@ def render_detail(ctx: DetailContext) -> None:
     scenario, draft, saved, unsaved = _render_editor(ctx, doc, editable)
     _render_calculation(ctx, doc, scenario, draft, saved, unsaved)
     _render_limits(st.session_state.pop("valuation.limitations", ()))
-
-
-__all__ = ["DetailContext", "render_detail", "clear_drafts", "Decimal"]
