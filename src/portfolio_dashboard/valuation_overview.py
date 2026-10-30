@@ -482,6 +482,8 @@ class OverviewSource:
     ``scenario_reader`` returns the stored scenario document of a verified identity
     (``ScenarioRepository.get`` in production) or ``None``. ``portfolio`` replaces
     the loaded depot valuation (demo only); ``demo`` marks all data as invented.
+    ``scenario_saver`` stores a new revision (``ScenarioRepository.save``: owner check,
+    versioning and conflict as there); without it the detail view (#80) cannot save.
     """
 
     listings: tuple[VerifiedListing, ...]
@@ -489,6 +491,7 @@ class OverviewSource:
     clock: Callable[[], datetime]
     portfolio: PortfolioValuation | None = None
     demo: bool = False
+    scenario_saver: Callable[[ScenarioDocument], ScenarioDocument] | None = None
 
 
 # --- evaluation inputs -------------------------------------------------------------

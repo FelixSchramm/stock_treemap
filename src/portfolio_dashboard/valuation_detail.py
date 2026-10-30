@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException
+from html import escape
 
 from portfolio_dashboard.dcf import (
     MODEL_VERSION,
@@ -83,6 +84,14 @@ NUMBER_HELP = (
     "Tausendertrennzeichen und ohne Einheit, z. B. 12,5."
 )
 _NUMBER = re.compile(r"[+-]?[0-9]+(?:[.,][0-9]+)?")
+
+
+def markdown_text(text: str) -> str:
+    """Escape owner or sheet text for ``st.markdown`` (HTML and markdown syntax)."""
+    escaped = escape(text)
+    for char in "\\`*_[]$~#|":
+        escaped = escaped.replace(char, "\\" + char)
+    return escaped
 
 
 class InputError(ValueError):

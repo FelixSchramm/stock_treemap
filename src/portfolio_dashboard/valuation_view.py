@@ -9,10 +9,10 @@ rerun. No buy/sell signal is drawn and no missing value is shown as zero.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from html import escape
 
 import streamlit as st
 
+from portfolio_dashboard import valuation_detail
 from portfolio_dashboard.fundamentals_loader import (
     FundamentalsBundle,
     FundamentalsLoader,
@@ -106,12 +106,7 @@ MEASURES_TEXT = (
 )
 
 
-def markdown_text(text: str) -> str:
-    """Escape sheet-provided text for ``st.markdown`` (HTML and markdown syntax)."""
-    escaped = escape(text)
-    for char in "\\`*_[]$~#|":
-        escaped = escaped.replace(char, "\\" + char)
-    return escaped
+markdown_text = valuation_detail.markdown_text
 
 
 @dataclass(frozen=True, slots=True, repr=False)

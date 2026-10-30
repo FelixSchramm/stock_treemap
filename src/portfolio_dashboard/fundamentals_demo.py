@@ -407,17 +407,31 @@ def demo_scenario_document(originals: FundamentalReportSet) -> ScenarioDocument:
 
 
 class DemoScenarioSource:
-    """Reads the invented scenario document; no store, no file, nothing persists."""
+    """Invented scenario document in a temporary store; nothing real, nothing durable.
 
-    def __init__(self, loader: FundamentalsLoader) -> None:
+    ``repository`` is the shared ``ScenarioRepository`` of the demo session (a
+    temporary database that belongs to the session). The first read seeds the
+    invented document of the valued demo security as a normal saved revision, so
+    the detail view edits, saves and detects conflicts exactly as in real operation.
+    """
+
+    def __init__(self, loader: FundamentalsLoader, repository) -> None:
         self._loader = loader
+        self._repository = repository
 
     def get(self, identity: VerifiedFundamentalIdentity) -> ScenarioDocument | None:
-        if identity.listing.instrument.instrument_id != DEMO_VALUED_ID:
-            return None
+        stored = self._repository.get(identity)
+        if (
+            stored is not None
+            or identity.listing.instrument.instrument_id != DEMO_VALUED_ID
+        ):
+            return stored
         entry = self._loader.load([identity.listing.instrument]).entry(
             identity.listing.instrument
         )
         if entry.report_set is None:
             return None
-        return demo_scenario_document(entry.report_set)
+        return self._repository.save(demo_scenario_document(entry.report_set))
+
+    def save(self, document: ScenarioDocument) -> ScenarioDocument:
+        return self._repository.save(document)
