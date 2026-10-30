@@ -134,8 +134,14 @@ class _FakeTicker:
         if "start" in kwargs:
             start, end = (date.fromisoformat(kwargs[k]) for k in ("start", "end"))
             days = [d for d in days if start <= d < end]
+        closes = [close_of(d) for d in days]
+        # Optional intraday state: the bar of a running session is not final yet.
+        calendar = self.yahoo.calendars[spec["frame_exchange"]]
+        local = now.astimezone(pd.Timestamp(0, tz=tz).tz)
+        if "intraday" in spec and days and days[-1] == local.date() and local.time() < calendar.close_time:
+            closes[-1] = spec["intraday"]
         return pd.DataFrame(
-            {"Close": [close_of(d) for d in days], "Stock Splits": [0.0] * len(days)},
+            {"Close": closes, "Stock Splits": [0.0] * len(days)},
             index=pd.DatetimeIndex([pd.Timestamp(d) for d in days], tz=tz),
         )
 
@@ -836,6 +842,39 @@ def test_cached_quote_of_the_same_session_is_kept_but_not_across_days():
     entry = env.load().entries[0]
     assert entry.status is WatchlistEntryStatus.SHEET_VALUE
     assert entry.period("Jahr").reason in {"stale_quote", "missing_quote"}
+
+
+@pytest.mark.parametrize(
+    ("symbol", "exchange", "currency", "fetched", "shown"),
+    [
+        # Fetched in the running session, shown after the close, inside the 1 h history TTL.
+        ("SYN1.DE", "GER", "EUR", datetime(2026, 10, 28, 16, 0, tzinfo=UTC), datetime(2026, 10, 28, 16, 45, tzinfo=UTC)),
+        ("SYN1.DE", "GER", "EUR", datetime(2026, 10, 19, 15, 0, tzinfo=UTC), datetime(2026, 10, 19, 15, 45, tzinfo=UTC)),
+        ("SYN2", "NMS", "USD", datetime(2026, 10, 28, 19, 45, tzinfo=UTC), datetime(2026, 10, 28, 20, 30, tzinfo=UTC)),
+        ("SYN3", "NYQ", "USD", datetime(2026, 3, 9, 19, 30, tzinfo=UTC), datetime(2026, 3, 9, 20, 15, tzinfo=UTC)),
+        ("SYN2", "NMS", "USD", datetime(2026, 11, 2, 20, 30, tzinfo=UTC), datetime(2026, 11, 2, 21, 10, tzinfo=UTC)),
+    ],
+)
+def test_history_fetched_during_the_session_is_fetched_again_after_the_close(
+    symbol, exchange, currency, fetched, shown
+):
+    # Intraday state 1.0 vs. the real close: the cached bar must not pass as the close (#110).
+    env = Env([row(symbol=symbol, exchange=exchange, currency=currency)], now=fetched,
+              symbols=[(symbol, exchange, currency)])
+    env.yahoo.specs[symbol]["intraday"] = 1.0
+    env.load()
+    assert len(env.yahoo.history_calls(symbol)) == 1
+    env.now = shown
+    entry = env.load().entries[0]
+    last = shown.date()
+    previous = max(d for d in env.yahoo.calendars[exchange].sessions if d < last)
+    assert len(env.yahoo.history_calls(symbol)) == 2
+    assert entry.status is WatchlistEntryStatus.LIVE and entry.market_open is False
+    assert entry.current_date == last
+    assert entry.price == Decimal(str(close_of(last)))
+    assert entry.period("Heute").percent == pct(last, previous)
+    env.load()
+    assert len(env.yahoo.history_calls(symbol)) == 2
 
 
 def test_sheet_failure_keeps_the_previous_bundle_with_age():
