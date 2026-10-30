@@ -316,6 +316,68 @@ def test_unconfirmed_assumptions_save_but_give_no_value_in_the_overview(demo):
     assert row["Vorsichtig"] != "n. v."  # other scenarios stay independent
 
 
+def test_unconfirmed_calculation_is_always_a_preview_never_a_saved_value(demo):
+    app = open_detail()
+    app.checkbox(key=CONFIRMED).set_value(False).run()
+    assert "gespeichert kein Wert in der Übersicht" in text(app)
+    app.button(key=SAVE).click().run()
+    assert not app.exception and not app.error
+    assert stored(app).scenario(Scenario.BASE).assumptions.confirmed_at is None
+    shown = text(app)
+    # Draft and stored state are identical, yet the arithmetic is only a preview.
+    assert "Nicht gespeicherte Änderungen" not in shown
+    assert "gespeicherter Stand, unverändert" not in shown
+    assert "Vorschau (rechnerisch als bestätigt behandelt" in shown
+    assert "gespeichert kein Wert in der Übersicht" in shown
+    assert "Gespeichert (Revision 2): Wert je Aktie n. v." in shown
+
+
+def test_the_scenario_choice_survives_a_save(demo):
+    app = open_detail()
+    app.radio(key=dv.SCENARIO_KEY).set_value("Vorsichtig").run()
+    key = "valuation.edit.cautious.wacc"
+    current = Decimal(app.text_input(key=key).value.replace(",", "."))
+    app.text_input(key=key).set_value(str(current + 1)).run()
+    app.button(key=SAVE).click().run()
+    assert not app.exception and not app.error
+    assert stored(app).revision == 2
+    assert app.radio(key=dv.SCENARIO_KEY).value == "Vorsichtig"
+
+
+def test_invalid_draft_still_shows_the_stored_states_model_limits(demo):
+    app = open_detail()
+    app.radio(key=dv.SCENARIO_KEY).set_value("Optimistisch").run()
+    assert any("Terminalwertdominanz" in c.value for c in app.markdown)
+    app.text_input(key="valuation.edit.optimistic.wacc").set_value("abc").run()
+    assert not app.metric  # no preview for the invalid draft
+    assert any("Terminalwertdominanz" in c.value for c in app.markdown)
+
+
+def test_sensitivity_steps_do_not_trigger_the_widget_default_warning(demo, caplog):
+    caplog.set_level("WARNING")
+    app = open_detail()
+    app.selectbox(key=dv.SENS_WACC_KEY).select_index(2).run()
+    assert not app.exception
+    assert app.selectbox(key=dv.SENS_WACC_KEY).index == 2
+    assert not [r for r in caplog.records if "default value" in r.getMessage()]
+
+
+def test_capex_helper_inserts_a_value_the_form_accepts(demo):
+    app = open_detail()
+    app.text_input(key="valuation.edit.base.y5.ebit").set_value("100")
+    app.text_input(key="valuation.edit.base.y5.tax").set_value("20")
+    app.text_input(key=GROWTH).set_value("2")
+    app.text_input(key="valuation.edit.base.roic").set_value("13")
+    app.text_input(key="valuation.edit.base.t.da").set_value("10")
+    app.text_input(key="valuation.edit.base.t.dnwc").set_value("0").run()
+    app.button(key=dv.COPY_CAPEX_KEY).click().run()
+    assert not app.exception
+    value = app.text_input(key="valuation.edit.base.t.capex").value
+    assert len(value.split(",")[-1]) <= vd.MAX_FRACTION_DIGITS
+    vd.parse_number(value)  # accepted by the form's own parser
+    assert "Nachkommastellen" not in text(app)
+
+
 def test_competing_editors_get_a_conflict_instead_of_a_lost_update(demo):
     app = open_detail()
     app.text_input(key=WACC).set_value("9").run()

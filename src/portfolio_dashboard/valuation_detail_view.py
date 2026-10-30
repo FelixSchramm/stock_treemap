@@ -91,11 +91,20 @@ class DetailContext:
 # --- state ---------------------------------------------------------------------------
 
 
+def _drop_draft_inputs() -> None:
+    """Delete the unsaved input; the chosen scenario tab is a view choice and stays."""
+    for key in list(st.session_state):
+        if (
+            isinstance(key, str)
+            and key.startswith(DRAFT_PREFIXES)
+            and key != SCENARIO_KEY
+        ):
+            del st.session_state[key]
+
+
 def clear_drafts() -> None:
     """Drop every unsaved input of the detail view (leaving, saving, reloading)."""
-    for key in list(st.session_state):
-        if isinstance(key, str) and key.startswith(DRAFT_PREFIXES):
-            del st.session_state[key]
+    _drop_draft_inputs()
     for key in (SEED_KEY, CONFLICT_KEY):
         st.session_state.pop(key, None)
 
@@ -116,9 +125,7 @@ def _seed(doc: ScenarioDocument) -> None:
         doc.originals.input_version,
     )
     if st.session_state.get(SEED_KEY) != seed:
-        for key in list(st.session_state):
-            if isinstance(key, str) and key.startswith(DRAFT_PREFIXES):
-                del st.session_state[key]
+        _drop_draft_inputs()
         st.session_state[SEED_KEY] = seed
 
 
@@ -490,7 +497,7 @@ def _copy_capex(scenario: Scenario) -> None:
         and help_.required_capex is not None
         and help_.required_capex >= 0
     ):
-        st.session_state[_key(scenario, "t.capex")] = vd.money_input(
+        st.session_state[_key(scenario, "t.capex")] = vd.money_input_rounded(
             help_.required_capex
         )
 
@@ -686,6 +693,19 @@ def _result_metrics(result, currency: str, label: str) -> None:
         )
 
 
+def _calculation_basis(draft, unsaved: bool) -> str:
+    """Label of the calculation path; an unconfirmed scenario is never a saved value."""
+    if draft.confirmed_at is None:
+        return (
+            "Vorschau ("
+            + ("nicht gespeichert, " if unsaved else "")
+            + "rechnerisch als bestätigt behandelt; gespeichert kein Wert in der Übersicht)"
+        )
+    if unsaved:
+        return "Vorschau (nicht gespeichert, rechnerisch als bestätigt behandelt)"
+    return "gespeicherter Stand, unverändert"
+
+
 def _render_calculation(
     ctx: DetailContext,
     doc: ScenarioDocument,
@@ -700,11 +720,7 @@ def _render_calculation(
     st.subheader("Rechenweg")
     if draft is not None:
         assumptions = draft
-        basis = (
-            "Vorschau (nicht gespeichert, rechnerisch als bestätigt behandelt)"
-            if unsaved
-            else "gespeicherter Stand, unverändert"
-        )
+        basis = _calculation_basis(draft, unsaved)
         calc = vd.preview_calculation(doc, draft)
     elif saved is not None:
         stored = calculate_scenario(doc.effective_report_set(), saved.assumptions)
@@ -717,6 +733,7 @@ def _render_calculation(
             )
             + "."
         )
+        st.session_state["valuation.limitations"] = stored.limitations
         return
     else:
         st.caption(
@@ -725,7 +742,9 @@ def _render_calculation(
         return
     st.caption(
         f"Szenario „{vd.SCENARIO_LABELS[scenario]}“ – {basis}. Alle Beträge in Mio. {currency}, "
-        "ungerundet gerechnet und nur für die Anzeige gerundet."
+        "ungerundet gerechnet und nur für die Anzeige gerundet. Diskontfaktor je Prognosejahr n = "
+        "1 ÷ (1 + WACC)^n mit vollen Jahren, unabhängig vom gewählten Datum des Jahresendes "
+        "(Modellvertrag, ADR 0010); das laufende Geschäftsjahr entfällt im Modell."
     )
     result = calc.result
     blocking = vd.blocking_texts(result.issues)
@@ -772,12 +791,13 @@ def _render_sensitivity(doc: ScenarioDocument, assumptions) -> None:
         "Szenarios (● = das Szenario selbst). Jede Zelle wird einschließlich der nötigen Reinvestition "
         "neu gerechnet. Die Schrittweiten sind reine Anzeigeparameter, keine Annahmen."
     )
+    st.session_state.setdefault(SENS_WACC_KEY, vd.WACC_STEPS[1])
+    st.session_state.setdefault(SENS_GROWTH_KEY, vd.GROWTH_STEPS[1])
     columns = st.columns(2)
     with columns[0]:
         wacc_step = st.selectbox(
             STEP_WACC_LABEL,
             vd.WACC_STEPS,
-            index=1,
             format_func=lambda s: f"{vd.format_step(s)} Prozentpunkte",
             key=SENS_WACC_KEY,
         )
@@ -785,7 +805,6 @@ def _render_sensitivity(doc: ScenarioDocument, assumptions) -> None:
         growth_step = st.selectbox(
             STEP_GROWTH_LABEL,
             vd.GROWTH_STEPS,
-            index=1,
             format_func=lambda s: f"{vd.format_step(s)} Prozentpunkte",
             key=SENS_GROWTH_KEY,
         )

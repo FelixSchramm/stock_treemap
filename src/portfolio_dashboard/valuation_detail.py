@@ -138,6 +138,11 @@ def money_input(value: Decimal | None) -> str:
     return "" if value is None else to_input(value / UNIT)
 
 
+def money_input_rounded(value: Decimal) -> str:
+    """Generated amount as input text that ``parse_number`` accepts (recurring decimals)."""
+    return to_input((value / UNIT).quantize(Decimal(1).scaleb(-MAX_FRACTION_DIGITS)))
+
+
 def percent_input(value: Decimal | None) -> str:
     return "" if value is None else to_input(value * 100)
 
@@ -1546,7 +1551,8 @@ def sensitivity_view(
     blocking = tuple(i for i in grid.issues if i.blocking)
     if blocking:
         return SensitivityView(None, (), blocking_texts(blocking))
-    notes: list[str] = []
+    reasons_seen: dict[str, int] = {}  # reason -> number of cells with it
+    first_cell: dict[str, str] = {}
     rows = []
     for r, (wacc, cells) in enumerate(zip(grid.wacc_values, grid.rows, strict=True)):
         texts = []
@@ -1555,20 +1561,27 @@ def sensitivity_view(
             if cell.value_per_share is not None:
                 text = _german(cell.value_per_share, 2)
             else:
-                reasons = [
-                    _CELL_REASON.get(i.code, i.code) for i in cell.issues if i.blocking
-                ]
-                reason = (
-                    f"WACC {format_percent(cell.wacc)}, g {format_percent(cell.growth)}: "
-                    + "; ".join(dict.fromkeys(reasons))
+                reason = "; ".join(
+                    dict.fromkeys(
+                        _CELL_REASON.get(i.code, i.code)
+                        for i in cell.issues
+                        if i.blocking
+                    )
                 )
-                if reason not in notes:
-                    notes.append(reason)
-                text = f"n. v. ({notes.index(reason) + 1})"
+                first_cell.setdefault(
+                    reason,
+                    f"WACC {format_percent(cell.wacc)}, g {format_percent(cell.growth)}",
+                )
+                reasons_seen[reason] = reasons_seen.get(reason, 0) + 1
+                text = f"n. v. ({list(reasons_seen).index(reason) + 1})"
             texts.append(text + (" ●" if centre else ""))
         rows.append((f"WACC {format_percent(wacc)}", *texts))
     header = ("", *(f"g {format_percent(g)}" for g in grid.growth_values))
-    numbered = tuple(f"({i}) {n}" for i, n in enumerate(notes, 1))
+    numbered = tuple(
+        f"({i}) "
+        + (f"{first_cell[reason]}: {reason}" if n == 1 else f"{reason}: {n} Zellen")
+        for i, (reason, n) in enumerate(reasons_seen.items(), 1)
+    )
     return SensitivityView(TableData(header, tuple(rows)), numbered, ())
 
 

@@ -562,6 +562,17 @@ def test_sensitivity_marks_the_centre_and_explains_invalid_combinations():
     assert any(c.startswith("n. v. (") for c in cells)
     assert any("g ≥ WACC" in n or "g < 0" in n for n in wide.notes)
     assert all(n.startswith("(") for n in wide.notes)
+    # Equal reasons are summarised once with their cell count, not listed per cell.
+    cells_listed = sum(1 for c in cells if c.startswith("n. v. ("))
+    assert len(wide.notes) < cells_listed
+    assert any(n.endswith(" Zellen") for n in wide.notes)
+
+
+def test_generated_capex_is_rounded_to_the_supported_input_precision():
+    text = detail.money_input_rounded(D(2_255_384_615) / D(3))
+    assert len(text.split(",")[-1]) <= detail.MAX_FRACTION_DIGITS
+    assert detail.parse_number(text) > 0
+    assert detail.money_input_rounded(D(48_000_000)) == "48"
 
 
 def test_sensitivity_of_a_blocked_scenario_gives_reasons_not_numbers():

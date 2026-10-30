@@ -152,7 +152,9 @@ Entwicklung, Tests und Demo verwenden ausschließlich erfundene Zahlen.
    `PORTFOLIO_PRIVATE_DATA_DIR` überstehen dort keinen Neustart ([COMMUNITY_CLOUD.md](COMMUNITY_CLOUD.md)). Das ist eine offene Besitzerentscheidung
    (dauerhafter Speicher oder lokaler Betrieb); sie wird hier nicht gelöst.
 2. Prognosejahre sind zwölfmonatige Jahre ab dem gewählten Jahresende (keine 52/53-Wochen-Jahre); das erste Prognosejahr beginnt nach dem
-   Bewertungsstichtag, das laufende Geschäftsjahr entfällt damit im Modell (wie im Beispiel in INTRINSIC_VALUE.md).
+   Bewertungsstichtag, das laufende Geschäftsjahr entfällt damit im Modell (wie im Beispiel in INTRINSIC_VALUE.md). Prognosejahr n wird mit
+   n vollen Jahren abgezinst (1 ÷ (1 + WACC)^n), unabhängig vom gewählten Datum des Jahresendes (Modellvertrag aus #77, ADR 0010); die
+   Oberfläche nennt das im Rechenweg.
 3. Nicht gespeicherte Eingaben gehen beim Verlassen der Detailansicht oder beim Wechsel der Ansicht verloren.
 4. Beim Neuladen nach dem Speichern gelten Abruffrist, Backoff und Stapelgrenze des Laders; eine fällige Aktualisierung anderer Aktien kann
    dabei mit abgerufen werden (wie beim manuellen Laden).
