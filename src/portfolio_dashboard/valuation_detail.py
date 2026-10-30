@@ -1572,10 +1572,6 @@ def sensitivity_view(
     return SensitivityView(TableData(header, tuple(rows)), numbered, ())
 
 
-def now_utc_date(now: datetime) -> date:
-    return now.astimezone(timezone.utc).date()
-
-
 def preview_calculation(document: ScenarioDocument, assumptions: ScenarioAssumptions):
     """Calculation of the preview copy on the effective input of the document."""
     return calculate_scenario(
