@@ -492,7 +492,7 @@ def test_bridge_table_and_sources_name_period_source_and_unknown_publication():
     doc = document()
     bridge = detail.bridge_table(doc.effective_report_set())
     labels = [r[0] for r in bridge.rows]
-    assert "− Finanzschulden" in labels and "Aktuell ausstehende Aktien" in labels
+    assert "abzgl. Finanzschulden" in labels and "Aktuell ausstehende Aktien" in labels
     lines = detail.source_lines(doc, doc.effective_report_set())
     ebit = next(t for t in lines if t.startswith("EBIT"))
     assert "Geschäftsjahr" in ebit and "Anbieter" in ebit

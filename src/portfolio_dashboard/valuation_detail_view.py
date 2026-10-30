@@ -260,13 +260,13 @@ def _render_history(doc: ScenarioDocument) -> None:
     effective = doc.effective_report_set()
     currency = effective.currency
     st.caption(
-        f"Anbieterwerte je Geschäftsjahr in Mio. {currency}; ein Stern (*) kennzeichnet einen "
+        f"Anbieterwerte je Geschäftsjahr in Mio. {currency} (Steuersatz in Prozent); ein Stern (*) kennzeichnet einen "
         "bestätigten manuellen Wert, „fehlt“ eine Lücke. ΔNWC und FCFF sind aus den Angaben "
         "abgeleitet (EBIT × (1 − Steuersatz) + D&A − Capex − ΔNWC); die Rechnung selbst steht im Rechenweg."
     )
     _table(vd.history_table(effective))
     st.caption(
-        "Kapitalbrücke und Aktienzahl (Mio. " + currency + ", Aktien in Mio. Stück):"
+        f"Kapitalbrücke in Mio. {currency}, Aktienzahl in Mio. Stück; * = bestätigter manueller Wert:"
     )
     _table(vd.bridge_table(effective))
     sources = vd.source_lines(doc, effective)
@@ -474,6 +474,15 @@ def _field(
     _error(errors.get(field_id), st.session_state.get(key), attempted)
 
 
+def _pairs(scenario, field_ids, currency, errors, attempted) -> None:
+    """Two fields per row; on a narrow screen the rows stack in reading order."""
+    for start in range(0, len(field_ids), 2):
+        columns = st.columns(2)
+        for offset, field_id in enumerate(field_ids[start : start + 2]):
+            with columns[offset]:
+                _field(scenario, field_id, currency, errors, attempted)
+
+
 def _copy_capex(scenario: Scenario) -> None:
     help_ = vd.terminal_help(_form(scenario))
     if (
@@ -552,16 +561,18 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
             st.markdown(
                 f"**Prognosejahr {n}** (Geschäftsjahr bis {vd.format_date(end)})"
             )
-            columns = st.columns(2)
-            for position, name in enumerate(vd.YEAR_FIELD_LABELS):
-                with columns[position % 2]:
-                    _field(scenario, f"y{n}.{name}", currency, errors, attempted)
+            _pairs(
+                scenario,
+                [f"y{n}.{name}" for name in vd.YEAR_FIELD_LABELS],
+                currency,
+                errors,
+                attempted,
+            )
     with st.container(border=True):
         st.markdown("**Zinssätze und Wachstum**")
-        columns = st.columns(2)
-        for position, field_id in enumerate(("wacc", "growth", "roic", "margin")):
-            with columns[position % 2]:
-                _field(scenario, field_id, currency, errors, attempted)
+        _pairs(
+            scenario, ["wacc", "growth", "roic", "margin"], currency, errors, attempted
+        )
     with st.container(border=True):
         st.markdown("**Nachhaltiges Folgejahr (Jahr 6) für den Restwert**")
         help_ = built.terminal
@@ -577,10 +588,7 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
                 "Sobald EBIT und Steuersatz von Jahr 5 sowie g und ROIC gültig eingetragen sind, "
                 "erscheinen hier NOPAT des Folgejahres und die nötige Netto-Reinvestition."
             )
-        columns = st.columns(2)
-        for position, field_id in enumerate(("t.da", "t.capex", "t.dnwc")):
-            with columns[position % 2]:
-                _field(scenario, field_id, currency, errors, attempted)
+        _pairs(scenario, ["t.da", "t.capex", "t.dnwc"], currency, errors, attempted)
         if (
             help_ is not None
             and help_.required_capex is not None
@@ -770,7 +778,7 @@ def _render_sensitivity(doc: ScenarioDocument, assumptions) -> None:
             STEP_WACC_LABEL,
             vd.WACC_STEPS,
             index=1,
-            format_func=lambda s: f"{vd.format_percent(s)} Punkte",
+            format_func=lambda s: f"{vd.format_step(s)} Prozentpunkte",
             key=SENS_WACC_KEY,
         )
     with columns[1]:
@@ -778,7 +786,7 @@ def _render_sensitivity(doc: ScenarioDocument, assumptions) -> None:
             STEP_GROWTH_LABEL,
             vd.GROWTH_STEPS,
             index=1,
-            format_func=lambda s: f"{vd.format_percent(s)} Punkte",
+            format_func=lambda s: f"{vd.format_step(s)} Prozentpunkte",
             key=SENS_GROWTH_KEY,
         )
     view = vd.sensitivity_view(

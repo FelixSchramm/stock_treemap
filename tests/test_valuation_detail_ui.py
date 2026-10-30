@@ -124,7 +124,7 @@ def test_history_sources_and_future_assumptions_are_separate_sections(demo):
         "GJ bis 31.12.2024",
         "GJ bis 31.12.2025",
     ]
-    assert history.loc["EBIT"].tolist()[-1] == "150,00 Mio. EUR"
+    assert history.loc["EBIT"].tolist()[-1] == "150,00"
     assert history.loc["Steuersatz"].tolist()[0] == "20,00 % *"  # manual, marked
     labels = [e.label for e in app.expander]
     assert any(label.startswith("Quellen und Perioden aller Werte") for label in labels)
@@ -385,7 +385,7 @@ def test_manual_normalization_needs_reason_and_source_and_keeps_the_original(dem
     # The stored plans keep their old binding: no silent transfer to the new data.
     assert "gehören zu einer früheren Datenbasis" in text(app)
     history = base_table(app, "EBIT")
-    assert history.loc["EBIT"].tolist()[-1] == "155,00 Mio. EUR *"
+    assert history.loc["EBIT"].tolist()[-1] == "155,00 *"
     app.button(key=dv.BACK_KEY).click().run()
     assert app.dataframe[0].value["Status"].iloc[0] != "Bewertet"
 

@@ -151,6 +151,11 @@ def format_percent(value: Decimal | None, places: int = 2) -> str:
     return NOT_AVAILABLE if value is None else f"{_german(value * 100, places)} %"
 
 
+def format_step(value: Decimal) -> str:
+    """Step in percentage points, e.g. 0,25."""
+    return _german(value * 100, 2)
+
+
 def format_per_share(value: Decimal | None, currency: str) -> str:
     return NOT_AVAILABLE if value is None else f"{_german(value, 2)} {currency}"
 
@@ -295,13 +300,18 @@ def absolute(observation: FundamentalObservation) -> Decimal | None:
     return observation.value * unit.scale
 
 
-def format_observation(observation: FundamentalObservation, currency: str) -> str:
+def format_observation(
+    observation: FundamentalObservation, currency: str, *, unit: bool = True
+) -> str:
+    """Value as text; ``unit=False`` leaves the unit to the table caption (narrow cells)."""
     value = absolute(observation)
     if value is None:
         return "fehlt" if observation.status is ValueStatus.MISSING else "ungültig"
     kind = unit_kind(observation.field)
     if kind is UnitKind.RATE:
         return format_percent(value)
+    if not unit:
+        return format_money(value)
     suffix = "Mio. Stück" if kind is UnitKind.SHARES else f"Mio. {currency}"
     return f"{format_money(value)} {suffix}"
 
@@ -1115,7 +1125,7 @@ def _effective(report_set: FundamentalReportSet) -> dict:
 def _cell(observation: FundamentalObservation | None, currency: str) -> str:
     if observation is None:
         return "fehlt"
-    text = format_observation(observation, currency)
+    text = format_observation(observation, currency, unit=False)
     if observation.provenance.kind is EvidenceKind.MANUAL:
         text += " *"
     return text
@@ -1202,11 +1212,11 @@ def bridge_table(report_set: FundamentalReportSet) -> TableData:
     at_bridge = InstantPeriod(report_set.bridge_date)
     rows = []
     for field_, sign in (
-        (FundamentalField.EXCESS_CASH, "+"),
-        (FundamentalField.NONOPERATING_ASSETS, "+"),
-        (FundamentalField.FINANCIAL_DEBT, "−"),
-        (FundamentalField.PREFERRED_CLAIMS, "−"),
-        (FundamentalField.MINORITY_CLAIMS, "−"),
+        (FundamentalField.EXCESS_CASH, "zzgl."),
+        (FundamentalField.NONOPERATING_ASSETS, "zzgl."),
+        (FundamentalField.FINANCIAL_DEBT, "abzgl."),
+        (FundamentalField.PREFERRED_CLAIMS, "abzgl."),
+        (FundamentalField.MINORITY_CLAIMS, "abzgl."),
     ):
         rows.append(
             (
@@ -1353,7 +1363,7 @@ def calculation_path(
     ]
     wacc = assumptions.wacc
     year_rows = [
-        row("GJ bis", (format_date(y.period.end) for y in assumptions.years)),
+        row("GJ-Ende", (y.period.end.strftime("%m/%Y") for y in assumptions.years)),
         row("EBIT", (format_money(y.ebit) for y in assumptions.years)),
         row(
             "Steuersatz",
@@ -1361,12 +1371,13 @@ def calculation_path(
         ),
         row("NOPAT", (format_money(n) for n in nopat)),
         row(
-            "+ D&A",
+            "zzgl. D&A",
             (format_money(y.depreciation_amortization) for y in assumptions.years),
         ),
-        row("− Capex", (format_money(y.capex) for y in assumptions.years)),
+        row("abzgl. Capex", (format_money(y.capex) for y in assumptions.years)),
         row(
-            "− ΔNWC", (format_money(y.change_operating_nwc) for y in assumptions.years)
+            "abzgl. ΔNWC",
+            (format_money(y.change_operating_nwc) for y in assumptions.years),
         ),
         row(
             "= FCFF",
@@ -1401,7 +1412,7 @@ def calculation_path(
             format_money(_value(result, "nopat_6")),
         ),
         (
-            "− Netto-Reinvestition = NOPAT × g ÷ ROIC",
+            "abzgl. Netto-Reinvestition = NOPAT × g ÷ ROIC",
             format_money(_value(result, "reinvestment_6")),
         ),
         (
@@ -1421,17 +1432,23 @@ def calculation_path(
     bridge = (
         ("Operativer Wert", format_money(_value(result, "operating_value"))),
         (
-            "+ Überschüssige liquide Mittel",
+            "zzgl. Überschüssige liquide Mittel",
             format_money(_value(result, "bridge_excess_cash")),
         ),
         (
-            "+ Nichtoperative Vermögenswerte",
+            "zzgl. Nichtoperative Vermögenswerte",
             format_money(_value(result, "bridge_nonoperating_assets")),
         ),
-        ("− Finanzschulden", format_money(_value(result, "bridge_financial_debt"))),
-        ("− Vorzugsansprüche", format_money(_value(result, "bridge_preferred_claims"))),
         (
-            "− Minderheitsansprüche",
+            "abzgl. Finanzschulden",
+            format_money(_value(result, "bridge_financial_debt")),
+        ),
+        (
+            "abzgl. Vorzugsansprüche",
+            format_money(_value(result, "bridge_preferred_claims")),
+        ),
+        (
+            "abzgl. Minderheitsansprüche",
             format_money(_value(result, "bridge_minority_claims")),
         ),
         (
