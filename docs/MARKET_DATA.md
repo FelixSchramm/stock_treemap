@@ -245,8 +245,18 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
   einem fehlgeschlagenen Abruf. Bestände behalten den letzten nicht
   fehlgeschlagenen Snapshot (`attempted_at` zeigt das Alter) mit der Warnung
   `cached_holdings_snapshot`.
-- Die Historien-TTL (6 h) setzt abgeschlossene Zeiträume voraus; der Aufrufer
-  übergibt keinen laufenden Handelstag (Aufgabe von #22).
+- Die Historien-TTL (6 h) gilt nur bis zum nächsten Sitzungsende. Eine Tageshistorie,
+  die während einer laufenden Sitzung abgerufen wurde, enthält als letzten Balken nur
+  den Zwischenstand des Tages (Abruf vor der Eröffnung: noch keinen Balken). Übergibt
+  der Aufrufer den Kalender (`history(..., sessions=calendar)`; Depot und Watchlist
+  tun das), gilt der Eintrag nicht mehr als frisch, sobald seit dem Abruf eine
+  reguläre Sitzung geschlossen hat (`price_periods.session_closed_between`: Schlusszeit
+  in der Zeitzone der Historie, daher mit Sommerzeitwechseln; Wochenenden und
+  Börsenfeiertage zählen nicht). Dann wird erneut abgerufen (Backoff wie sonst); schlägt das
+  fehl, bleibt der alte Eintrag als `CACHED_PROVIDER` mit Alter sichtbar. Ein Abruf
+  ab der Schlusszeit gilt als endgültig und wieder für die TTL; eine nach der
+  Schlusszeit noch verzögert gelieferte Zwischenstand-Historie bleibt daher
+  möglich (Feed-Verzögerung, kein Abgleich mit der Quote). Ohne `sessions` gilt nur die TTL.
 - Der Cache ist nur im Speicher: nach einem Neustart ohne Daten bleibt das
   Ergebnis des Providers (`MISSING`, „Daten nicht verfügbar“); es gibt keinen
   fiktiven letzten Stand.

@@ -637,6 +637,7 @@ class WatchlistRefreshCoordinator:
                     step.calendar.first_day,
                     step.calendar.last_day,
                     refresh=refresh,
+                    sessions=step.calendar,
                 )
         entries = []
         for step in plan:
