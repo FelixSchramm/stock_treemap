@@ -57,7 +57,10 @@ unverändert; US-Plätze stehen absichtlich nicht in `VENUE_HOURS`, damit
    noch Produktidentität; „verifiziert“ wird es erst durch den Laufzeitabgleich.
 3. Kurse (`QuoteCache.quotes`) werden nur für Plätze mit **laufender** Sitzung geholt;
    sonst zählt der letzte Schlusskurs der Historie. Historien (`QuoteCache.history`)
-   nutzen den Kalenderzeitraum wie beim Depot.
+   nutzen den Kalenderzeitraum wie beim Depot und werden nach einer verpassten
+   Sitzungsschließung neu abgerufen: Eine während der Sitzung geholte Historie zeigt
+   sonst nach Börsenschluss ihren Zwischenstand als Schlusskurs (#110, Regel in
+   [MARKET_DATA.md](MARKET_DATA.md#cache-backoff-und-ersatzwerte-19)).
 4. `price_period_returns` liefert `Heute`, `Woche`, `Monat`, `Jahr` als reine
    Kursrendite in **Handelswährung** (Split-bereinigt, ohne Dividenden; keine
    EUR-Umrechnung, keine FX-Kurse, keine Verknüpfung mit dem Depot).

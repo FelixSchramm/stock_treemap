@@ -8,7 +8,10 @@ from html import escape
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard import watchlist_view
+from portfolio_dashboard import valuation_view, watchlist_view
+from portfolio_dashboard.fundamentals_loader import (
+    LOADER_STATE_KEY as FUNDAMENTALS_LOADER_KEY,
+)
 from portfolio_dashboard.models import PortfolioSnapshot, SnapshotStatus
 from portfolio_dashboard.refresh import (
     DATA_UNAVAILABLE_TEXT,
@@ -44,6 +47,7 @@ from portfolio_dashboard.treemap import (
     format_percent,
     sort_table_rows,
 )
+from portfolio_dashboard.valuation_overview import OverviewSource, collect_subjects
 from portfolio_dashboard.valuations import PortfolioValuation
 from portfolio_dashboard.watchlist_quotes import WatchlistBundle, WatchlistEntry
 from portfolio_dashboard.watchlist_session import WatchlistLoader, session_loader
@@ -78,6 +82,7 @@ BUNDLE_STATE_KEY = "dashboard.bundle"
 DEPOT_AREA = "Depot"
 WATCHLIST_AREA = "Watchlist"
 AREAS = (DEPOT_AREA, WATCHLIST_AREA)
+VALUATION_AREA = valuation_view.VALUATION_AREA
 AREA_KEY = "dashboard.area"
 _AREA_WIDGET_KEY = "_dashboard.area"
 AREA_RADIO_KEY = _AREA_WIDGET_KEY
@@ -137,6 +142,11 @@ div[role="radiogroup"] {
     flex-wrap: wrap;
     row-gap: 0.4rem;
 }
+/* Detail view tables (#80): scroll inside their box, never the page */
+div[data-testid="stTable"] {
+    overflow-x: auto;
+    max-width: 100%;
+}
 /* Keyboard focus ring visibility */
 div.stButton > button:focus-visible,
 div[role="radiogroup"] input:focus-visible + div,
@@ -153,6 +163,13 @@ details > summary:focus-visible {
     }
     div[data-testid="stHorizontalBlock"] {
         flex-wrap: wrap;
+    }
+    div[data-testid="stTable"] table {
+        font-size: 0.78rem;
+    }
+    div[data-testid="stTable"] th,
+    div[data-testid="stTable"] td {
+        padding: 0.25rem 0.35rem !important;
     }
 }
 </style>
@@ -181,17 +198,19 @@ def _keep_state(keys: Sequence[str]) -> None:
             st.session_state[key] = st.session_state[key]
 
 
-def render_area_control() -> str:
-    """Render the Ansicht radio (Depot or Watchlist) and keep the choice in the session.
+def render_area_control(areas: Sequence[str] = AREAS) -> str:
+    """Render the Ansicht radio and keep the choice in the session.
 
-    :return: ``DEPOT_AREA`` or ``WATCHLIST_AREA``.
+    :param areas: Offered areas; ``VALUATION_AREA`` joins Depot and Watchlist when
+        the valuation overview is wired.
+    :return: The selected area.
     """
-    if st.session_state.get(AREA_KEY) not in AREAS:
+    if st.session_state.get(AREA_KEY) not in areas:
         st.session_state[AREA_KEY] = DEPOT_AREA
     st.session_state[_AREA_WIDGET_KEY] = st.session_state[AREA_KEY]
     return st.radio(
         "Ansicht",
-        AREAS,
+        tuple(areas),
         key=_AREA_WIDGET_KEY,
         on_change=_remember_area,
         horizontal=True,
@@ -511,12 +530,7 @@ def render_data_status(notes: Sequence[str]) -> None:
                 st.caption(f"• {note}")
 
 
-def _markdown_text(text: str) -> str:
-    """Escape sheet-provided text for ``st.markdown`` (HTML and markdown syntax)."""
-    escaped = escape(text)
-    for char in "\\`*_[]$~#|":
-        escaped = escaped.replace(char, "\\" + char)
-    return escaped
+_markdown_text = valuation_view.markdown_text
 
 
 def render_watchlist_kpis(kpis: watchlist_view.WatchlistKpis, period: str) -> None:
@@ -751,6 +765,108 @@ def render_watchlist(
     render_watchlist_status(notes)
 
 
+def _valuation_watchlist(
+    factory: Callable[[], WatchlistLoader | None] | None, *, load: bool
+) -> WatchlistBundle | None:
+    """The Watchlist bundle of the session; loaded only when ``load`` is set.
+
+    The bundle held by the Watchlist area is reused as it is. A cold start with
+    200+ rows takes minutes, so it happens only on an explicit action, behind the
+    same spinner as in the Watchlist area.
+    """
+    held: WatchlistBundle | None = st.session_state.get(WATCHLIST_BUNDLE_KEY)
+    if held is not None or not load or factory is None:
+        return held
+    try:
+        loader, _ = session_loader(st.session_state, factory, _today())
+    except (SheetsConfigurationError, SheetsCredentialError) as exc:
+        st.error(str(exc))
+        return None
+    if loader is None:
+        return None
+    with st.spinner(WATCHLIST_SPINNER_TEXT):
+        st.session_state[WATCHLIST_BUNDLE_KEY] = loader.load()
+    return st.session_state[WATCHLIST_BUNDLE_KEY]
+
+
+def render_valuation_area(
+    source: OverviewSource,
+    *,
+    coordinator: PortfolioRefreshCoordinator | None,
+    watchlist: Callable[[], WatchlistLoader | None] | None,
+    refresh_clicked: bool,
+    demo: bool,
+) -> None:
+    """The «Innerer Wert» area: shared data stand, explicit loading, overview.
+
+    Depot and Watchlist prices are those of their own areas (same bundles, same
+    stand); fundamentals come from the shared loader (#74) and are loaded and
+    refreshed only by the load button or «Aktualisieren». The demo loads its
+    invented data without a click. Storage errors are shown as their fixed message.
+    """
+    st.divider()
+    st.subheader(VALUATION_AREA)
+    if demo:
+        st.info("Nur synthetische Beispieldaten. Kein Zugriff auf echte Depot- oder Kursdaten.")
+    loader = st.session_state.get(FUNDAMENTALS_LOADER_KEY)
+    loaded_before = valuation_view.LOADED_STATE_KEY in st.session_state
+    clicked = valuation_view.render_load_button(
+        loaded=loaded_before, configured=loader is not None
+    )
+    explicit = clicked or refresh_clicked
+    stamps: list[str] = []
+
+    portfolio = source.portfolio
+    if portfolio is None and coordinator is not None:
+        depot = st.session_state.get(BUNDLE_STATE_KEY)
+        if depot is None:
+            with st.spinner("Bestands- und Kursdaten werden aktualisiert …"):
+                depot = coordinator.load()
+                st.session_state[BUNDLE_STATE_KEY] = depot
+        if depot.available:
+            portfolio = depot.valuation
+            stamps.append(f"Kurse Depot: {depot.age_label()}")
+        else:
+            st.warning(depot.status_message or f"{DATA_UNAVAILABLE_TEXT}: Keine gültigen Depotdaten.")
+    elif portfolio is not None and demo:
+        stamps.append(f"Kurse Depot (synthetisch): {portfolio.snapshot.attempted_at:%d.%m.%Y, %H:%M %Z}")
+
+    bundle = _valuation_watchlist(watchlist, load=explicit or demo)
+    entries = ()
+    if bundle is None:
+        stamps.append("Kurse Watchlist: noch nicht geladen oder nicht eingerichtet.")
+    elif not bundle.available:
+        stamps.append(bundle.status_message or "Watchlist-Daten nicht verfügbar.")
+    else:
+        entries = bundle.entries
+        stamp = bundle.last_attempt_at.strftime("%d.%m.%Y, %H:%M %Z")
+        if demo:
+            stamps.append(f"Kurse Watchlist (synthetisch): {stamp}")
+        else:
+            age = format_snapshot_age(bundle.last_attempt_at, datetime.now(UTC))
+            stamps.append(f"Kurse Watchlist: {stamp} (Alter: {age})")
+
+    subjects = collect_subjects(portfolio, entries, source.listings)
+    state, loaded = valuation_view.current_state(
+        source, loader, subjects, explicit=explicit, auto=demo
+    )
+    if loaded is not None and loaded.bundle is not None:
+        checked = [e.last_checked_at for e in loaded.bundle.entries.values() if e.last_checked_at]
+        if checked:
+            stamps.append(
+                f"Fundamentaldaten: letzter Abruf {max(checked):%d.%m.%Y, %H:%M %Z} "
+                "(Abrufalter; das fachliche Alter der Abschlüsse steht je Aktie)"
+            )
+    valuation_view.render_overview(
+        source,
+        portfolio=portfolio,
+        entries=entries,
+        state=state,
+        loaded=loaded,
+        stamps=stamps,
+    )
+
+
 def render_dashboard(
     snapshot: PortfolioSnapshot,
     rows: list[dict[str, str | float]] | None,
@@ -762,6 +878,7 @@ def render_dashboard(
     period_reasons: Callable[[str, str], Sequence[str | None]] | None = None,
     demo: bool = True,
     watchlist: Callable[[], WatchlistLoader | None] | None = None,
+    overview: OverviewSource | None = None,
 ) -> None:
     """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
 
@@ -784,6 +901,8 @@ def render_dashboard(
     :param demo: False when ``coordinator`` delivers the owner's own data.
     :param watchlist: Builds the Watchlist loader once per session and day; ``None`` or
         a factory returning ``None`` shows the "PORTFOLIO_WATCHLIST_RANGE" notice.
+    :param overview: Wiring of the «Innerer Wert» area (registry, scenario reader,
+        clock); ``None`` offers only Depot and Watchlist.
     """
     _ = rows
     render_accessibility_styles()
@@ -793,11 +912,23 @@ def render_dashboard(
     with header_cols[1]:
         refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
 
-    if render_area_control() == WATCHLIST_AREA:
-        _keep_state(_DEPOT_WIDGET_KEYS)
+    areas = AREAS if overview is None else (*AREAS, VALUATION_AREA)
+    selected = render_area_control(areas)
+    if selected == WATCHLIST_AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
         render_watchlist(watchlist, refresh_clicked=refresh_clicked, demo=demo)
         return
-    _keep_state(_WATCHLIST_WIDGET_KEYS)
+    if selected == VALUATION_AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS)
+        render_valuation_area(
+            overview,
+            coordinator=coordinator,
+            watchlist=watchlist,
+            refresh_clicked=refresh_clicked,
+            demo=demo,
+        )
+        return
+    _keep_state(_WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
 
     active_bundle: DashboardBundle | None = None
     if coordinator is not None:

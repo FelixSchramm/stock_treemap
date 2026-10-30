@@ -75,7 +75,7 @@ def _listing_period_results(
     if calendar is None:
         return _missing_periods("calendar_incomplete")
     history = cache.history(listing.instrument, calendar.first_day, calendar.last_day,
-                            refresh=refresh)
+                            refresh=refresh, sessions=calendar)
     results = price_period_returns(history, quote_obs, calendar, now)
     perfs, reasons = {}, {}
     for label, period in PERIOD_KEY_TO_ENUM.items():
@@ -298,6 +298,11 @@ class PortfolioRefreshCoordinator:
         self._calendars = dict(calendars) if calendars is not None else {}
         self._clock = clock
         self._last_bundle: DashboardBundle | None = None
+
+    @property
+    def listings(self) -> tuple[VerifiedListing, ...]:
+        """The verified listing registry this coordinator was built with."""
+        return self._listings
 
     @property
     def last_bundle(self) -> DashboardBundle | None:
