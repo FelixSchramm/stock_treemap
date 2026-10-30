@@ -7,7 +7,13 @@ import pytest
 
 from portfolio_dashboard.models import DataWarning, QuoteUnit
 from portfolio_dashboard.sheet_parser import NumberLocale
-from portfolio_dashboard.treemap import ALL_FILTER, NO_CATEGORY_LABEL, FilterCriteria
+from portfolio_dashboard.treemap import (
+    ALL_FILTER,
+    MISSING_COLOR,
+    NO_CATEGORY_LABEL,
+    FilterCriteria,
+    color_for,
+)
 from portfolio_dashboard.watchlist_quotes import (
     PERIODS,
     WatchlistEntry,
@@ -33,6 +39,7 @@ from portfolio_dashboard.watchlist_view import (
     build_kpis,
     build_rows,
     build_status_notes,
+    build_watchlist_treemap,
     sort_rows,
 )
 
@@ -321,3 +328,112 @@ def test_session_loader_remembers_no_loader_and_retries_after_a_failed_build():
         session_loader(fresh, broken, date(2026, 10, 28))
     assert LOADER_STATE_KEY not in fresh
     assert session_loader(fresh, lambda: "ok", date(2026, 10, 28)) == ("ok", True)
+
+
+# --- heatmap (#86) ----------------------------------------------------------------
+
+
+def heatmap(period, criteria=None, items=None):
+    rows = sort_rows(build_rows(items or entries(), period, criteria))
+    return rows, build_watchlist_treemap(rows)
+
+
+@pytest.mark.parametrize("period", ["Heute", "Woche", "Monat", "Jahr"])
+def test_heatmap_tiles_have_exactly_equal_weight_also_for_missing_values(period):
+    rows, model = heatmap(period)
+    assert len(model.tiles) == len(rows) == 5
+    assert {tile.amount_eur for tile in model.tiles} == {Decimal(1)}
+    assert model.omitted_count == 0
+    # Missing values keep their tile: gray, "n. v.", no percent.
+    missing = [tile for tile in model.tiles if tile.percent is None]
+    assert missing and all(tile.color == MISSING_COLOR for tile in missing)
+    assert all("n. v." in tile.label and "0,00 %" not in tile.label for tile in missing)
+
+
+def test_heatmap_follows_the_table_order_and_uses_the_depot_color_scale():
+    rows, model = heatmap("Heute")
+    assert [tile.name for tile in model.tiles] == names(rows)
+    assert names(rows)[0] == "Gamma Krypto"  # +3,00 %, the largest value first
+    values = [tile.percent for tile in model.tiles if tile.percent is not None]
+    assert model.scale_percent == max(abs(v) for v in values) and not model.capped
+    for tile in model.tiles:
+        assert tile.color == color_for(tile.percent, model.scale_percent)
+    by_name = {tile.name: tile for tile in model.tiles}
+    assert by_name["Gamma Krypto"].color != by_name["Beta ETF"].color  # gain vs loss
+    assert by_name["Delta Optionsschein"].percent == Decimal(0)  # real 0 %, not n. v.
+    assert by_name["Delta Optionsschein"].color != MISSING_COLOR
+
+
+def test_heatmap_caps_only_the_color_never_the_number():
+    items = parse(
+        [
+            ["Ausreißer", "10,00", "80,0", "8,0", "OUT", "Aktie", None, None, None, None],
+            ["Verlierer", "10,00", "-2,0", "-0,2", "LOS", "Aktie", None, None, None, None],
+        ]
+    )
+    rows, model = heatmap("Heute", items=[sheet_entry(item) for item in items])
+    assert model.capped and model.scale_percent == Decimal(50)
+    outlier = model.tiles[0]
+    assert outlier.label[-2:] == ("+80,00 %", "Sheet-Wert")
+    assert outlier.color == color_for(Decimal(50), Decimal(50))
+    assert "Kursentwicklung Heute: +80,00 %" in outlier.tooltip
+
+
+def test_heatmap_scale_is_derived_from_the_filtered_rows_only():
+    _, everything = heatmap("Jahr")
+    _, only_alpha = heatmap("Jahr", FilterCriteria(query="Alpha"))
+    assert everything.scale_percent == Decimal(20)  # Beta, cached provider
+    assert only_alpha.scale_percent == Decimal(10)
+    assert [tile.name for tile in only_alpha.tiles] == ["Alpha AG"]
+
+
+def test_heatmap_labels_name_ticker_percent_and_non_fresh_origin_as_text():
+    _, model = heatmap("Heute")
+    tiles = {tile.name: tile for tile in model.tiles}
+    assert tiles["Alpha AG"].label == ("Alpha AG", "ALP", "+0,50 %", "Sheet-Wert")
+    assert tiles["Beta ETF"].label == ("Beta ETF", "BET", "-1,00 %", "zwischengespeichert")
+    assert tiles["Gamma Krypto"].label == ("Gamma Krypto", "+3,00 %", "Sheet-Wert")
+    assert tiles["Epsilon ohne Wert"].label == ("Epsilon ohne Wert", "EPS", "n. v.")
+    _, week = heatmap("Woche")
+    alpha = {tile.name: tile for tile in week.tiles}["Alpha AG"]
+    assert alpha.label == ("Alpha AG", "ALP", "+2,50 %")  # fresh provider value: no tag
+
+
+def test_heatmap_tooltip_has_every_field_of_the_issue():
+    rows, model = heatmap("Monat")
+    tooltip = {tile.name: tile.tooltip for tile in model.tiles}["Beta ETF"]
+    assert tooltip == (
+        "Beta ETF (BET)",
+        "Typ: ETF",
+        "Handelsplatz: NMS",
+        "Kurs: 100,00 USD",
+        "Kursentwicklung Monat: +5,00 %",
+        "Quelle: Anbieter, zwischengespeichert (vor 2 Std.)",
+        "Referenzdatum: 27.10.2026",
+        "Kursstand: 28.10.2026 (zwischengespeichert, vor 2 Std.)",
+    )
+    sheet = {tile.name: tile.tooltip for tile in model.tiles}["Gamma Krypto"]
+    assert "Handelsplatz: —" in sheet and "Kursstand: Kursstand unbekannt" in sheet
+    assert any("keine Yahoo-Zuordnung im Blatt" in line for line in sheet)
+
+
+@pytest.mark.parametrize(
+    "criteria, expected",
+    [
+        (FilterCriteria(query="alp"), ["Alpha AG"]),
+        (FilterCriteria(instrument_type="ETF"), ["Beta ETF"]),
+        (FilterCriteria(category="Tech"), ["Alpha AG", "Delta Optionsschein"]),
+        (FilterCriteria(category=NO_CATEGORY_LABEL), ["Gamma Krypto", "Epsilon ohne Wert"]),
+        (FilterCriteria(query="zzz"), []),
+    ],
+)
+def test_heatmap_tiles_are_exactly_the_filtered_table_rows(criteria, expected):
+    rows, model = heatmap("Heute", criteria)
+    assert sorted(names(rows)) == sorted(expected)
+    assert sorted(tile.name for tile in model.tiles) == sorted(expected)
+    assert {tile.amount_eur for tile in model.tiles} <= {Decimal(1)}
+
+
+def test_heatmap_of_no_rows_is_empty_with_the_minimum_scale():
+    model = build_watchlist_treemap(())
+    assert model.tiles == () and model.scale_percent == Decimal(1) and not model.capped
