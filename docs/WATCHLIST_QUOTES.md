@@ -4,7 +4,7 @@ Umsetzung von Issue #84 (Epic #82) nach [ADR 0011](adr/0011-watchlist.md): Die
 Watchlist-Zeilen aus dem Sheet-Blatt ([Schema](DATA_SOURCE.md#watchlist-blatt),
 [Parser](SHEET_PARSER.md#watchlist-parser)) erhalten über yfinance die vier
 Kursperioden nach [ADR 0006](adr/0006-kursentwicklung.md). Die Ansicht ist in #85
-umgesetzt ([WATCHLIST_VIEW.md](WATCHLIST_VIEW.md)), die Heatmap folgt in #86; dieses Modul
+umgesetzt ([WATCHLIST_VIEW.md](WATCHLIST_VIEW.md)), die Heatmap ([Doku](WATCHLIST_VIEW.md#heatmap)) ebenfalls (#86); dieses Modul
 enthält keine UI.
 
 ## Bausteine

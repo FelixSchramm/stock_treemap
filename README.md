@@ -84,7 +84,7 @@ flowchart LR
 | Google-Sheet-Import, Live-Kurse (yfinance), EUR-Bewertung, Renditen | umgesetzt; nur im privaten Modus mit Login |
 | Login und Besitzerprüfung | umgesetzt |
 | FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Übersicht „Innerer Wert“ umgesetzt, Detail- und Annahmenansicht offen |
-| Watchlist aus dem Sheet | Kursabruf und Ansicht umgesetzt |
+| Watchlist aus dem Sheet | Kursabruf, Ansicht und Heatmap umgesetzt |
 | Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsübersicht umgesetzt, Annahmenerfassung offen |
 
 Kursdaten stammen aus `yfinance`, einer inoffiziellen Schnittstelle; Kurse können verzögert sein. Das Dashboard ist ein privates Analysewerkzeug und keine Anlageberatung.

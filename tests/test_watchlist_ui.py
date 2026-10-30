@@ -85,6 +85,10 @@ def heatmap(app):
     return json.loads(charts[0].proto.spec)["data"][0]
 
 
+def heatmap_layout(app):
+    return json.loads(app.get("plotly_chart")[0].proto.spec)["layout"]
+
+
 def heatmap_height(app):
     return json.loads(app.get("plotly_chart")[0].proto.spec)["layout"]["height"]
 
@@ -550,6 +554,7 @@ def test_demo_watchlist_heatmap_has_equal_tiles_in_table_order_with_gray_n_v(off
     tooltip = dict(zip(tile_names(app), trace["hovertext"], strict=True))["Demo-Aktie US"]
     assert "Handelsplatz: NMS" in tooltip and "Kurs: 98,40 USD" in tooltip
     assert "Referenzdatum: " in tooltip and "Kursstand: 22.10.2026 (Demo)" in tooltip
+    assert heatmap_layout(app)["uniformtext"] == {"minsize": 10, "mode": "hide"}
     assert app.subheader[1].value == "Watchlist-Heatmap · Heute"
     assert [s.value for s in app.subheader][2] == "Watchlist-Übersicht"  # above the table
 
@@ -610,7 +615,7 @@ def test_depot_treemap_and_legend_are_unchanged_by_the_heatmap(offline_demo):
     charts = app.get("plotly_chart")
     assert len(charts) == 1
     spec = json.loads(charts[0].proto.spec)
-    assert spec["layout"]["height"] == 480
+    assert spec["layout"]["height"] == 480 and "uniformtext" not in spec["layout"]
     assert len(set(spec["data"][0]["values"])) > 1  # EUR-weighted areas
     captions = [c.value for c in app.caption]
     assert "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %." in captions
