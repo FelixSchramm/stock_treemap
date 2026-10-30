@@ -109,6 +109,7 @@ _WATCHLIST_WIDGET_KEYS = (
     WATCHLIST_SORT_ORDER_KEY,
 )
 
+HEATMAP_MIN_TEXT_SIZE = 10  # Pixels; smaller tile text is hidden, not shrunk.
 HEATMAP_MAX_HEIGHT = 1400  # Pixels; more tiles get smaller tiles, not a longer page.
 WATCHLIST_NOT_CONFIGURED_TEXT = (
     "Die Watchlist ist nicht eingerichtet: PORTFOLIO_WATCHLIST_RANGE ist nicht gesetzt. "
@@ -381,11 +382,15 @@ def render_filter_controls(
     return criteria, sort_by, descending
 
 
-def treemap_figure(model: TreemapModel, *, height: int = 480) -> go.Figure:
+def treemap_figure(
+    model: TreemapModel, *, height: int = 480, min_text_size: int | None = None
+) -> go.Figure:
     """Draw the prepared tiles; all values and colors come from the model.
 
     :param model: Prepared TreemapModel.
     :param height: Figure height in pixels.
+    :param min_text_size: If set, tile text that would need a smaller font is hidden
+        instead of shrunk to an unreadable size (values stay in tooltip and table).
     :return: Plotly Figure containing the treemap trace.
     """
     figure = go.Figure(
@@ -404,6 +409,8 @@ def treemap_figure(model: TreemapModel, *, height: int = 480) -> go.Figure:
         )
     )
     figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0}, height=height)
+    if min_text_size is not None:
+        figure.update_layout(uniformtext={"minsize": min_text_size, "mode": "hide"})
     return figure
 
 
@@ -640,7 +647,10 @@ def render_watchlist_heatmap(
         return
     model = watchlist_view.build_watchlist_treemap(rows)
     st.plotly_chart(
-        treemap_figure(model, height=heatmap_height(len(model.tiles))), width="stretch"
+        treemap_figure(
+            model, height=heatmap_height(len(model.tiles)), min_text_size=HEATMAP_MIN_TEXT_SIZE
+        ),
+        width="stretch",
     )
     render_color_legend(
         model,
@@ -654,7 +664,8 @@ def render_watchlist_heatmap(
     )
     st.caption(
         f"{len(model.tiles)} Kacheln in der Reihenfolge der Tabelle (Auswahl „Sortierung“ "
-        "und „Reihenfolge“). Bei vielen Einträgen entfällt der Text kleiner Kacheln."
+        "und „Reihenfolge“). Bei vielen Einträgen oder schmalen Bildschirmen entfällt der Text kleiner Kacheln; "
+        "die Werte stehen dann im Tooltip, in der Tabelle und in den Details."
     )
 
 
