@@ -62,7 +62,7 @@ DETAIL_BUTTON_KEY = "valuation.detail_open"
 # security the user wants to open, or absent. The view of #80 reads and clears it.
 DETAIL_KEY = "valuation.detail_key"
 # The security whose detail view is open (set from DETAIL_KEY, which is consumed).
-DETAIL_OPEN_KEY = "valuation.detail_open"
+DETAIL_OPEN_KEY = "valuation.detail_current"
 # Fundamentals held for the session (``LoadedFundamentals``); #80 calls
 # ``reset_loaded_state`` after saving so the next run reads the stored scenarios.
 LOADED_STATE_KEY = "valuation.loaded"
@@ -209,8 +209,10 @@ def current_state(
     # After a save (#80) the held state was dropped: read the stored scenarios again from
     # the shared loader (cache first, same limits) without another click.
     reloading = bool(st.session_state.pop(valuation_detail_view.RELOAD_KEY, False))
-    if explicit or reloading or (
-        auto and (held is None or not wanted <= held.instruments)
+    if (
+        explicit
+        or reloading
+        or (auto and (held is None or not wanted <= held.instruments))
     ):
         with st.spinner(LOAD_SPINNER_TEXT):
             held = load_fundamentals(

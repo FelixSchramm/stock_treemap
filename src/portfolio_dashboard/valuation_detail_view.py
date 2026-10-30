@@ -58,7 +58,9 @@ DEMO_TEXT = (
     "Demo: Alle Annahmen, manuellen Werte und Zahlen sind erfunden (synthetisch). Gespeichert "
     "wird nur in einem temporären Speicher dieser Sitzung."
 )
-LEAVE_TEXT = "Nicht gespeicherte Eingaben gehen beim Verlassen der Detailansicht verloren."
+LEAVE_TEXT = (
+    "Nicht gespeicherte Eingaben gehen beim Verlassen der Detailansicht verloren."
+)
 OWNER_CONFIRMATIONS = (
     ("ebit_definition", "EBIT-Definition", "confirm_ebit_definition"),
     ("share_split_basis", "Splitbasis der Aktienzahl", "confirm_share_split_basis"),
@@ -107,7 +109,12 @@ def _retain_drafts() -> None:
 
 def _seed(doc: ScenarioDocument) -> None:
     """New drafts whenever the stored basis changes (another revision, report, data)."""
-    seed = (doc.inputs.instrument_id, doc.revision, doc.data_version, doc.originals.input_version)
+    seed = (
+        doc.inputs.instrument_id,
+        doc.revision,
+        doc.data_version,
+        doc.originals.input_version,
+    )
     if st.session_state.get(SEED_KEY) != seed:
         for key in list(st.session_state):
             if isinstance(key, str) and key.startswith(DRAFT_PREFIXES):
@@ -163,9 +170,7 @@ def _lines(lines) -> None:
     st.markdown("\n".join(f"- {markdown_text(line)}" for line in lines))
 
 
-def _commit(
-    ctx: DetailContext, document: ScenarioDocument, success: str
-) -> None:
+def _commit(ctx: DetailContext, document: ScenarioDocument, success: str) -> None:
     """Store a new revision through the scenario store; never a partial result."""
     saver = ctx.source.scenario_saver
     if saver is None:
@@ -218,7 +223,9 @@ def _render_open_points(doc: ScenarioDocument, now: datetime) -> None:
     effective = doc.effective_report_set()
     issues = effective.issues_at(now)
     blocking = vd.blocking_texts(issues)
-    with st.expander(f"Offene Punkte der Datenbasis ({len(blocking)})", expanded=bool(blocking)):
+    with st.expander(
+        f"Offene Punkte der Datenbasis ({len(blocking)})", expanded=bool(blocking)
+    ):
         if blocking:
             st.caption(
                 "Solange diese Punkte offen sind, liefert kein Szenario einen Wert. Manche lassen "
@@ -258,10 +265,14 @@ def _render_history(doc: ScenarioDocument) -> None:
         "abgeleitet (EBIT × (1 − Steuersatz) + D&A − Capex − ΔNWC); die Rechnung selbst steht im Rechenweg."
     )
     _table(vd.history_table(effective))
-    st.caption("Kapitalbrücke und Aktienzahl (Mio. " + currency + ", Aktien in Mio. Stück):")
+    st.caption(
+        "Kapitalbrücke und Aktienzahl (Mio. " + currency + ", Aktien in Mio. Stück):"
+    )
     _table(vd.bridge_table(effective))
     sources = vd.source_lines(doc, effective)
-    with st.expander(f"Quellen und Perioden aller Werte ({len(sources)})", expanded=False):
+    with st.expander(
+        f"Quellen und Perioden aller Werte ({len(sources)})", expanded=False
+    ):
         st.caption(
             "Je Wert: Periode, Quelle und Abruf bzw. die Herkunft der manuellen Ergänzung. "
             "Veröffentlichungsdaten sind beim Anbieter unbekannt und werden nicht aus dem Abruf geschätzt."
@@ -381,7 +392,9 @@ def _render_manual(ctx: DetailContext, doc: ScenarioDocument, editable: bool) ->
         _error(errors.get(name), text, bool(st.session_state.get(attempted_key)))
     if vd.FORM_ERROR_KEY in errors:
         st.markdown(f":red[**Fehler:** {markdown_text(errors[vd.FORM_ERROR_KEY])}]")
-    st.caption("Priorität: Ein bestätigter manueller Wert gilt vor der automatischen Quelle.")
+    st.caption(
+        "Priorität: Ein bestätigter manueller Wert gilt vor der automatischen Quelle."
+    )
     if st.button(
         "Ergänzung speichern",
         key=MANUAL_SAVE_KEY,
@@ -413,10 +426,22 @@ def _render_field_help(currency: str) -> None:
             lines.append(
                 f"**{vd.YEAR_FIELD_LABELS[name]}** je Prognosejahr ({unit}): {vd.YEAR_FIELD_HELP[name]}"
             )
-        for field_id in ("wacc", "growth", "roic", "margin", "t.da", "t.capex", "t.dnwc", "rationale", "t.rationale"):
+        for field_id in (
+            "wacc",
+            "growth",
+            "roic",
+            "margin",
+            "t.da",
+            "t.capex",
+            "t.dnwc",
+            "rationale",
+            "t.rationale",
+        ):
             unit = vd.field_unit(field_id, currency)
             lines.append(
-                f"**{vd.SCALAR_LABELS[field_id]}**" + (f" ({unit})" if unit else "") + f": {vd.SCALAR_HELP[field_id]}"
+                f"**{vd.SCALAR_LABELS[field_id]}**"
+                + (f" ({unit})" if unit else "")
+                + f": {vd.SCALAR_HELP[field_id]}"
             )
         lines.append(
             "**FCFF** je Jahr = EBIT × (1 − Steuersatz) + D&A − Capex − ΔNWC. Der Restwert entsteht aus dem "
@@ -444,7 +469,11 @@ def _field(
     key = _key(scenario, field_id)
     if field_id in vd.TEXT_FIELDS:
         st.text_area(
-            label, key=key, help=vd.field_help(field_id), max_chars=vd.MAX_TEXT, height=80
+            label,
+            key=key,
+            help=vd.field_help(field_id),
+            max_chars=vd.MAX_TEXT,
+            height=80,
         )
     else:
         st.text_input(label, key=key, help=vd.field_help(field_id))
@@ -453,8 +482,14 @@ def _field(
 
 def _copy_capex(scenario: Scenario) -> None:
     help_ = vd.terminal_help(_form(scenario))
-    if help_ is not None and help_.required_capex is not None and help_.required_capex >= 0:
-        st.session_state[_key(scenario, "t.capex")] = vd.money_input(help_.required_capex)
+    if (
+        help_ is not None
+        and help_.required_capex is not None
+        and help_.required_capex >= 0
+    ):
+        st.session_state[_key(scenario, "t.capex")] = vd.money_input(
+            help_.required_capex
+        )
 
 
 def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
@@ -465,7 +500,8 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
         "Ab hier stehen Ihre eigenen Annahmen, getrennt von den Geschäftszahlen oben. Es gibt keine "
         "Vorgabewerte: Ohne vollständige, gültige und bestätigte Annahmen entsteht kein Wert. "
         "Annahmen gelten für genau diese Datenbasis; nach einer geänderten Datenbasis oder einem "
-        "neuen Bericht müssen sie hier geprüft und erneut gespeichert werden. " + LEAVE_TEXT
+        "neuen Bericht müssen sie hier geprüft und erneut gespeichert werden. "
+        + LEAVE_TEXT
     )
     _render_field_help(currency)
     labels = {s: vd.SCENARIO_LABELS[s] for s in vd.SCENARIO_ORDER}
@@ -501,19 +537,27 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
         help="Vier weitere Jahre folgen jeweils zwölf Monate später. Das erste Jahr muss nach dem Bewertungsstichtag beginnen.",
     )
     if vd.FIRST_YEAR_ERROR_KEY in errors:
-        st.markdown(f":red[**Fehler:** {markdown_text(errors[vd.FIRST_YEAR_ERROR_KEY])}]")
-    last = max(
-        (p.end for p in vd.annual_periods(doc.originals)), default=None
-    )
+        st.markdown(
+            f":red[**Fehler:** {markdown_text(errors[vd.FIRST_YEAR_ERROR_KEY])}]"
+        )
+    last = max((p.end for p in vd.annual_periods(doc.originals)), default=None)
     st.caption(
         f"Bewertungsstichtag (t = 0): {vd.format_date(ctx.now)}"
-        + (f" · letzter berichteter Jahresabschluss: {vd.format_date(last)}" if last else "")
+        + (
+            f" · letzter berichteter Jahresabschluss: {vd.format_date(last)}"
+            if last
+            else ""
+        )
         + ". Die Cashflows fallen jeweils am Jahresende an."
     )
     for n in range(1, vd.YEARS + 1):
         with st.container(border=True):
-            end = vd.add_years(st.session_state[_key(scenario, "first_year_end")], n - 1)
-            st.markdown(f"**Prognosejahr {n}** (Geschäftsjahr bis {vd.format_date(end)})")
+            end = vd.add_years(
+                st.session_state[_key(scenario, "first_year_end")], n - 1
+            )
+            st.markdown(
+                f"**Prognosejahr {n}** (Geschäftsjahr bis {vd.format_date(end)})"
+            )
             columns = st.columns(2)
             for position, name in enumerate(vd.YEAR_FIELD_LABELS):
                 with columns[position % 2]:
@@ -543,7 +587,11 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
         for position, field_id in enumerate(("t.da", "t.capex", "t.dnwc")):
             with columns[position % 2]:
                 _field(scenario, field_id, currency, errors, attempted)
-        if help_ is not None and help_.required_capex is not None and help_.required_capex >= 0:
+        if (
+            help_ is not None
+            and help_.required_capex is not None
+            and help_.required_capex >= 0
+        ):
             st.caption(
                 f"Mit den eingetragenen D&A und ΔNWC passt Capex = {vd.format_money(help_.required_capex, 4)} Mio. {currency}."
             )
@@ -564,20 +612,32 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
         st.markdown(f":red[**Fehler:** {markdown_text(errors[vd.FORM_ERROR_KEY])}]")
 
     # Status of the draft against the stored scenario.
+    unsaved = built.assumptions is not None and (
+        saved is None
+        or vd.content_key(saved.assumptions) != vd.content_key(built.assumptions)
+    )
     if built.assumptions is None:
         open_fields = [vd.field_label(f) for f in errors if f in vd.FIELD_IDS]
         st.warning(
             "Die Vorschau erscheint, sobald alle Pflichtangaben gültig sind"
-            + (f" ({len(open_fields)} Felder offen oder fehlerhaft)." if open_fields else ".")
+            + (
+                f" ({len(open_fields)} Felder offen oder fehlerhaft)."
+                if open_fields
+                else "."
+            )
         )
-    elif saved is None or vd.content_key(saved.assumptions) != vd.content_key(built.assumptions):
-        st.info("Nicht gespeicherte Änderungen: Die Vorschau unten ist noch nicht gespeichert.")
+    elif unsaved:
+        st.info(
+            "Nicht gespeicherte Änderungen: Die Vorschau unten ist noch nicht gespeichert."
+        )
     else:
         st.caption(
             f"Gespeichert: Revision {doc.revision}, Annahmenversion {saved.assumptions.version}."
         )
     if built.assumptions is not None:
-        gaps = vd.blocking_texts(built.assumptions.issues_for(doc.effective_report_set()))
+        gaps = vd.blocking_texts(
+            built.assumptions.issues_for(doc.effective_report_set())
+        )
         if gaps:
             st.caption(
                 "Beim Speichern in diesem Stand liefert das Szenario in der Übersicht keinen Wert, weil:"
@@ -585,7 +645,9 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
             _lines(gaps)
     can_save = editable and ctx.source.scenario_saver is not None
     if not can_save:
-        st.caption("Speichern ist nicht möglich (nicht eingerichtet oder neuer Berichtssatz noch nicht übernommen).")
+        st.caption(
+            "Speichern ist nicht möglich (nicht eingerichtet oder neuer Berichtssatz noch nicht übernommen)."
+        )
     if st.button(
         f"Szenario „{chosen}“ speichern",
         key=SAVE_KEY,
@@ -594,20 +656,25 @@ def _render_editor(ctx: DetailContext, doc: ScenarioDocument, editable: bool):
         args=(scenario,),
     ):
         if built.assumptions is None:
-            st.error("Nicht gespeichert: Bitte die markierten Felder korrigieren. Es wurden keine Teilwerte gespeichert.")
+            st.error(
+                "Nicht gespeichert: Bitte die markierten Felder korrigieren. Es wurden keine Teilwerte gespeichert."
+            )
         else:
             _commit(
                 ctx,
                 vd.save_scenario(doc, built.assumptions, ctx.now),
                 f"Szenario „{chosen}“ gespeichert",
             )
-    return scenario, built.assumptions, saved
+    return scenario, built.assumptions, saved, unsaved
 
 
 def _result_metrics(result, currency: str, label: str) -> None:
     columns = st.columns(3)
     with columns[0]:
-        st.metric(f"Wert je Aktie ({label})", vd.format_per_share(result.value_per_share, currency))
+        st.metric(
+            f"Wert je Aktie ({label})",
+            vd.format_per_share(result.value_per_share, currency),
+        )
     with columns[1]:
         st.metric("Zielpreis", vd.format_per_share(result.target_price, currency))
     with columns[2]:
@@ -623,16 +690,25 @@ def _render_calculation(
     scenario: Scenario,
     draft,
     saved,
+    unsaved: bool,
 ) -> None:
     from portfolio_dashboard.dcf import calculate_scenario
 
     currency = doc.originals.currency
     st.subheader("Rechenweg")
     if draft is not None:
-        assumptions, basis = draft, "Vorschau (nicht gespeichert, rechnerisch als bestätigt behandelt)"
+        assumptions = draft
+        basis = (
+            "Vorschau (nicht gespeichert, rechnerisch als bestätigt behandelt)"
+            if unsaved
+            else "gespeicherter Stand, unverändert"
+        )
         calc = vd.preview_calculation(doc, draft)
     elif saved is not None:
-        assumptions, basis = saved.assumptions, "gespeicherter Stand (der Entwurf ist ungültig)"
+        assumptions, basis = (
+            saved.assumptions,
+            "gespeicherter Stand (der Entwurf ist ungültig)",
+        )
         calc = calculate_scenario(doc.effective_report_set(), saved.assumptions)
     else:
         st.caption(
@@ -671,7 +747,11 @@ def _render_calculation(
         st.caption(
             f"Gespeichert (Revision {doc.revision}): Wert je Aktie "
             f"{vd.format_per_share(stored.result.value_per_share if not extra else None, currency)}"
-            + ("" if stored.result.value_per_share is not None and not extra else " (gesperrt: siehe Hinweise)")
+            + (
+                ""
+                if stored.result.value_per_share is not None and not extra
+                else " (gesperrt: siehe Hinweise)"
+            )
         )
     st.session_state["valuation.limitations"] = calc.limitations
     _render_sensitivity(doc, assumptions)
@@ -702,7 +782,10 @@ def _render_sensitivity(doc: ScenarioDocument, assumptions) -> None:
             key=SENS_GROWTH_KEY,
         )
     view = vd.sensitivity_view(
-        doc.effective_report_set(), vd.preview_assumptions(assumptions), wacc_step, growth_step
+        doc.effective_report_set(),
+        vd.preview_assumptions(assumptions),
+        wacc_step,
+        growth_step,
     )
     if view.table is None:
         st.warning("Die Sensitivität ist nicht berechenbar, weil:")
@@ -712,7 +795,10 @@ def _render_sensitivity(doc: ScenarioDocument, assumptions) -> None:
     if view.notes:
         st.caption("Nicht berechenbare Kombinationen (n. v.):")
         _lines(view.notes)
-    st.caption(f"Währung: {doc.originals.currency} je Aktie.")
+    st.caption(
+        f"Währung: {doc.originals.currency} je Aktie. Liegt der WACC über dem nachhaltigen ROIC, "
+        "senkt höheres Wachstum den Wert, weil die nötige Reinvestition mehr kostet, als sie erbringt."
+    )
 
 
 def _render_limits(limitations) -> None:
@@ -804,8 +890,8 @@ def render_detail(ctx: DetailContext) -> None:
     _render_open_points(doc, ctx.now)
     _render_history(doc)
     _render_manual(ctx, doc, editable)
-    scenario, draft, saved = _render_editor(ctx, doc, editable)
-    _render_calculation(ctx, doc, scenario, draft, saved)
+    scenario, draft, saved, unsaved = _render_editor(ctx, doc, editable)
+    _render_calculation(ctx, doc, scenario, draft, saved, unsaved)
     _render_limits(st.session_state.pop("valuation.limitations", ()))
 
 
