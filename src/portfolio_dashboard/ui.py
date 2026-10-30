@@ -108,6 +108,9 @@ _WATCHLIST_WIDGET_KEYS = (
     WATCHLIST_SORT_FIELD_KEY,
     WATCHLIST_SORT_ORDER_KEY,
 )
+
+HEATMAP_MIN_TEXT_SIZE = 10  # Pixels; smaller tile text is hidden, not shrunk.
+HEATMAP_MAX_HEIGHT = 1400  # Pixels; more tiles get smaller tiles, not a longer page.
 WATCHLIST_NOT_CONFIGURED_TEXT = (
     "Die Watchlist ist nicht eingerichtet: PORTFOLIO_WATCHLIST_RANGE ist nicht gesetzt. "
     "Trage den Bereich des Watchlist-Blatts ein, z. B. im Format Blattname!A1:J300 "
@@ -391,10 +394,15 @@ def render_filter_controls(
     return criteria, sort_by, descending
 
 
-def treemap_figure(model: TreemapModel) -> go.Figure:
+def treemap_figure(
+    model: TreemapModel, *, height: int = 480, min_text_size: int | None = None
+) -> go.Figure:
     """Draw the prepared tiles; all values and colors come from the model.
 
     :param model: Prepared TreemapModel.
+    :param height: Figure height in pixels.
+    :param min_text_size: If set, tile text that would need a smaller font is hidden
+        instead of shrunk to an unreadable size (values stay in tooltip and table).
     :return: Plotly Figure containing the treemap trace.
     """
     figure = go.Figure(
@@ -412,14 +420,30 @@ def treemap_figure(model: TreemapModel) -> go.Figure:
             sort=False,
         )
     )
-    figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0}, height=480)
+    figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0}, height=height)
+    if min_text_size is not None:
+        figure.update_layout(uniformtext={"minsize": min_text_size, "mode": "hide"})
     return figure
 
 
-def render_color_legend(model: TreemapModel) -> None:
+def render_color_legend(
+    model: TreemapModel,
+    *,
+    aria_label: str = "Farblegende der Treemap",
+    area_note: str = "Fläche: EUR-Positionswert",
+    access_note: str = (
+        "Barrierefreiheit: Vorzeichen (+/−) und Text ergänzen die Farbcodierung; "
+        "alle Detailwerte stehen ohne Hover in Tabelle und Positionsdetails bereit."
+    ),
+) -> None:
     """Render visible legend: symmetric around zero, plus the gray n. v. state.
 
+    The defaults describe the Depot treemap; the Watchlist heatmap passes its own texts.
+
     :param model: Prepared TreemapModel.
+    :param aria_label: Accessible name of the legend region.
+    :param area_note: Sentence naming what the tile area means.
+    :param access_note: Accessibility caption below the legend.
     """
     scale = model.scale_percent
     stops = ", ".join(
@@ -427,7 +451,7 @@ def render_color_legend(model: TreemapModel) -> None:
         for step in range(-10, 11)
     )
     st.markdown(
-        '<div role="region" aria-label="Farblegende der Treemap" '
+        f'<div role="region" aria-label="{escape(aria_label)}" '
         'style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:0.85rem">'
         '<span>Verlust</span>'
         f"<span>{escape(format_percent(-scale))}</span>"
@@ -439,14 +463,11 @@ def render_color_legend(model: TreemapModel) -> None:
         f'padding:2px 8px;border-radius:4px">{NOT_AVAILABLE} (keine Kennzahl)</span></div>',
         unsafe_allow_html=True,
     )
-    note = "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %"
+    note = f"{area_note}. Farbskala symmetrisch um 0 %"
     if model.capped:
         note += "; größere Werte sind nur farblich begrenzt, Zahlen bleiben unverändert"
     st.caption(note + ".")
-    st.caption(
-        "Barrierefreiheit: Vorzeichen (+/−) und Text ergänzen die Farbcodierung; "
-        "alle Detailwerte stehen ohne Hover in Tabelle und Positionsdetails bereit."
-    )
+    st.caption(access_note)
 
 
 def render_treemap(model: TreemapModel) -> None:
@@ -616,6 +637,50 @@ def render_watchlist_filter_controls(
     return criteria, sort_by, sort_order == SORT_DIRECTION_DESC
 
 
+def heatmap_height(tile_count: int) -> int:
+    """Figure height: 480 px up to 24 tiles, growing so 200+ tiles stay legible."""
+    return min(HEATMAP_MAX_HEIGHT, max(480, 480 + (tile_count - 24) * 4))
+
+
+def render_watchlist_heatmap(
+    rows: Sequence[watchlist_view.WatchlistRow], period: str
+) -> None:
+    """Render the Watchlist heatmap: equal tiles for the filtered rows, then the legend.
+
+    Tile order follows the sorted table; tooltips are a convenience only, the table
+    and the details below carry every value without hover.
+
+    :param rows: Filtered and sorted rows for ``period``.
+    :param period: Selected course period.
+    """
+    st.subheader(f"Watchlist-Heatmap · {period}")
+    if not rows:
+        st.info("Keine Watchlist-Einträge für die Heatmap sichtbar.")
+        return
+    model = watchlist_view.build_watchlist_treemap(rows)
+    st.plotly_chart(
+        treemap_figure(
+            model, height=heatmap_height(len(model.tiles)), min_text_size=HEATMAP_MIN_TEXT_SIZE
+        ),
+        width="stretch",
+    )
+    render_color_legend(
+        model,
+        aria_label="Farblegende der Watchlist-Heatmap",
+        area_note="Fläche: gleich gewichtet je Watchlist-Wert",
+        access_note=(
+            "Barrierefreiheit: Vorzeichen (+/−) und Text ergänzen die Farbcodierung; "
+            "„Sheet-Wert“ und „zwischengespeichert“ stehen in der Kachel. Alle Werte "
+            "stehen ohne Hover in der Tabelle und in den Watchlist-Details bereit."
+        ),
+    )
+    st.caption(
+        f"{len(model.tiles)} Kacheln in der Reihenfolge der Tabelle (Auswahl „Sortierung“ "
+        "und „Reihenfolge“). Bei vielen Einträgen oder schmalen Bildschirmen entfällt der Text kleiner Kacheln; "
+        "die Werte stehen dann im Tooltip, in der Tabelle und in den Details."
+    )
+
+
 def render_watchlist_table(
     rows: Sequence[watchlist_view.WatchlistRow],
     *,
@@ -636,7 +701,9 @@ def render_watchlist_table(
     )
     st.caption(
         f"{shown} · n. v. = nicht verfügbar; fehlende Werte erscheinen nie als 0,00 %. "
-        "Spalte „Quelle“ nennt die Herkunft des Werts der gewählten Periode."
+        "Spalte „Quelle“ nennt die Herkunft des Werts der gewählten Periode. "
+        "Ein Klick auf einen Spaltenkopf sortiert nur die Tabelle und nach Text; die "
+        "Auswahl „Sortierung“ ordnet Tabelle und Heatmap numerisch."
     )
     if not rows:
         st.info("Keine Watchlist-Einträge für die aktuelle Filterauswahl.")
@@ -753,6 +820,7 @@ def render_watchlist(
         sort_by,
         descending=descending,
     )
+    render_watchlist_heatmap(rows, period)
     render_watchlist_table(
         rows,
         total_count=len(entries),

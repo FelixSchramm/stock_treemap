@@ -3,7 +3,7 @@
 Umsetzung von Issue #85 (Epic #82) nach [ADR 0011](adr/0011-watchlist.md) und
 [ADR 0008](adr/0008-treemap-und-bedienung.md). Die Ansicht zeigt reine Kursentwicklung in
 Handelswährung (Kursabruf: [WATCHLIST_QUOTES.md](WATCHLIST_QUOTES.md)); sie kennt keine
-Stückzahlen, keinen Einstand und keine Verknüpfung mit dem Depot. Die Heatmap folgt in #86.
+Stückzahlen, keinen Einstand und keine Verknüpfung mit dem Depot. Die Heatmap mit gleich großen Kacheln (#86) steht über der Tabelle.
 
 Die Bewertungsübersicht für Depot und Watchlist ist die dritte Ansicht **Innerer Wert** ([VALUATION_OVERVIEW.md](VALUATION_OVERVIEW.md), #79); sie nutzt das Watchlist-Bundle dieser Ansicht, ändert sie aber nicht.
 
@@ -11,16 +11,16 @@ Die Bewertungsübersicht für Depot und Watchlist ist die dritte Ansicht **Inner
 
 | Modul | Inhalt |
 | --- | --- |
-| `watchlist_view` | rein fachlich (ohne Streamlit): Filter, Sortierung, Kennzahlen, Tabellenzeilen, Detailzeilen, Statushinweise |
+| `watchlist_view` | rein fachlich (ohne Streamlit): Filter, Sortierung, Kennzahlen, Tabellenzeilen, Detailzeilen, Statushinweise, `build_watchlist_treemap` (Heatmap-Modell) |
 | `watchlist_session.session_loader` | baut den Lader (Koordinator oder Demo-Lader) einmal je Sitzung und Kalendertag |
-| `ui.render_watchlist` und `render_watchlist_*` | Streamlit-Darstellung; Ansichtssteuerung `render_area_control` |
+| `ui.render_watchlist` und `render_watchlist_*` (u. a. `render_watchlist_heatmap`) | Streamlit-Darstellung; Ansichtssteuerung `render_area_control` |
 | `demo.DemoWatchlist` | statischer Lader mit `demo.demo_watchlist_bundle()` |
 | `app.py` | übergibt die Lader-Fabrik (`build_local_watchlist_coordinator`, `build_production_watchlist_coordinator`, `DemoWatchlist`) an `render_dashboard(watchlist=...)` |
 
-Für die Heatmap (#86) stehen dieselben Bausteine bereit: `watchlist_view.build_rows(entries,
-period, criteria)` liefert die gefilterten `WatchlistRow` (u. a. `percent`, `percent_label`,
-`source`, `status`, `detail_lines()`), `sort_rows` die Reihenfolge, `build_kpis` die
-Kopfkennzahlen; das Bundle liegt in `st.session_state[ui.WATCHLIST_BUNDLE_KEY]`.
+Die Heatmap (#86) baut auf denselben Bausteinen auf: `watchlist_view.build_rows(entries,
+period, criteria)` liefert die gefilterten `WatchlistRow`, `sort_rows` die Reihenfolge und
+`build_watchlist_treemap(rows)` das Modell; das Bundle liegt in
+`st.session_state[ui.WATCHLIST_BUNDLE_KEY]` und wird nicht erneut geladen.
 
 ## Bedienung
 
@@ -80,6 +80,36 @@ und die Blattzeile als umbrechenden Text in einem einzigen Markdown-Element (200
 bleiben schnell). `Datenstatus & Hinweise (n)` listet Import-Hinweise und alle Einträge, die
 nicht frische Anbieterdaten zeigen.
 
+## Heatmap
+
+`Watchlist-Heatmap · <Zeitraum>` steht unter den Filtern und über der Tabelle und zeigt
+genau die Zeilen, die auch die Tabelle zeigt: Suche, Typ, Kategorie, Zeitraum, Sortierung und
+Reihenfolge wirken auf beide gleichzeitig (die Kopfkennzahlen bleiben ungefiltert).
+
+- **Fläche:** jede Kachel hat dasselbe Gewicht (`1`), da Watchlist-Werte keinen EUR-Positionswert
+  haben. Auch `n. v.` behält seine Kachel (grau, `MISSING_COLOR`); nichts wird weggelassen.
+  Die Kachelreihenfolge folgt der Tabelle (Standard: Gewinner zuerst, `n. v.` zuletzt); die
+  Anordnung selbst bestimmt das Treemap-Layout, sie ist daher nicht streng zeilenweise.
+- **Farbe:** Skala, Begrenzung und Farben stammen aus `treemap.py` (`color_scale`, `color_for`)
+  wie im Depot: symmetrisch um 0 %, Spannweite aus den **sichtbaren** Werten (mindestens 1 %,
+  höchstens 50 %); größere Werte sind nur farblich begrenzt, Kachel und Tooltip zeigen die
+  ungekürzte Zahl. Die Legende nennt „Fläche: gleich gewichtet je Watchlist-Wert. Farbskala
+  symmetrisch um 0 %“ und das graue `n. v.`.
+- **Kachel:** Name, Ticker, Kursentwicklung mit Vorzeichen oder `n. v.`; ein Sheet-Ersatzwert
+  trägt `Sheet-Wert`, ein zwischengespeicherter Wert `zwischengespeichert` als Text in der
+  Kachel (frische Anbieter- und Demo-Werte brauchen keine Kennzeichnung). Die Herkunft ist
+  nie nur farbig kodiert.
+- **Tooltip:** Name, Ticker, Typ, Handelsplatz, Kurs in Handelswährung (EUR mit `(Sheet)`
+  beim Sheet-Wert), Kursentwicklung, Quelle, Referenzdatum und Kursstand. Auf Touch-Geräten
+  und per Tastatur stehen dieselben Werte in Tabelle und `Watchlist-Details ohne Hover`.
+- **Viele Einträge:** die Höhe wächst von 480 px (bis 24 Kacheln) um 4 px je weiterer Kachel bis
+  höchstens 1400 px (`ui.heatmap_height`). Text, der kleiner als 10 px würde, wird
+  ausgeblendet statt unleserlich verkleinert (`uniformtext`); das betrifft 200+ Einträge und
+  schmale Bildschirme. Die Kacheln bleiben, die Werte stehen im Tooltip, in der Tabelle und in
+  den Details. Die Heatmap wird aus den bereits erzeugten Zeilen gebaut (kein zusätzlicher Abruf).
+- Ein Klick auf einen Spaltenkopf der Tabelle sortiert nur die Tabelle und nach Text; die
+  Auswahl `Sortierung` ordnet Tabelle und Heatmap numerisch (Hinweis unter der Tabelle).
+
 ## Kennzeichnung
 
 | Fall | Anzeige |
@@ -104,5 +134,5 @@ Richtung steht als Vorzeichen und Text (`Gewinn (+)`, `Verlust (−)`), nie nur 
 
 `uv run --locked pytest tests/test_watchlist_view.py tests/test_watchlist_ui.py tests/test_auth.py`
 (synthetisch, offline): Navigation, Periodenerhalt und `Seit Kauf`-Rückfall, Filter,
-Sortierung, 250 Zeilen mit und ohne Zusatzspalten, Konfigurationshinweis, Lader pro Sitzung
+Sortierung, Heatmap (gleiche Gewichte, Farben, Tooltips, Filter-Gleichlauf, 250 Kacheln), 250 Zeilen mit und ohne Zusatzspalten, Konfigurationshinweis, Lader pro Sitzung
 und Tag, Besitzerprüfung vor dem Lader, Kennzeichnung von Sheet-Wert, Cache und `n. v.`.

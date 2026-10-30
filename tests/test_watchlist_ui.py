@@ -5,6 +5,7 @@ mode gets a fake depot coordinator and, where stated, the real Watchlist
 coordinator on a fake Sheet reader. IP sockets are blocked by pytest-socket.
 """
 
+import json
 import os
 import socket
 from datetime import date
@@ -75,6 +76,25 @@ def table(app):
 
 def column(app, name):
     return table(app)[name].tolist()
+
+
+def heatmap(app):
+    """The single Plotly trace of the heatmap (spec as sent to the browser)."""
+    charts = app.get("plotly_chart")
+    assert len(charts) == 1
+    return json.loads(charts[0].proto.spec)["data"][0]
+
+
+def heatmap_layout(app):
+    return json.loads(app.get("plotly_chart")[0].proto.spec)["layout"]
+
+
+def heatmap_height(app):
+    return json.loads(app.get("plotly_chart")[0].proto.spec)["layout"]["height"]
+
+
+def tile_names(app):
+    return [text.split("<br>")[0] for text in heatmap(app)["text"]]
 
 
 def expander_labels(app):
@@ -513,3 +533,130 @@ def test_markdown_text_escapes_sheet_provided_text():
     for char in "*_[]$`#|~":
         assert char not in escaped.replace("\\" + char, "")
     assert escaped.endswith("\\\\")
+
+
+# --- heatmap (#86) ----------------------------------------------------------------
+
+
+def test_demo_watchlist_heatmap_has_equal_tiles_in_table_order_with_gray_n_v(offline_demo):
+    app = area(new_app().run(), "Watchlist")
+    assert not app.exception
+    trace = heatmap(app)
+    assert trace["values"] == [1.0] * 6
+    assert tile_names(app) == column(app, "Name")
+    texts = dict(zip(tile_names(app), trace["text"], strict=True))
+    assert texts["Demo-ohne Kurs"] == "Demo-ohne Kurs<br>n. v."
+    assert texts["Demo-Aktie US"] == "Demo-Aktie US<br>DEMO-US<br>+2,15 %"
+    assert texts["Demo-Krypto"].endswith("-2,30 %<br>Sheet-Wert")  # origin as text
+    colors = dict(zip(tile_names(app), trace["marker"]["colors"], strict=True))
+    assert colors["Demo-ohne Kurs"] == "#3c4043"
+    assert colors["Demo-Aktie US"] != colors["Demo-Aktie NYSE"]  # gain vs loss
+    tooltip = dict(zip(tile_names(app), trace["hovertext"], strict=True))["Demo-Aktie US"]
+    assert "Handelsplatz: NMS" in tooltip and "Kurs: 98,40 USD" in tooltip
+    assert "Referenzdatum: " in tooltip and "Kursstand: 22.10.2026 (Demo)" in tooltip
+    assert heatmap_layout(app)["uniformtext"] == {"minsize": 10, "mode": "hide"}
+    assert app.subheader[1].value == "Watchlist-Heatmap · Heute"
+    assert [s.value for s in app.subheader][2] == "Watchlist-Übersicht"  # above the table
+
+
+def test_demo_watchlist_heatmap_legend_and_notes(offline_demo):
+    app = area(new_app().run(), "Watchlist")
+    captions = [c.value for c in app.caption]
+    assert (
+        "Fläche: gleich gewichtet je Watchlist-Wert. Farbskala symmetrisch um 0 %." in captions
+    )
+    assert any("6 Kacheln in der Reihenfolge der Tabelle" in c for c in captions)
+    legend = [m.value for m in app.markdown if "Farblegende der Watchlist-Heatmap" in m.value]
+    assert len(legend) == 1 and "n. v. (keine Kennzahl)" in legend[0]
+    assert "Gewinn" in legend[0] and "Verlust" in legend[0]
+
+
+def test_heatmap_follows_period_search_type_category_and_sorting(offline_demo):
+    app = area(new_app().run(), "Watchlist")
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Woche").run()
+    assert app.subheader[1].value == "Watchlist-Heatmap · Woche"
+    texts = dict(zip(tile_names(app), heatmap(app)["text"], strict=True))
+    assert texts["Demo-Aktie US"].endswith("+4,05 %")
+    assert texts["Demo-Krypto"] == "Demo-Krypto<br>n. v."  # no Sheet value for Woche
+    assert heatmap(app)["values"] == [1.0] * 6  # n. v. keeps its area
+
+    app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("Aktie").run()
+    assert tile_names(app) == column(app, "Name") and len(tile_names(app)) == 3
+    assert heatmap(app)["values"] == [1.0] * 3
+    app.selectbox(key=WATCHLIST_FILTER_TYPE_KEY).set_value("ETF").run()
+    assert not app.get("plotly_chart") and not app.dataframe
+    assert any("Keine Watchlist-Einträge für die Heatmap" in i.value for i in app.info)
+    app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("").run()
+    assert tile_names(app) == column(app, "Name") == ["Demo-ETF DE"]
+    app.selectbox(key=WATCHLIST_FILTER_TYPE_KEY).set_value("Alle").run()
+    app.selectbox(key=WATCHLIST_FILTER_CATEGORY_KEY).set_value("Ohne Kategorie").run()
+    assert tile_names(app) == column(app, "Name")
+    assert sorted(tile_names(app)) == ["Demo-Krypto", "Demo-ohne Kurs"]
+
+    app.selectbox(key=WATCHLIST_FILTER_CATEGORY_KEY).set_value("Alle").run()
+    app.selectbox(key=WATCHLIST_SORT_FIELD_KEY).set_value("Name").run()
+    app.selectbox(key=WATCHLIST_SORT_ORDER_KEY).set_value("Aufsteigend").run()
+    assert tile_names(app) == column(app, "Name") == sorted(column(app, "Name"))
+    assert not app.exception
+
+
+def test_heatmap_scale_changes_with_the_filter_and_legend_names_it(offline_demo):
+    app = area(new_app().run(), "Watchlist")
+    app.radio(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
+    legend = next(m.value for m in app.markdown if "Farblegende der Watchlist" in m.value)
+    assert "-18,90 %" in legend and "+18,90 %" in legend
+    app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("ETF").run()
+    legend = next(m.value for m in app.markdown if "Farblegende der Watchlist" in m.value)
+    assert "-5,60 %" in legend and "+5,60 %" in legend
+
+
+def test_depot_treemap_and_legend_are_unchanged_by_the_heatmap(offline_demo):
+    app = new_app().run()
+    charts = app.get("plotly_chart")
+    assert len(charts) == 1
+    spec = json.loads(charts[0].proto.spec)
+    assert spec["layout"]["height"] == 480 and "uniformtext" not in spec["layout"]
+    assert len(set(spec["data"][0]["values"])) > 1  # EUR-weighted areas
+    captions = [c.value for c in app.caption]
+    assert "Fläche: EUR-Positionswert. Farbskala symmetrisch um 0 %." in captions
+    assert any(m.value.startswith('<div role="region" aria-label="Farblegende der Treemap"')
+               for m in app.markdown)
+    assert not any("Heatmap" in s.value for s in app.subheader)
+
+
+def test_two_hundred_fifty_entries_give_two_hundred_fifty_equal_tiles_and_stay_in_sync(local):
+    rows = sheet_rows(250, wide=True)
+    rows[3] = ["Ohne Werte", None, None, None]
+    local["use"](real_coordinator(rows, WIDE))
+    app = area(new_app().run(), "Watchlist")
+    assert not app.exception and not app.error
+    assert heatmap(app)["values"] == [1.0] * 250
+    assert heatmap_height(app) == ui.heatmap_height(250) > 480
+    assert tile_names(app) == column(app, "Name")
+    texts = dict(zip(tile_names(app), heatmap(app)["text"], strict=True))
+    assert texts["Ohne Werte"] == "Ohne Werte<br>n. v."
+    assert heatmap(app)["marker"]["colors"][tile_names(app).index("Ohne Werte")] == "#3c4043"
+
+    app.selectbox(key=WATCHLIST_FILTER_TYPE_KEY).set_value("ETF").run()
+    assert len(tile_names(app)) == len(table(app)) == 124
+    app.selectbox(key=WATCHLIST_FILTER_CATEGORY_KEY).set_value("Welt").run()
+    assert tile_names(app) == column(app, "Name") and 0 < len(tile_names(app)) < 124
+    app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("Wert 01").run()
+    assert tile_names(app) == column(app, "Name")
+    assert all(name.startswith("Wert 01") for name in tile_names(app))
+
+
+def test_heatmap_height_grows_with_the_tile_count_up_to_a_limit():
+    assert ui.heatmap_height(0) == ui.heatmap_height(6) == ui.heatmap_height(24) == 480
+    assert ui.heatmap_height(100) > 480
+    assert ui.heatmap_height(250) <= ui.HEATMAP_MAX_HEIGHT
+    assert ui.heatmap_height(5000) == ui.HEATMAP_MAX_HEIGHT
+
+
+def test_heatmap_escapes_sheet_provided_text_in_labels_and_tooltips(local):
+    rows = [['<img src=x onerror=alert(1)> & Co', "10,00", "1,0", "0,1"]]
+    local["use"](real_coordinator(rows, BASIC_HEADERS))
+    app = area(new_app().run(), "Watchlist")
+    trace = heatmap(app)
+    assert "<img" not in trace["text"][0] and "&lt;img" in trace["text"][0]
+    assert "<img" not in trace["hovertext"][0] and "&lt;img" in trace["hovertext"][0]
