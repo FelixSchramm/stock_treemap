@@ -22,6 +22,8 @@ streak. Positions are probed in order of their fewest-failure candidate, so a
 healthy replacement stays reachable after a backoff however many failing
 listings precede it. If all candidates fail (a real outage), the provider-wide
 backoff opens as before.
+A history fetched during a session is outdated once that session has closed
+(history(sessions=...)), however young it is; see #110.
 """
 
 from collections.abc import Callable, Iterable, Mapping
@@ -47,6 +49,7 @@ from portfolio_dashboard.models import (
     ValuationSource,
     ValueStatus,
 )
+from portfolio_dashboard.price_periods import SessionCalendar, session_closed_between
 
 T = TypeVar("T")
 
@@ -98,6 +101,7 @@ class QuoteCache:
         refresh,
         unavailable,
         provider_wide=True,
+        outdated=None,
     ):
         now = self.clock()
         entry = self._entries.setdefault(key, _Entry())
@@ -105,6 +109,7 @@ class QuoteCache:
             entry.success is not None
             and not refresh
             and now - entry.fetched_at < timedelta(seconds=ttl_seconds)
+            and not (outdated is not None and outdated(entry.success, entry.fetched_at, now))
         ):
             return as_cached(entry.success) if entry.failures else entry.success
         provider_blocked = (
@@ -260,8 +265,27 @@ class QuoteCache:
         *,
         minimum_points: int = 2,
         refresh: bool = False,
+        sessions: SessionCalendar | None = None,
     ) -> PriceHistory:
-        """Cached for the history TTL; callers pass only closed periods (current day: #22)."""
+        """Cached for the history TTL, but never across a session close it missed.
+
+        With ``sessions`` (the exchange's calendar), an entry fetched before a
+        regular session ended is no longer fresh once that session has closed:
+        its last bar was an intraday state (#110). It is fetched again, under
+        the usual backoff; if that fails, the old entry is returned flagged as
+        cached with its original retrieval time. Without ``sessions`` only the
+        TTL applies.
+        """
+
+        def outdated(history, fetched_at, now):
+            return (
+                sessions is not None
+                and history.exchange_timezone is not None
+                and session_closed_between(
+                    sessions, history.exchange_timezone, fetched_at, now
+                )
+            )
+
         return self._get(
             ("history", instrument, start, end, minimum_points),
             self.ttls.history_seconds,
@@ -280,6 +304,7 @@ class QuoteCache:
                 _missing_provenance(instrument.provider_mapping, now),
                 warnings=(_BACKOFF,),
             ),
+            outdated=outdated,
         )
 
     def holdings(

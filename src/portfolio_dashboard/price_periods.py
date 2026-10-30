@@ -10,7 +10,7 @@ Every period returns either a percent or "n. v." with a stable reason code.
 import calendar
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from zoneinfo import ZoneInfo
@@ -68,6 +68,30 @@ def session_calendar(
     return SessionCalendar(
         frozenset(sessions), open_time, close_time, first_day, last_day
     )
+
+
+def session_closed_between(
+    sessions: SessionCalendar, timezone: str, since: datetime, until: datetime
+) -> bool:
+    """True if a regular session ended after ``since`` and no later than ``until``.
+
+    A daily history fetched at ``since`` cannot carry the final close of such a
+    session: it was fetched before the close (the last bar then holds an
+    intraday state, or the day's bar is still missing). Both instants must be
+    aware; the close is placed in the exchange's own time zone, so DST changes
+    shift its UTC instant and holidays/weekends (not in the calendar) never count.
+    """
+    zone = ZoneInfo(timezone)
+    first = since.astimezone(zone).date()
+    last = until.astimezone(zone).date()
+    for offset in range((last - first).days + 1):
+        day = first + timedelta(days=offset)
+        if day not in sessions.sessions:
+            continue
+        close = datetime.combine(day, sessions.close_time, tzinfo=zone)
+        if since < close.astimezone(UTC) <= until:
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
