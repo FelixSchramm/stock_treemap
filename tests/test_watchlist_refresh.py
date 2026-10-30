@@ -660,8 +660,14 @@ def heal_then_reject_after_ttls(env):
     reject(env)
 
 
-def seconds_until_valid_rows_are_live(env, *, step=60, limit=900):
-    """Load every ``step`` seconds; returns the seconds until all valid rows are LIVE."""
+def seconds_until_valid_rows_are_live(
+    env, *, step=60, limit=900, rejected_status=WatchlistEntryStatus.CACHED
+):
+    """Load every ``step`` seconds; returns the seconds until all valid rows are LIVE.
+
+    The rejected rows must show ``rejected_status``: their earlier valid state with its
+    age, or the Sheet value once that state belongs to an earlier day.
+    """
     start = env.now
     while (env.now - start).total_seconds() <= limit:
         bundle = env.load()
@@ -670,8 +676,8 @@ def seconds_until_valid_rows_are_live(env, *, step=60, limit=900):
         if all(e.status is WatchlistEntryStatus.LIVE for e in valid):
             for entry, kind in zip(bundle.entries, env.kinds):
                 if kind == "b":  # earlier valid state stays visible with its age
-                    assert entry.status is WatchlistEntryStatus.CACHED
-                    assert entry.age_text
+                    assert entry.status is rejected_status
+                    assert rejected_status is not WatchlistEntryStatus.CACHED or entry.age_text
             assert SECRET not in repr(bundle)
             return int((env.now - start).total_seconds())
         env.now += timedelta(seconds=step)
@@ -888,7 +894,9 @@ def test_next_day_valid_rows_with_frozen_quote_counters_are_live_within_five_min
     frozen_quote_counters_then_reject(env, flaky)
     # The rejected block shows up in the next day's running session, production TTLs.
     env.now = datetime(2026, 10, 29, 9, 0, tzinfo=UTC)
-    assert seconds_until_valid_rows_are_live(env, limit=limit) <= limit
+    assert seconds_until_valid_rows_are_live(
+        env, limit=limit, rejected_status=WatchlistEntryStatus.SHEET_VALUE
+    ) <= limit
 
 
 def test_quote_counters_of_the_same_session_keep_their_weight_after_a_long_pause():
@@ -911,7 +919,7 @@ def test_quote_counters_of_the_same_session_keep_their_weight_after_a_long_pause
     assert not {symbol for symbol in first if symbol.startswith("B")}  # valid rows first
 
 
-def test_a_quote_counter_from_before_the_close_does_not_rank_after_it():
+def test_a_quote_counter_from_before_the_close_is_not_counted_after_it():
     env = warm_env("bU" * 3 + "gU" * 5, now=datetime(2026, 10, 28, 14, 0, tzinfo=UTC))
     env.coordinator._cache.ttls = PRODUCTION_TTLS
     env.load()
@@ -919,12 +927,20 @@ def test_a_quote_counter_from_before_the_close_does_not_rank_after_it():
     for _ in range(10):
         env.now += timedelta(seconds=60)
         env.load()
-    quote_keys = {k for k in env.coordinator._failure_ranks() if k[0] == "quote"}
-    assert len(quote_keys) == 3
-    env.now = datetime(2026, 10, 28, 22, 0, tzinfo=UTC)  # NYSE closed at 21:00 UTC
-    plan = env.coordinator._entries  # keep the public flow: order is computed in a load
-    env.load()
-    assert callable(plan)
+    items = env.coordinator.last_bundle.snapshot.items
+    plan = [
+        watchlist_refresh._Planned(
+            item, watchlist_listing(item), env.coordinator._calendars["NMS"], True
+        )
+        for item in items
+    ]
+    rejected = {watchlist_listing(item).instrument for item in items[:3]}
+    during = env.coordinator._probe_order(plan, env.now)
+    assert all(during[inst][0] == 1 for inst in rejected)  # failing: behind the others
+    assert all(key[0] == 0 for inst, key in during.items() if inst not in rejected)
+    after_close = datetime(2026, 10, 28, 22, 0, tzinfo=UTC)  # NYSE closed at 21:00 UTC
+    after = env.coordinator._probe_order(plan, after_close)
+    assert {key[0] for key in after.values()} == {0}  # the frozen series no longer counts
 
 
 def seed_history_series(env, symbols, failures, attempted_ago, *, due=True):
@@ -939,7 +955,9 @@ def seed_history_series(env, symbols, failures, attempted_ago, *, due=True):
             entry.last_attempt_at = env.now - attempted_ago
             entry.retry_after = None
             if due:
-                entry.fetched_at = env.now - timedelta(seconds=SHORT_HISTORY_TTLS.history_seconds + 1)
+                entry.fetched_at = env.now - timedelta(
+                    seconds=env.coordinator._cache.ttls.history_seconds + 1
+                )
 
 
 def test_valid_rows_with_an_older_history_series_beat_freshly_rejected_rows():
