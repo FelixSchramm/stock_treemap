@@ -52,8 +52,12 @@ from portfolio_dashboard.models import (
     ValuationSource,
     ValueStatus,
 )
-from portfolio_dashboard.price_periods import SessionCalendar, price_period_returns
-from portfolio_dashboard.quote_cache import QuoteCache
+from portfolio_dashboard.price_periods import (
+    SessionCalendar,
+    price_period_returns,
+    session_closed_between,
+)
+from portfolio_dashboard.quote_cache import QuoteCache, probe_order_key
 from portfolio_dashboard.refresh import (
     PERIOD_KEY_TO_ENUM,
     _format_timestamp,
@@ -564,19 +568,51 @@ class WatchlistRefreshCoordinator:
     def _failure_ranks(self) -> dict[tuple[str, Instrument], int]:
         """Consecutive failed provider fetches per fetch kind and instrument.
 
-        Taken from the cache's own counters, one per key (``("quote", instrument)`` and
-        ``("history", instrument)``). They rise only when a fetch was attempted and failed
+        Taken from the cache's own counters, one per ``(kind, instrument)`` with kind
+        ``"quote"`` or ``"history"``. They rise only when a fetch was attempted and failed
         (a success resets them), so results served from the cache merely because of a
-        backoff do not count. A quote counter only resets on a successful quote in a
-        running session and stays frozen after the close; it therefore ranks the quote
-        fetch of its row alone, never the history fetch. The coordinator keeps no failure
-        state of its own.
+        backoff do not count. The coordinator keeps no failure state of its own.
         """
-        ranks: dict[tuple[str, Instrument], int] = {}
-        for key, entry in self._cache._entries.items():
-            if entry.failures and key[0] in ("quote", "history"):
-                ranks[(key[0], key[1])] = entry.failures
-        return ranks
+        return {
+            key: series.failures
+            for key, series in self._cache.attempts().items()
+            if series.failures
+        }
+
+    def _probe_order(
+        self, plan: list[_Planned], now: datetime
+    ) -> dict[Instrument, tuple[int, datetime]]:
+        """Sort key per row for the recovery probe: no failure first, then oldest attempt.
+
+        A row's failure series is its history counter plus its quote counter, both from
+        the cache; ``quote_cache.probe_order_key`` turns it into the key (rows without a
+        failure tie, failing rows go by the time of their last attempt, never by count).
+        A quote counter only moves while a session is running and stays frozen after the
+        close, even when the symbol is fine again. A series whose last attempt lies before
+        the close of a regular session is therefore a relic of an earlier session and not
+        counted. Within one session it keeps its weight however long the pause between
+        two loads was.
+        """
+        counts = self._failure_ranks()
+        series = self._cache.attempts()
+        order: dict[Instrument, tuple[int, datetime]] = {}
+        for step in plan:
+            if step.listing is None or step.calendar is None:
+                continue
+            instrument = step.listing.instrument
+            failures, last = 0, None
+            for kind in ("history", "quote"):
+                count = counts.get((kind, instrument), 0)
+                attempt = series[(kind, instrument)].last_attempt_at if count else None
+                if kind == "quote" and count and session_closed_between(
+                    step.calendar, step.item.mapping.timezone, attempt, now
+                ):
+                    continue  # frozen counter of an earlier session
+                failures += count
+                if attempt is not None:
+                    last = attempt if last is None else max(last, attempt)
+            order[instrument] = probe_order_key(failures, last)
+        return order
 
     def _entries(
         self, snapshot: WatchlistSnapshot, now: datetime, refresh: bool
@@ -605,26 +641,18 @@ class WatchlistRefreshCoordinator:
         self._provider.use(tuple(listings))
         # Provider-wide backoff opens after three failures in a row, and a recovery probe
         # takes the first due key. Candidates are therefore fetched in one common order for
-        # both kinds, each ranked by the failure counter of its own key: fetches without
-        # failed attempts first (histories before quotes, then sheet order), known-defective
-        # ones last, so rejected symbols cannot lock out the valid rows behind them,
-        # whatever the market state. A frozen quote counter never delays the history.
-        ranks = self._failure_ranks()
+        # both kinds, ranked per row (see _probe_order): rows without a failed fetch first
+        # (histories before quotes, then sheet order), failing rows after them with the
+        # one asked longest ago first. Rejected symbols so cannot lock out the valid rows
+        # behind them, and a row with a long failure history gets its probe again after
+        # one round through the failing rows (#111), whatever the market state.
+        order = self._probe_order(plan, now)
         tasks = [
             ("history", step)
             for step in plan
             if step.listing is not None and step.calendar is not None
         ] + [("quote", step) for step in plan if step.running]
-
-        def rank(task: tuple[str, _Planned]) -> int:
-            kind, step = task
-            instrument = step.listing.instrument
-            own = ranks.get((kind, instrument), 0)
-            # A rejected symbol fails both fetches and the history counter is always
-            # current, so a quote also ranks behind a failing history of its own row.
-            return own + ranks.get(("history", instrument), 0) if kind == "quote" else own
-
-        tasks.sort(key=rank)
+        tasks.sort(key=lambda task: order[task[1].listing.instrument])
         quotes: dict[Instrument, PriceObservation] = {}
         histories: dict[Instrument, PriceHistory] = {}
         for kind, step in tasks:
