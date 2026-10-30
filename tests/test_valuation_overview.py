@@ -514,7 +514,10 @@ def test_data_stand_keeps_retrieval_age_and_business_age_apart():
     assert (
         "Annahmenstand: Version demo-assumptions-v1" in text and "synthetisch" in text
     )
-    assert row.stand_short == "Abruf vor 0 Sek.; Abschluss bis 31.12.2025"
+    assert row.stand_short == (
+        "Abruf vor 0 Sek.; Abschluss bis 31.12.2025; Annahmen vom 23.10.2026"
+    )
+    assert "Altersgrenze" not in row.stand_short and row.status_text == "Bewertet"
 
 
 def test_a_fresh_retrieval_of_old_reports_does_not_make_them_recent():
@@ -536,6 +539,13 @@ def test_a_fresh_retrieval_of_old_reports_does_not_make_them_recent():
     assert "vor 221 Tag(en)" in text  # retrieval age of the 23.10.2026 retrieval
     assert "fachliches Alter 517 Tage" in text  # 31.12.2025 is the business date
     assert any("älter als die Altersgrenze" in n for n in row.notes)
+    # #79 review: the exceeded limit and the assumptions date are visible without details.
+    assert row.stand_short.endswith("Annahmen vom 23.10.2026; Altersgrenze überschritten")
+    assert row.status_text == "Bewertet – Altersgrenze überschritten"
+    assert row.covered  # the status itself is unchanged; only its text says more
+    assert any("nicht auf heute fortgeschrieben" in n for n in row.notes)
+    assert row.to_display_dict()["Status"].endswith("Altersgrenze überschritten")
+    assert "Altersgrenze überschritten" in row.to_display_dict()["Datenstand"]
 
 
 def test_source_manual_supplement_and_dominance_are_text_not_color():
@@ -546,6 +556,8 @@ def test_source_manual_supplement_and_dominance_are_text_not_color():
     assert "Terminalwertanteil ab 75 %" in notes
     assert "Demo:" in notes and "erfunden" in notes
     assert row.price_source == "Sheet-Wert, Kursstand unbekannt"
+    # #79 review: source and stand of the price are in the table cell, not only in details.
+    assert row.to_display_dict()["Kurs"] == "120,00 EUR (Sheet-Wert, Kursstand unbekannt)"
     watch = by_name(evaluate(portfolio=None))["Demo-Aktie DE"]
     assert watch.price_source == "Demo-Wert, synthetisch"
 
@@ -615,6 +627,10 @@ def test_loader_states_are_distinguished_from_missing_assumptions():
     assert not_configured["Demo-Aktie A"].status is Status.NOT_CONFIGURED
     not_loaded = by_name(evaluate(state=FundamentalsState(None, True)))
     assert not_loaded["Demo-Aktie A"].status is Status.NOT_LOADED
+    # #79 review: the text names the button as it is called before and after the first load.
+    explanation = not_loaded["Demo-Aktie A"].reasons[0]
+    assert "„Bewertungsdaten laden“" in explanation
+    assert "„Fundamentaldaten aktualisieren“" in explanation
     failed = by_name(evaluate(state=FundamentalsState(None, True, "Feste Meldung.")))
     assert failed["Demo-Aktie A"].status is Status.LOAD_FAILED
     assert failed["Demo-Aktie A"].reasons == ("Feste Meldung.",)

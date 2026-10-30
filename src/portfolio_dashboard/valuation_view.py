@@ -96,8 +96,15 @@ NOT_CONFIGURED_TEXT = (
 )
 EXPLAIN_TEXT = (
     "Modellschätzung aus einem FCFF-DCF mit eigenen Annahmen, kein Kauf- oder "
-    "Verkaufssignal und kein Konfidenzintervall. n. v. = nicht verfügbar; fehlende "
-    "Werte erscheinen nie als 0."
+    "Verkaufssignal und kein Konfidenzintervall. Der Modellwert gilt zum Stichtag der "
+    "Annahmen und wird nicht auf heute fortgeschrieben; Annahmen-Stichtag und überschrittene "
+    "Altersgrenzen der Daten stehen in Status und Datenstand. n. v. = nicht verfügbar; "
+    "fehlende Werte erscheinen nie als 0."
+)
+REFRESH_HINT = (
+    "„Aktualisieren“ oben lädt in dieser Ansicht nur die Fundamentaldaten neu (und die "
+    "Watchlist-Kurse, falls sie noch nicht geladen sind); vorhandene Kursstände von Depot "
+    "und Watchlist werden in deren eigenen Ansichten aktualisiert."
 )
 MEASURES_TEXT = (
     "Zwei Bezugsgrößen, nicht verwechseln: „Kurs-Abschlag zum Basiswert“ = (1 − Kurs ÷ "
@@ -402,6 +409,7 @@ def render_overview(
         close_detail(st.session_state)
         valuation_detail_view.clear_drafts()
     st.caption(EXPLAIN_TEXT)
+    st.caption(REFRESH_HINT)
     for stamp in stamps:
         st.caption(stamp)
     if state.error:

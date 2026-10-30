@@ -172,6 +172,9 @@ def test_area_is_offered_and_shows_the_synthetic_overview(demo):
     assert "(synthetisch)" in captions  # data stand of the invented sources
     assert "Fundamentaldaten: letzter Abruf 23.10.2026" in captions
     assert "bezieht sich auf den Basiswert" in captions
+    # #79 review hints: refresh scope and the not-rolled-forward model value are stated.
+    assert "lädt in dieser Ansicht nur die Fundamentaldaten neu" in captions
+    assert "nicht auf heute fortgeschrieben" in captions
     assert "bezieht sich auf den Kurs" in captions
 
 
