@@ -26,4 +26,5 @@ Umsetzung von [ADR 0008](adr/0008-treemap-und-bedienung.md). Das Modell steht in
   - Verbindet den „Aktualisieren“-Button mit dem lesenden Sheet-Import (`SheetsAdapter.read`, `SHEETS_READONLY_SCOPE` via `GET`) und dem `QuoteCache`.
   - Manuelle Sheet-Werte ohne beobachteten Kurszeitpunkt werden einheitlich als `Sheet-Wert, Kursstand unbekannt` benannt.
   - Tauscht das `DashboardBundle` atomar aus. Schlägt eine Aktualisierung fehl, bleibt ein vorhandener gültiger Stand samt Alter (`format_snapshot_age`) unverändert erhalten; ohne vorherigen Stand wird `Daten nicht verfügbar` angezeigt.
+- **Watchlist-Heatmap (#86):** Die Watchlist nutzt dasselbe Modell (`TreemapModel`), dieselbe Farbskala und dieselbe Zeichnung, aber gleich große Kacheln statt EUR-Flächen; Depot-Fläche und -Legende bleiben unverändert. Siehe [WATCHLIST_VIEW.md](WATCHLIST_VIEW.md#heatmap).
 - **Demo:** feste, erfundene EUR-Preise und Kursprozente; die Seit-Kauf-Ansicht bleibt ohne verifizierten Einstand „n. v.“.
