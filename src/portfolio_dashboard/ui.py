@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from html import escape
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -26,6 +27,8 @@ from portfolio_dashboard.treemap import (
     ALL_FILTER,
     MISSING_COLOR,
     NOT_AVAILABLE,
+    PERIOD_SORT_FIELDS,
+    SORT_BY_PERFORMANCE,
     SORT_BY_VALUE,
     SORT_FIELDS,
     TILE_TEXT_COLOR,
@@ -36,10 +39,10 @@ from portfolio_dashboard.treemap import (
     PositionTableRow,
     TreemapModel,
     available_categories,
+    build_comparison_table_rows,
     build_kpis,
     build_position_details,
     build_status_notes,
-    build_table_rows,
     build_treemap,
     color_for,
     filter_groups,
@@ -60,6 +63,7 @@ TYPE_FILTER_OPTIONS = (ALL_FILTER, "Aktie", "ETF", "Derivat")
 SORT_DIRECTION_DESC = "Absteigend"
 SORT_DIRECTION_ASC = "Aufsteigend"
 SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
+TABLE_SORT_FIELDS = tuple(field for field in SORT_FIELDS if field != SORT_BY_PERFORMANCE)
 
 # Public keys are the retained session state. COURSE_PERIOD_KEY holds the
 # selected Zeitraum (a course period or "Seit Kauf"); the radio keeps its own
@@ -346,6 +350,8 @@ def render_filter_controls(
     st.session_state.setdefault(FILTER_CATEGORY_KEY, ALL_FILTER)
     st.session_state.setdefault(SORT_FIELD_KEY, SORT_BY_VALUE)
     st.session_state.setdefault(SORT_ORDER_KEY, SORT_DIRECTION_DESC)
+    if st.session_state[SORT_FIELD_KEY] not in TABLE_SORT_FIELDS:
+        st.session_state[SORT_FIELD_KEY] = SORT_BY_VALUE
 
     categories = available_categories(valuation)
     if st.session_state.get(FILTER_CATEGORY_KEY) not in categories:
@@ -372,7 +378,7 @@ def render_filter_controls(
     with fcols[3]:
         sort_by = st.selectbox(
             "Sortierung",
-            SORT_FIELDS,
+            TABLE_SORT_FIELDS,
             key=SORT_FIELD_KEY,
         )
     with fcols[4]:
@@ -490,8 +496,29 @@ def render_positions_table(
         st.caption(
             f"Alle {len(rows)} aktiven Positionen inkl. Datenlücken · {weight_note}"
         )
-    display_dicts = [row.to_display_dict() for row in rows]
-    st.dataframe(display_dicts, hide_index=True, width="stretch")
+    st.caption(
+        "Alle Zeiträume nebeneinander, unabhängig von der Zeitraum-Auswahl. "
+        "Seit Kauf: Rendite in EUR; Jahr bis Heute: Kursentwicklung in Handelswährung."
+    )
+    display = (
+        pd.DataFrame([row.to_display_dict() for row in rows])
+        if rows else pd.DataFrame(columns=["Instrument", SORT_BY_VALUE, *PERIOD_SORT_FIELDS])
+    )
+    # Keep percentages numeric for column-header sorting; format only the display.
+    formatted = display.style.format(
+        {
+            SORT_BY_VALUE: "{:,.2f}",
+            WEIGHT_COLUMN_LABEL: "{:,.2f}",
+        },
+        na_rep=NOT_AVAILABLE,
+        decimal=",",
+        thousands=".",
+    ).format(
+        lambda value: format_percent(Decimal(str(value))),
+        subset=[column for column in PERIOD_SORT_FIELDS if column in display],
+        na_rep=NOT_AVAILABLE,
+    )
+    st.dataframe(formatted, hide_index=True, width="stretch")
     render_position_details(rows)
 
 
@@ -987,7 +1014,7 @@ def render_dashboard(
     resolved_returns = (
         returns
         if returns is not None
-        else (portfolio_returns(valuation) if is_personal else None)
+        else portfolio_returns(valuation)
     )
 
     st.subheader(f"{view} · {period}")
@@ -1029,13 +1056,15 @@ def render_dashboard(
         )
     )
 
-    table_rows = build_table_rows(
+    table_rows = build_comparison_table_rows(
         valuation,
-        current_performances,
+        {period: tuple(performances(COURSE_VIEW, period)) for period in COURSE_PERIODS},
         criteria=criteria,
-        is_personal_view=is_personal,
         returns=resolved_returns,
-        period_reasons=current_reasons,
+        course_reasons=(
+            {period: tuple(period_reasons(COURSE_VIEW, period)) for period in COURSE_PERIODS}
+            if period_reasons is not None else None
+        ),
     )
     sorted_rows = sort_table_rows(table_rows, sort_by=sort_by, descending=descending)
     is_filtered = bool(

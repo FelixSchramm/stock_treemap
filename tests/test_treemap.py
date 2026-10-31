@@ -30,6 +30,7 @@ from portfolio_dashboard.treemap import (
     NEGATIVE_COLOR,
     NEUTRAL_COLOR,
     NO_CATEGORY_LABEL,
+    PERIOD_SORT_FIELDS,
     POSITIVE_COLOR,
     SHEET_UNKNOWN_QUOTE_STATUS,
     SORT_BY_NAME,
@@ -39,6 +40,7 @@ from portfolio_dashboard.treemap import (
     FilterCriteria,
     Performance,
     available_categories,
+    build_comparison_table_rows,
     build_kpis,
     build_table_rows,
     build_treemap,
@@ -452,6 +454,71 @@ def test_kpi_without_winner_or_loser_shows_n_v_with_a_short_reason():
     unmeasured = build_kpis(valuation, [Performance(None), Performance(None)])
     assert (unmeasured.winner_label, unmeasured.winner_note) == ("n. v.", None)
     assert (unmeasured.loser_label, unmeasured.loser_note) == ("n. v.", None)
+
+
+def test_comparison_table_keeps_periods_costs_and_gap_reasons_aligned_after_filtering():
+    valuation = valued(
+        position("Alpha", InstrumentType.STOCK, "1", "120", cost="100", row=1),
+        position("Verkauft", InstrumentType.STOCK, "0", "90", row=2),
+        position("Beta", InstrumentType.ETF, "1", "80", cost="100", row=3),
+        position("Ohne Einstand", InstrumentType.STOCK, "1", "100", row=4),
+        position("Ohne Kurs", InstrumentType.STOCK, "1", None, cost="100", row=5),
+    )
+    values = {
+        "Jahr": ("10", None, "-10", "0", None),
+        "Monat": ("1", None, "-2", "0", None),
+        "Woche": (None, None, "2", "0", None),
+        "Heute": ("2", None, "-1", "0", None),
+    }
+    periods = {
+        period: tuple(
+            Performance(Decimal(value) if value is not None else None, date(2026, 1, 2))
+            for value in perfs
+        )
+        for period, perfs in values.items()
+    }
+    rows = build_comparison_table_rows(
+        valuation,
+        periods,
+        course_reasons={"Woche": ("missing_reference_close", None, None, None, None)},
+    )
+    assert [row.name for row in rows] == ["Alpha", "Beta", "Ohne Einstand", "Ohne Kurs"]
+    assert [row.to_display_dict()["Seit Kauf (%)"] for row in rows] == [20.0, -20.0, None, None]
+    assert [row.to_display_dict()["Woche (%)"] for row in rows] == [None, 2.0, 0.0, None]
+    assert "Woche: Sheet-Wert, Kursstand unbekannt; Historie unvollständig" in rows[0].status
+    assert "Seit Kauf: Sheet-Wert, Kursstand unbekannt; Einstand fehlt" in rows[2].status
+    assert rows[3].amount_eur is None
+    assert all(value is None for _, value in rows[3].period_percents)
+    assert "Heute: 02.01.2026" in rows[0].reference_date
+    assert "Seit Kauf: +20,00 % (Gewinn (+))" in rows[0].detail_lines()
+
+    filtered = build_comparison_table_rows(
+        valuation, periods, criteria=FilterCriteria(instrument_type="ETF")
+    )
+    assert len(filtered) == 1
+    assert filtered[0].to_display_dict() == rows[1].to_display_dict()
+    assert filtered[0].weight_percent == rows[1].weight_percent
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_comparison_periods_sort_numerically_with_zero_and_missing_last(descending):
+    valuation = valued(
+        position("Null", InstrumentType.STOCK, "1", "100", cost="100", row=1),
+        position("Gewinn", InstrumentType.STOCK, "1", "110", cost="100", row=2),
+        position("Verlust", InstrumentType.STOCK, "1", "98", cost="100", row=3),
+        position("Lücke", InstrumentType.STOCK, "1", "100", row=4),
+    )
+    performances = (
+        Performance(Decimal(0)), Performance(Decimal(10)),
+        Performance(Decimal(-2)), Performance(None),
+    )
+    rows = build_comparison_table_rows(
+        valuation, {period: performances for period in ("Jahr", "Monat", "Woche", "Heute")}
+    )
+    expected = ["Gewinn", "Null", "Verlust"] if descending else ["Verlust", "Null", "Gewinn"]
+    for field in PERIOD_SORT_FIELDS:
+        ordered = sort_table_rows(rows, field, descending=descending)
+        assert [row.name for row in ordered] == [*expected, "Lücke"]
 
 
 def test_sort_table_rows_always_places_missing_values_last_and_breaks_ties_by_name():

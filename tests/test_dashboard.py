@@ -6,6 +6,7 @@ import socket
 from pathlib import Path
 
 import pytest
+from streamlit.dataframe_util import convert_arrow_bytes_to_pandas_df
 from streamlit.proto.Metric_pb2 import Metric as MetricProto
 from streamlit.testing.v1 import AppTest
 
@@ -73,6 +74,22 @@ def test_new_dashboard_starts_with_course_today_and_fixed_demo_timestamp(offline
         item.value for item in app.caption
     ]
     assert app.dataframe[0].value["Wert (EUR)"].tolist() == [1200.0, 800.0]
+    table = app.dataframe[0].value
+    assert table.columns[:7].tolist() == [
+        "Instrument", "Wert (EUR)", "Seit Kauf (%)", "Jahr (%)",
+        "Monat (%)", "Woche (%)", "Heute (%)",
+    ]
+    assert table["Seit Kauf (%)"].isna().all()
+    assert table["Jahr (%)"].tolist() == [12.5, 7.25]
+    assert table["Monat (%)"].tolist() == [4.1, -3.3]
+    assert table["Woche (%)"].tolist() == [-2.4, 0.6]
+    assert table["Heute (%)"].tolist() == [1.25, -0.8]
+    displayed = convert_arrow_bytes_to_pandas_df(
+        app.dataframe[0].proto.arrow_data.styler.display_values
+    )
+    assert displayed["Wert (EUR)"].tolist() == ["1.200,00", "800,00"]
+    assert displayed["Seit Kauf (%)"].tolist() == ["n. v.", "n. v."]
+    assert displayed["Heute (%)"].tolist() == ["+1,25 %", "-0,80 %"]
 
 
 @pytest.mark.parametrize("period", COURSE_PERIODS)
@@ -91,9 +108,8 @@ def test_since_purchase_period_switches_to_personal_view_and_back(offline_demo, 
     assert app.subheader[0].value == "Meine Entwicklung · Seit Kauf"
     assert "n. v." in app.info[1].value
     personal_df = app.dataframe[0].value
-    invariant_cols = ["Instrument", "Wert (EUR)", WEIGHT_COLUMN_LABEL]
-    assert personal_df[invariant_cols].equals(course_rows[invariant_cols])
-    assert personal_df["Entwicklung (%)"].tolist() == ["n. v.", "n. v."]
+    assert personal_df.equals(course_rows)
+    assert personal_df["Seit Kauf (%)"].isna().all()
 
     app.radio(key=PERIOD_RADIO_KEY).set_value(period).run()
     assert not app.exception
@@ -182,6 +198,29 @@ def test_table_sorting_controls_reorder_rows_deterministically(offline_demo):
     app.selectbox(key=FILTER_CATEGORY_KEY).set_value("Demo").run()
     assert not app.exception
     assert len(app.dataframe[0].value) == 2
+
+
+def test_table_period_sort_is_independent_of_treemap_period_and_handles_empty_filter(
+    offline_demo,
+):
+    app = AppTest.from_file(str(APP_PATH)).run()
+    app.selectbox(key=SORT_FIELD_KEY).set_value("Woche (%)").run()
+    assert not app.exception
+    expected = app.dataframe[0].value.copy()
+    assert expected["Instrument"].tolist() == ["Demo-Fonds B", "Demo-Aktie A"]
+
+    for period in ("Jahr", "Seit Kauf", "Monat"):
+        app.radio(key=PERIOD_RADIO_KEY).set_value(period).run()
+        assert not app.exception
+        assert app.dataframe[0].value.equals(expected)
+
+    app.text_input(key=FILTER_QUERY_KEY).set_value("nicht-vorhanden").run()
+    assert not app.exception
+    assert app.dataframe[0].value.empty
+    assert app.dataframe[0].value.columns[:7].tolist() == expected.columns[:7].tolist()
+    app.text_input(key=FILTER_QUERY_KEY).set_value("").run()
+    assert not app.exception
+    assert app.dataframe[0].value.equals(expected)
 
 
 def _course_coverage_app():
