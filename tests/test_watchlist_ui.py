@@ -27,7 +27,7 @@ from portfolio_dashboard.sheet_parser import NumberLocale
 from portfolio_dashboard.ui import (
     AREA_RADIO_KEY,
     COURSE_PERIOD_KEY,
-    FILTER_QUERY_KEY,
+    FILTER_TYPE_KEY,
     PERIOD_RADIO_KEY,
     WATCHLIST_BUNDLE_KEY,
     WATCHLIST_FILTER_CATEGORY_KEY,
@@ -290,12 +290,13 @@ def test_since_purchase_falls_back_to_today_without_losing_the_depot_choice(offl
 
 def test_each_area_keeps_its_own_filters_while_the_other_is_shown(offline_demo):
     app = new_app().run()
-    app.text_input(key=FILTER_QUERY_KEY).set_value("Fonds").run()
+    app.selectbox(key=FILTER_TYPE_KEY).set_value("ETF").run()
     app = area(app, "Watchlist")
     app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("US").run()
     assert column(app, "Name") == ["Demo-Aktie US"]
     app = area(app, "Depot")
-    assert app.text_input(key=FILTER_QUERY_KEY).value == "Fonds"
+    assert app.selectbox(key=FILTER_TYPE_KEY).value == "ETF"
+    assert column(app, "Instrument") == ["Demo-Fonds B"]
     app = area(app, "Watchlist")
     assert app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).value == "US"
     assert column(app, "Name") == ["Demo-Aktie US"]

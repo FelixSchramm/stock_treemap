@@ -17,13 +17,10 @@ from portfolio_dashboard.ui import (
     COURSE_PERIOD_KEY,
     COURSE_PERIODS,
     FILTER_CATEGORY_KEY,
-    FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
     HIDE_MISSING_COURSE_KEY,
     PERIOD_RADIO_KEY,
-    SORT_DIRECTION_ASC,
     SORT_FIELD_KEY,
-    SORT_ORDER_KEY,
 )
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
@@ -170,25 +167,30 @@ def test_shared_filters_apply_to_treemap_and_table_while_kpis_remain_portfolio_w
     # Weight remains 40% of the total valued portfolio (2000 EUR), not 100% of filtered!
     assert df[WEIGHT_COLUMN_LABEL].tolist() == [40.0]
 
-    # Search filter narrows by query across name/ticker/category.
-    app.selectbox(key=FILTER_TYPE_KEY).set_value("Alle").run()
-    app.text_input(key=FILTER_QUERY_KEY).set_value("demo-a").run()
+    app.selectbox(key=FILTER_TYPE_KEY).set_value("Aktie").run()
     assert not app.exception
-    df_search = app.dataframe[0].value
-    assert df_search["Instrument"].tolist() == ["Demo-Aktie A"]
-    assert df_search[WEIGHT_COLUMN_LABEL].tolist() == [60.0]
+    df_stock = app.dataframe[0].value
+    assert df_stock["Instrument"].tolist() == ["Demo-Aktie A"]
+    assert df_stock[WEIGHT_COLUMN_LABEL].tolist() == [60.0]
 
 
 def test_table_sorting_controls_reorder_rows_deterministically(offline_demo):
-    app = AppTest.from_file(str(APP_PATH)).run()
+    app = AppTest.from_file(str(APP_PATH))
+    # Removed controls must not leave a hidden filter or sort direction in old sessions.
+    app.session_state["dashboard.filter_query"] = "nicht-vorhanden"
+    app.session_state["dashboard.sort_order"] = "Aufsteigend"
+    app.run()
     assert not app.exception
+    assert not app.text_input
+    assert [control.label for control in app.selectbox] == [
+        "Instrumenttyp", "Kategorie", "Sortierung",
+    ]
     assert app.dataframe[0].value["Instrument"].tolist() == [
         "Demo-Aktie A",
         "Demo-Fonds B",
     ]
 
-    app.selectbox(key=SORT_FIELD_KEY).set_value("Wert (EUR)").run()
-    app.selectbox(key=SORT_ORDER_KEY).set_value(SORT_DIRECTION_ASC).run()
+    app.selectbox(key=SORT_FIELD_KEY).set_value("Woche (%)").run()
     assert not app.exception
     assert app.dataframe[0].value["Instrument"].tolist() == [
         "Demo-Fonds B",
@@ -214,11 +216,11 @@ def test_table_period_sort_is_independent_of_treemap_period_and_handles_empty_fi
         assert not app.exception
         assert app.dataframe[0].value.equals(expected)
 
-    app.text_input(key=FILTER_QUERY_KEY).set_value("nicht-vorhanden").run()
+    app.selectbox(key=FILTER_TYPE_KEY).set_value("Derivat").run()
     assert not app.exception
     assert app.dataframe[0].value.empty
     assert app.dataframe[0].value.columns[:7].tolist() == expected.columns[:7].tolist()
-    app.text_input(key=FILTER_QUERY_KEY).set_value("").run()
+    app.selectbox(key=FILTER_TYPE_KEY).set_value("Alle").run()
     assert not app.exception
     assert app.dataframe[0].value.equals(expected)
 

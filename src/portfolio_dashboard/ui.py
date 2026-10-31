@@ -73,11 +73,9 @@ _PERIOD_WIDGET_KEY = "_dashboard.course_period"
 PERIOD_RADIO_KEY = _PERIOD_WIDGET_KEY  # For AppTest lookups; the radio is no longer first.
 HIDE_MISSING_COURSE_KEY = "dashboard.hide_missing_course"
 _HIDE_MISSING_WIDGET_KEY = "_dashboard.hide_missing_course"
-FILTER_QUERY_KEY = "dashboard.filter_query"
 FILTER_TYPE_KEY = "dashboard.filter_type"
 FILTER_CATEGORY_KEY = "dashboard.filter_category"
 SORT_FIELD_KEY = "dashboard.sort_field"
-SORT_ORDER_KEY = "dashboard.sort_order"
 REFRESH_BUTTON_KEY = "dashboard.refresh"
 BUNDLE_STATE_KEY = "dashboard.bundle"
 
@@ -99,11 +97,9 @@ WATCHLIST_SORT_ORDER_KEY = "watchlist.sort_order"
 # Streamlit drops the state of widgets that are not rendered in a run; the area
 # that is hidden keeps its filter and sort choices by re-assigning them.
 _DEPOT_WIDGET_KEYS = (
-    FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
     FILTER_CATEGORY_KEY,
     SORT_FIELD_KEY,
-    SORT_ORDER_KEY,
 )
 _WATCHLIST_WIDGET_KEYS = (
     WATCHLIST_FILTER_QUERY_KEY,
@@ -339,17 +335,15 @@ def render_kpis(
 
 def render_filter_controls(
     valuation: PortfolioValuation,
-) -> tuple[FilterCriteria, str, bool]:
-    """Render shared search, type/category filters and table sort controls.
+) -> tuple[FilterCriteria, str]:
+    """Render type/category filters and the table sort field for the Depot.
 
     :param valuation: Portfolio valuation snapshot to derive category options.
-    :return: Tuple of (FilterCriteria, sort_by column name, descending flag).
+    :return: Tuple of (FilterCriteria, sort_by column name); sorting is descending.
     """
-    st.session_state.setdefault(FILTER_QUERY_KEY, "")
     st.session_state.setdefault(FILTER_TYPE_KEY, ALL_FILTER)
     st.session_state.setdefault(FILTER_CATEGORY_KEY, ALL_FILTER)
     st.session_state.setdefault(SORT_FIELD_KEY, SORT_BY_VALUE)
-    st.session_state.setdefault(SORT_ORDER_KEY, SORT_DIRECTION_DESC)
     if st.session_state[SORT_FIELD_KEY] not in TABLE_SORT_FIELDS:
         st.session_state[SORT_FIELD_KEY] = SORT_BY_VALUE
 
@@ -357,44 +351,30 @@ def render_filter_controls(
     if st.session_state.get(FILTER_CATEGORY_KEY) not in categories:
         st.session_state[FILTER_CATEGORY_KEY] = ALL_FILTER
 
-    fcols = st.columns((2, 1, 1, 1, 1))
+    fcols = st.columns(3)
     with fcols[0]:
-        query = st.text_input(
-            "Suche (Name, Ticker, Kennung, Kategorie)",
-            key=FILTER_QUERY_KEY,
-        )
-    with fcols[1]:
         instrument_type = st.selectbox(
             "Instrumenttyp",
             TYPE_FILTER_OPTIONS,
             key=FILTER_TYPE_KEY,
         )
-    with fcols[2]:
+    with fcols[1]:
         category = st.selectbox(
             "Kategorie",
             categories,
             key=FILTER_CATEGORY_KEY,
         )
-    with fcols[3]:
+    with fcols[2]:
         sort_by = st.selectbox(
             "Sortierung",
             TABLE_SORT_FIELDS,
             key=SORT_FIELD_KEY,
         )
-    with fcols[4]:
-        sort_order = st.selectbox(
-            "Reihenfolge",
-            SORT_DIRECTION_OPTIONS,
-            key=SORT_ORDER_KEY,
-        )
-
     criteria = FilterCriteria(
-        query=query,
         instrument_type=instrument_type,
         category=category,
     )
-    descending = sort_order == SORT_DIRECTION_DESC
-    return criteria, sort_by, descending
+    return criteria, sort_by
 
 
 def treemap_figure(model: TreemapModel) -> go.Figure:
@@ -481,7 +461,7 @@ def render_positions_table(
 
     :param rows: Sorted sequence of PositionTableRow items.
     :param total_active_count: Total count of active instrument groups before filtering.
-    :param filtered: Whether any search, type, or category filter is currently active.
+    :param filtered: Whether any type or category filter is currently active.
     """
     st.subheader("Positionsübersicht")
     weight_note = (
@@ -1043,7 +1023,7 @@ def render_dashboard(
         missing_course_eur=sum((g.amount_eur for g in missing_course_groups), Decimal(0)),
     )
 
-    criteria, sort_by, descending = render_filter_controls(valuation)
+    criteria, sort_by = render_filter_controls(valuation)
     filtered_groups, filtered_performances = filter_groups(
         valuation, current_performances, criteria
     )
@@ -1066,10 +1046,9 @@ def render_dashboard(
             if period_reasons is not None else None
         ),
     )
-    sorted_rows = sort_table_rows(table_rows, sort_by=sort_by, descending=descending)
+    sorted_rows = sort_table_rows(table_rows, sort_by=sort_by)
     is_filtered = bool(
-        criteria.query.strip()
-        or criteria.instrument_type != ALL_FILTER
+        criteria.instrument_type != ALL_FILTER
         or criteria.category != ALL_FILTER
     )
     render_positions_table(
