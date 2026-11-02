@@ -14,6 +14,13 @@
 - **Technische Umsetzung:** Python 3.12, Streamlit und Plotly. Die Fachlogik liegt in reinen, UI-unabhängigen Modulen und ist durch über 1.100 automatisierte Tests mit synthetischen Daten abgesichert.
 - **Datenschutz:** Echte Depotdaten werden erst nach Google-Login und serverseitiger Besitzerprüfung geladen. Repository, Tests und Demo enthalten keine realen Daten.
 
+## Interaktive Unternehmensanalyse
+
+Die neue Ansicht **Unternehmensanalyse** überträgt die 29 Themen der Financial-Pipeline-V4
+in Streamlit/Plotly: Geschäftszahlen, Kapitalqualität, Bewertung, Kursrisiko und
+Marktumfeld. Hover, Zoom, Tabellen und CSV-Downloads ergänzen die Originalanalyse.
+Die gemeinsame dunkle CI gilt auch für die Treemap. [Bedienung, Herkunft und Datenregeln](docs/EXPLORATION.md).
+
 ## Methodik
 
 ### 1. Bewertung in EUR

@@ -401,7 +401,7 @@ def test_watchlist_loader_is_built_only_for_the_owner_and_only_when_opened(prote
 def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_app, monkeypatch):
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
-    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Innerer Wert"]
+    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Innerer Wert", "Unternehmensanalyse"]
     calls.clear()
     app.radio(key=ui.AREA_RADIO_KEY).set_value("Innerer Wert").run()
     assert not app.exception and not app.error
