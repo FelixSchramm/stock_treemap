@@ -121,7 +121,7 @@ Tests verwenden ausschließlich synthetische Daten und gesperrte IP-Netzwerkzugr
 
 ```sh
 uv run --locked pytest
-uv run --locked ruff check src app.py tests
+uv run --locked ruff check .
 ```
 
 Tests prüfen die 29 Themen einschließlich ausdrücklich nicht angebundener
@@ -133,12 +133,13 @@ Berichtswährungen, Metadatenabgleich und den Besitzerschutz vor dem Sheet-Zugri
 Die Sheet-Anbindung wird mit synthetischen Adapterantworten getestet; ein Abruf
 des privaten Google Sheets ist kein Bestandteil dieser Prüfung.
 Abschlussprüfung am 04.11.2026: **1.799 Tests bestanden**, zwei bestehende
-yfinance/Pandas-Deprecation-Warnungen; der gezielte Ruff-Lauf ist fehlerfrei.
+yfinance/Pandas-Deprecation-Warnungen; der vollständige Ruff-Lauf ist fehlerfrei.
 Die Demo wurde in Chromium auf Desktop und mit 390 px Breite geprüft; der lokal
 gelieferte CI-Font wurde geladen und es trat kein horizontaler Seitenüberlauf auf.
 
-`ruff check .` findet im unveränderten Bestandsnotebook
-`exploratory_analysis/01_msft_api_rundgang.ipynb` bereits vorhandene E401/I001/E701/E702-Verstöße.
-Das Notebook wird auf Wunsch des Auftrags unverändert erhalten.
-Der neue Code und die App-/Testmodule bestehen den gezielten Lint-Lauf.
-Es wurde keine Produktivbereitstellung oder Änderung an Zugangsdaten vorgenommen.
+Im Bestandsnotebook `exploratory_analysis/01_msft_api_rundgang.ipynb` wurden vor
+dem Merge ausschließlich Importformatierung und einzeilige Anweisungen korrigiert,
+damit auch der vollständige CI-Lint-Lauf besteht. Berechnungen, Ausgaben und
+Metadaten bleiben erhalten; die Gleichheit des Rechencodes wurde per AST-Abgleich
+geprüft. Das Financial-Pipeline-Repository bleibt unverändert.
+Zugangsdaten wurden nicht geändert.
