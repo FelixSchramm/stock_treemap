@@ -23,7 +23,8 @@ Beim Öffnen lädt **Microsoft** automatisch mit **Oracle, Alibaba und SAP** als
 Vergleich. Unternehmen aus **Depot und Watchlist im Google Sheet** ergänzen die
 Auswahl automatisch; Unternehmen und bis zu drei Vergleichsaktien lassen sich
 darunter ändern. Nicht verfügbare Daten zeigen **n. v.**
-oder **Noch nicht angebunden**. Der Einstieg zeigt den Aktienkurs; die Themen führen
+oder **Noch nicht angebunden**. Der Einstieg zeigt den Aktienkurs mit Quartalszahlen;
+die Themen führen
 vom Überblick zum Deep Dive. Drei getrennte Glossare für Kennzahlen, Diagramme und
 Datenquellen stehen am Seitenende.
 Die gemeinsame dunkle CI gilt auch für die Treemap.

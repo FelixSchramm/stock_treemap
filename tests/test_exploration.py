@@ -122,7 +122,7 @@ def test_ui_all_topics_offline_and_return_to_depot(monkeypatch):
     app.radio(key=AREA_RADIO_KEY).set_value(AREA).run()
     assert not app.exception
     assert app.radio(key=GROUP_KEY).value == "Überblick"
-    assert app.selectbox(key=f"{TOPIC_KEY}.Überblick").value == 1
+    assert app.selectbox(key=f"{TOPIC_KEY}.Überblick").value == 2
     assert app.get("plotly_chart")
     for group, topics in GROUPS.items():
         app.radio(key=GROUP_KEY).set_value(group).run()

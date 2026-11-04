@@ -64,11 +64,13 @@ fehlgeschlagenen Abrufen und nicht verfügbaren Analysen erreichbar.
 ## Gestaltung und Navigation
 
 Die Reihenfolge führt vom groben Überblick zum Deep Dive. Beim ersten Öffnen
-startet die Ansicht mit dem Aktienkurs in EUR:
+startet die Ansicht mit **Kurs und Quartalsergebnisse**: Aktienkurs in EUR
+mit Markierungen der veröffentlichten Quartalszahlen und EPS-Abweichungen:
 
-1. **Überblick:** Kursverlauf, Vergleich der gewählten Aktien ab 100, Marktvergleich.
+1. **Überblick:** Kurs und Quartalsergebnisse, reiner Kursverlauf,
+   Vergleich der gewählten Aktien ab 100, Marktvergleich.
 2. **Kurs & Risiko:** Monatsrenditen, Drawdown, Rendite/Risiko, Kerzen/Volumen,
-   Quartalsergebnisse und Reaktion auf Veröffentlichungen.
+   Reaktion auf Veröffentlichungen.
 3. **Geschäftsmodell:** Wachstum/Margen, Segmente, Jahres- und Quartalscashflow,
    Cashflow-Überleitung und Gewinnqualität.
 4. **Kapital & Bilanz:** Bilanz/Zinsdeckung, ROIC, Kapitalverwendung,

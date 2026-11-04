@@ -31,8 +31,8 @@ from .calculations import (
 from .data import currency_code, dates, prices, statement
 
 GROUPS = {
-    "Überblick": (1, 5, 13),
-    "Kurs & Risiko": (6, 7, 8, 4, 2, 11),
+    "Überblick": (2, 1, 5, 13),
+    "Kurs & Risiko": (6, 7, 8, 4, 11),
     "Geschäftsmodell": (10, 28, 9, 3, 29, 22),
     "Kapital & Bilanz": (20, 21, 23, 24, 14),
     "Bewertung": (26, 12, 25, 27),

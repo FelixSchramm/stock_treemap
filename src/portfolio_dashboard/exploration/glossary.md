@@ -37,6 +37,7 @@ Die Nummern verweisen weiterhin auf die ursprünglichen V4-Themen.
 
 | Nr. | Diagramm | Was lässt sich daraus ablesen? |
 |---|---|---|
+| 02 | Kurs und Quartalsergebnisse | Startgrafik: Wie verlief der Kurs um veröffentlichte Quartalszahlen, und wie lagen die Gewinne gegenüber den Schätzungen? |
 | 01 | Kurs in Euro | Wie hat sich der Aktienkurs in EUR entwickelt? Einstieg mit wählbarem Zeitraum. |
 | 05 | Was wurde aus 100? | Wie hätten sich gleich große Anfangsbeträge in den ausgewählten Aktien entwickelt? Alle starten bei 100. |
 | 13 | Vergleich mit dem Markt | Wie steht die Aktie gegenüber den US-Referenzen S&P 500 und Nasdaq-100 da? Kein lokaler Marktindex. |
@@ -49,7 +50,6 @@ Die Nummern verweisen weiterhin auf die ursprünglichen V4-Themen.
 | 07 | Verlust seit dem Hoch | Wie weit liegt der Kurs unter seinem bisher beobachteten Hoch, und wie lange dauern Erholungen? |
 | 08 | Rendite und Kursrisiko | Wie stehen Ertrag, Schwankungen und Verluste der verglichenen Aktien zueinander? |
 | 04 | Kerzen und Volumen | Wie verliefen einzelne Handelstage vom Eröffnungs- bis zum Schlusskurs, und wie viel wurde gehandelt? |
-| 02 | Kurs und Quartalsergebnisse | Wann wurden Gewinne gemeldet und wie lagen sie gegenüber den Schätzungen? |
 | 11 | Reaktion auf Quartalszahlen | Wie bewegte sich die Aktie um Ergebnisveröffentlichungen gegenüber dem Markt? Keine Aussage über die Ursache. |
 
 ### Geschäftsmodell
