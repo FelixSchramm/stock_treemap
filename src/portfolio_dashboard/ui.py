@@ -10,6 +10,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from portfolio_dashboard import valuation_view, watchlist_view
+from portfolio_dashboard.design import dashboard_css, style_figure
+from portfolio_dashboard.exploration import view as exploration_view
+from portfolio_dashboard.exploration.selection import load_catalog
 from portfolio_dashboard.fundamentals_loader import (
     LOADER_STATE_KEY as FUNDAMENTALS_LOADER_KEY,
 )
@@ -399,7 +402,8 @@ def treemap_figure(model: TreemapModel) -> go.Figure:
         )
     )
     figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0}, height=480)
-    return figure
+    style_figure(figure)
+    return figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0})
 
 
 def render_color_legend(model: TreemapModel) -> None:
@@ -443,7 +447,7 @@ def render_treemap(model: TreemapModel) -> None:
     if not model.tiles:
         st.info("Keine Position für die Treemap sichtbar.")
     else:
-        st.plotly_chart(treemap_figure(model), width="stretch")
+        st.plotly_chart(treemap_figure(model), width="stretch", theme=None)
         render_color_legend(model)
     if model.omitted_count:
         st.caption(
@@ -913,6 +917,7 @@ def render_dashboard(
     """
     _ = rows
     render_accessibility_styles()
+    st.markdown(dashboard_css(), unsafe_allow_html=True)
     header_cols = st.columns((4, 1))
     with header_cols[0]:
         st.title("Depot-Dashboard – Demo" if demo else "Depot-Dashboard")
@@ -920,7 +925,21 @@ def render_dashboard(
         refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
 
     areas = AREAS if overview is None else (*AREAS, VALUATION_AREA)
-    selected = render_area_control(areas)
+    selected = render_area_control((*areas, exploration_view.AREA))
+    if selected == exploration_view.AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
+        def read_companies(previous):
+            loader = None
+            if watchlist is not None:
+                try:
+                    loader, _ = session_loader(st.session_state, watchlist, _today())
+                except (SheetsConfigurationError, SheetsCredentialError):
+                    st.warning("Watchlist-Konfiguration nicht verfügbar; die Depot-Auswahl bleibt nutzbar.")
+            return load_catalog(coordinator, loader, previous)
+
+        exploration_view.render(demo=demo, refresh_clicked=refresh_clicked,
+                                load_companies=read_companies)
+        return
     if selected == WATCHLIST_AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
         render_watchlist(watchlist, refresh_clicked=refresh_clicked, demo=demo)

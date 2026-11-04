@@ -1,2 +1,17 @@
+[server]
+enableStaticServing = true
+
 [theme]
 base = "dark"
+primaryColor = "#8EBC91"
+backgroundColor = "#0F120F"
+secondaryBackgroundColor = "#161A17"
+textColor = "#EDEFEA"
+font = "Questrial"
+headingFont = "Questrial"
+
+[[theme.fontFaces]]
+family = "Questrial"
+url = "app/static/Questrial-Regular.ttf"
+weight = 400
+style = "normal"
