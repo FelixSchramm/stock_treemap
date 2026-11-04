@@ -19,19 +19,36 @@ Dashboard vollständig offline mit deutlich markierten synthetischen Beispielen.
 Bekannte Symbole im Demo-Modus stehen **nicht** für echte Marktdaten.
 
 Im bereits eingerichteten lokalen bzw. produktiven Modus bleibt der bestehende
-Loopback-/Besitzerschutz des App-Einstiegs aktiv. Erst **Analysedaten laden** oder
-**Aktualisieren** lädt den Yahoo-Snapshot. Filterwechsel rufen keine Daten ab.
-Der Snapshot liegt ausschließlich in der jeweiligen Streamlit-Sitzung, nicht in
-einem globalen Cache oder einer Pickle-Datei. Nach einer Stunde wird sein Alter
-markiert; Aktualisierung erfolgt ausdrücklich. Beim vollständigen Kursabrufausfall
-bleibt ein vorhandener Stand mit ursprünglichem Zeitstempel erhalten.
-Einzelne fehlende Ressourcen sperren nur die betroffenen Analysen.
+Loopback-/Besitzerschutz des App-Einstiegs aktiv. Die Unternehmensauswahl verwendet
+dieselben konfigurierten Google-Sheet-Quellen wie **Depot** und **Watchlist**:
 
-Der Unternehmensfokus ist wie im Original Microsoft. Oracle, Alibaba HK und SAP
-sind die feste Vergleichsauswahl der Ausgangsanalyse, keine dynamisch aus dem
-Depot geladenen Positionen. Es werden keine Bestände, Gewichte oder Einstandswerte
-übertragen. Eine beliebige Unternehmensauswahl würde zusätzliche Prüfung der
-Berichtswährungen, Geschäftsjahre, Segmente und Veröffentlichungszeiten benötigen.
+1. **Unternehmen aus Sheet laden / aktualisieren** liest die Unternehmensliste
+   ohne Marktkurse für das gesamte Depot abzurufen.
+2. **Unternehmen** wählen; Name, Yahoo-Symbol, Handelsplatz und Herkunft stehen
+   in der Auswahl. Bis zu drei weitere Sheet-Aktien können verglichen werden.
+3. **Analysedaten laden / aktualisieren** lädt die gewählte Aktie, die Vergleiche
+   und benötigte Benchmark-/FX-Reihen. Danach funktionieren Hover, Filter und
+   Themenwechsel ohne erneuten Datenabruf.
+
+Verwendet werden vorhandene Yahoo-Zuordnungen aus der Listing-Konfiguration oder
+den unterstützten Mapping-Spalten im Sheet. Anzeigenamen und freie Ticker werden
+nicht automatisch als Mapping interpretiert. ETFs und fehlende Zuordnungen bleiben
+mit **n. v.** und einer Erklärung sichtbar. Identische Listings aus Depot und
+Watchlist werden zusammengeführt; verschiedene Handelsplätze bleiben getrennt.
+Yahoo-Metadaten müssen Symbol, Aktienart, Handelsplatz und Währung bestätigen.
+Das Sheet wird nicht verändert. Bestände, Gewichte und Einstandswerte werden
+nicht für die Unternehmensanalyse übernommen.
+
+Snapshots liegen pro Auswahl ausschließlich in der Streamlit-Sitzung, maximal
+acht gleichzeitig. Beim Unternehmenswechsel erscheint kein fremder Datenstand.
+Nach einer Stunde wird das Alter markiert; Aktualisierung erfolgt ausdrücklich.
+Bei fehlgeschlagenem Abruf bleibt nur ein vorhandener Stand derselben Auswahl mit
+ursprünglichem Zeitstempel erhalten. Scheitert das Lesen einer Sheet-Quelle,
+bleibt deren zuvor geladene Liste erhalten und wird entsprechend gekennzeichnet.
+Einzelne fehlende Yahoo-Ressourcen sperren nur die betroffenen Analysen.
+
+Das **Glossar · Kennzahlen, Diagramme und Datenquellen** steht direkt auf der Seite
+auch vor dem Laden von Daten bereit. [Glossar und unverändertes Pipeline-Original](glossary.md).
 
 ## Gestaltung und Navigation
 
@@ -74,20 +91,27 @@ portiert `business.py` und `market.py` ohne Matplotlib-Abhängigkeit.
 
 - FX nur aus vorherigen Beobachtungen, maximal sieben Tage. Keine Zukunftskurse,
   keine aufgefüllten Aktienkurse. Native EUR/USD-Reihen brauchen keinen unnötigen FX-Abruf.
-- EUR/USD und Kurs-/Gesamtrenditewahl gelten für die Vergleichsanalysen;
-  Geschäftszahlen bleiben USD, Geschäftsjahresende Juni.
+- EUR/USD und Kurs-/Gesamtrenditewahl gelten für die Vergleichsanalysen.
+  Geschäftszahlen verwenden die gemeldete Berichtswährung und tatsächlichen
+  Berichtsperioden. Kursdiagramme verwenden die bestätigte Handelswährung.
+  Nicht bestätigte Untereinheiten oder fehlende FX-Reihen führen zu **n. v.**.
 - Gesamtrendite ist eine Näherung aus `Adj Close`, ohne persönliche Steuern/Gebühren.
 - TTM erfordert vier aufeinanderfolgende Quartale. FCF wird gegen CFO minus
   absoluten Cash-Capex geprüft. Fehlende Felder werden nicht als null interpretiert.
 - Drawdown-Linie nutzt die geladene Vorgeschichte, die Risikoübersicht unterscheidet
   Zeitraum-Drawdown und Abstand zum Zehnjahreshoch.
 - KGV verwendet bekannte Quartals-EPS erst ab dem Folgetag; fehlende Quartale
-  unterbrechen die TTM-Basis. Median ist ausdrücklich kein fairer Wert.
+  unterbrechen die TTM-Basis. Median ist ausdrücklich kein fairer Wert. KGV und
+  Earnings-Reaktionen sind nur für die geprüften US-Handelsplätze angebunden.
+  KGV und Reverse DCF benötigen gleiche Kurs-/Berichtswährung und eine bestätigte
+  Aktienbasis; unbestätigte Aktien-/ADR-Zuordnungen bleiben nicht verfügbar.
 - Reverse DCF bleibt ein vereinfachter Eigenkapital-Cashflow-Proxy aus V4.
   Er ersetzt **nicht** den bestehenden FCFF-Rechenkern unter **Innerer Wert**.
-- Segmentdaten sind die kuratierte öffentliche Berichtstabelle aus V4, Quelle
-  Microsoft Annual Report 2026, Note 18. Sie sind als feste Berichtsversion markiert
-  und werden nicht durch Yahoo aktualisiert. Demo nutzt erfundene Segmente.
+- Geschäftssegmente zeigen **Noch nicht angebunden**: Yahoo liefert keine
+  einheitliche Segmenttabelle. Die feste Microsoft-Berichtstabelle der alten
+  Analyse wird nicht für andere Unternehmen angezeigt.
+- Insider-Transaktionswerte benötigen bestätigte USD-Werte eines US-Listings.
+  Marktvergleiche mit SPY/QQQ bzw. S&P 500/Nasdaq-100 sind ausdrücklich US-Referenzen.
 - Analysten-, Eigentümer- und Optionsdaten sind Snapshots. Meldedatum und
   Abrufdatum sind unterschiedliche Größen; Optionsquotes werden auf Qualität gefiltert.
 
@@ -100,15 +124,18 @@ uv run --locked pytest
 uv run --locked ruff check src app.py tests
 ```
 
-Neue Tests prüfen alle 29 Renderer, Navigation durch alle Themen, Rückkehr zum Depot,
-FX-Richtung/Alter, TTM-Lücken, ROIC, Ausschüttungsperioden, KGV-Verfügbarkeit,
-DCF-Inversion, Quote-Filter und Erhalt des alten Stands bei fehlgeschlagenem Refresh.
-Zusätzlich wurde die Oberfläche mit Chromium auf Desktop und 390 px Breite geprüft.
-Der abschließende vollständige Testlauf bestand mit **1.779 Tests** (zwei bestehende
-yfinance/Pandas-Deprecation-Warnungen). Ein zusätzlicher Live-Abruf am 02.11.2026
-lieferte alle zehn Kursressourcen; alle 29 Themen konnten daraus gerendert werden.
-Diese Anbieterantworten wurden weder als Dateien gespeichert noch in Fixtures übernommen.
-Der lokale Font wurde mit HTTP 200 geladen und im Browser als verfügbar bestätigt.
+Tests prüfen die 29 Themen einschließlich ausdrücklich nicht angebundener
+Analysen, Navigation, Rückkehr zum Depot, FX-Richtung/Alter, TTM-Lücken, ROIC,
+Ausschüttungsperioden, KGV-Verfügbarkeit, DCF-Inversion und Quote-Filter.
+Zusätzliche Tests prüfen Sheet-Mappings, Zusammenführung von Depot und Watchlist,
+Unternehmenswechsel ohne fremde Cache-Daten, Erhalt des letzten Stands bei Fehlern,
+Berichtswährungen, Metadatenabgleich und den Besitzerschutz vor dem Sheet-Zugriff.
+Die Sheet-Anbindung wird mit synthetischen Adapterantworten getestet; ein Abruf
+des privaten Google Sheets ist kein Bestandteil dieser Prüfung.
+Abschlussprüfung am 04.11.2026: **1.799 Tests bestanden**, zwei bestehende
+yfinance/Pandas-Deprecation-Warnungen; der gezielte Ruff-Lauf ist fehlerfrei.
+Die Demo wurde in Chromium auf Desktop und mit 390 px Breite geprüft; der lokal
+gelieferte CI-Font wurde geladen und es trat kein horizontaler Seitenüberlauf auf.
 
 `ruff check .` findet im unveränderten Bestandsnotebook
 `exploratory_analysis/01_msft_api_rundgang.ipynb` bereits vorhandene E401/I001/E701/E702-Verstöße.

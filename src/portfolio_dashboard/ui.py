@@ -12,6 +12,7 @@ import streamlit as st
 from portfolio_dashboard import valuation_view, watchlist_view
 from portfolio_dashboard.design import dashboard_css, style_figure
 from portfolio_dashboard.exploration import view as exploration_view
+from portfolio_dashboard.exploration.selection import load_catalog
 from portfolio_dashboard.fundamentals_loader import (
     LOADER_STATE_KEY as FUNDAMENTALS_LOADER_KEY,
 )
@@ -927,7 +928,17 @@ def render_dashboard(
     selected = render_area_control((*areas, exploration_view.AREA))
     if selected == exploration_view.AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
-        exploration_view.render(demo=demo, refresh_clicked=refresh_clicked)
+        def read_companies(previous):
+            loader = None
+            if watchlist is not None:
+                try:
+                    loader, _ = session_loader(st.session_state, watchlist, _today())
+                except (SheetsConfigurationError, SheetsCredentialError):
+                    st.warning("Watchlist-Konfiguration nicht verfügbar; die Depot-Auswahl bleibt nutzbar.")
+            return load_catalog(coordinator, loader, previous)
+
+        exploration_view.render(demo=demo, refresh_clicked=refresh_clicked,
+                                load_companies=read_companies)
         return
     if selected == WATCHLIST_AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + valuation_view.WIDGET_KEYS)

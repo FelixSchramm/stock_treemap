@@ -1,15 +1,25 @@
-"""V4 snapshot adapter. No import-time I/O or persistent provider-response cache."""
+"""Yahoo snapshots for explicitly mapped Sheet companies; no import-time I/O."""
+
+import re
 
 import pandas as pd
 
-TICKERS = ("ORCL", "MSFT", "9988.HK", "SAP.DE")
-NAMES = {
-    "ORCL": "Oracle",
-    "MSFT": "Microsoft",
-    "9988.HK": "Alibaba HK",
-    "SAP.DE": "SAP",
+from .selection import Company
+
+# Explicit FX conventions: series contains quote currency per USD, except EUR/GBP.
+FX = {
+    "EUR": ("EURUSD=X", False),
+    "GBP": ("GBPUSD=X", False),
+    "HKD": ("USDHKD=X", True),
+    "JPY": ("USDJPY=X", True),
+    "CHF": ("USDCHF=X", True),
+    "CAD": ("USDCAD=X", True),
+    "AUD": ("AUDUSD=X", False),
+    "CNY": ("USDCNY=X", True),
+    "SEK": ("USDSEK=X", True),
+    "DKK": ("USDDKK=X", True),
+    "NOK": ("USDNOK=X", True),
 }
-SYMBOLS = (*TICKERS, "EURUSD=X", "USDHKD=X", "^GSPC", "^NDX", "SPY", "QQQ")
 
 
 def dates(frame):
@@ -18,29 +28,89 @@ def dates(frame):
     return frame.sort_index()
 
 
-def fetch():
-    """Called only by the authorized UI; resources can fail independently."""
+def currency_code(value):
+    return (
+        value if isinstance(value, str) and re.fullmatch(r"[A-Z]{3}", value) else None
+    )
+
+
+def fetch(company: Company, comparisons=()):
+    """Fetch only selected, metadata-checked listings and explicit US benchmarks.
+
+    Sheet mappings choose the symbol/venue/currency. Provider metadata must agree;
+    errors never fall back to Microsoft or to another company's cached snapshot.
+    """
     import yfinance as yf
 
+    if company.reason or not company.symbol:
+        raise ValueError("Yahoo-Zuordnung fehlt.")
     now = pd.Timestamp.now(tz="UTC")
+    selected = tuple({c.key: c for c in (company, *comparisons)}.values())
+    if len(selected) > 4 or any(c.reason or not c.symbol for c in selected):
+        raise ValueError("Ungültige Vergleichsauswahl.")
+    if len({c.symbol for c in selected}) != len(selected):
+        raise ValueError("Widersprüchliche Zuordnungen desselben Yahoo-Symbols.")
     bundle = {
         "retrieved_at": now.isoformat(),
         "version": yf.__version__,
+        "symbol": company.symbol,
+        "name": company.name,
+        "exchange": company.exchange,
+        "equity_form": company.equity_form.value if company.equity_form else None,
+        "comparison_symbols": tuple(c.symbol for c in selected),
+        "names": {c.symbol: f"{c.name} ({c.symbol})" for c in selected},
+        "currencies": {},
         "prices": {},
         "errors": {},
         "synthetic": False,
     }
-    for symbol in SYMBOLS:
+    stocks = {}
+    for item in selected:
+        try:
+            stock = yf.Ticker(item.symbol)
+            info = stock.info
+            if (
+                info.get("symbol") != item.symbol
+                or info.get("quoteType") != "EQUITY"
+                or info.get("exchange") != item.exchange
+                or currency_code(info.get("currency")) != item.currency
+                or item.scale is None
+                or item.scale != 1
+            ):
+                raise ValueError("metadata mismatch")
+            frame = dates(
+                stock.history(period="10y", auto_adjust=False, timeout=15)
+            ).dropna(subset=["Close"])
+            if frame.empty:
+                raise ValueError("empty")
+            bundle["prices"][item.symbol] = frame
+            bundle["currencies"][item.symbol] = item.currency
+            stocks[item.symbol] = stock
+            if item.symbol == company.symbol:
+                bundle["info"] = info
+        except Exception:
+            bundle["errors"][item.symbol] = (
+                "n. v. – Kurse fehlen oder Yahoo-Metadaten passen nicht zur Sheet-Zuordnung."
+            )
+    if company.symbol not in stocks:
+        return bundle
+    currencies = set(bundle["currencies"].values()) | {"EUR"}
+    extra = {"SPY", "QQQ", "^GSPC", "^NDX"} | {FX[c][0] for c in currencies if c in FX}
+    for symbol in sorted(extra):
         try:
             frame = dates(
                 yf.Ticker(symbol).history(period="10y", auto_adjust=False, timeout=15)
-            )
+            ).dropna(subset=["Close"])
             if frame.empty:
                 raise ValueError("empty")
-            bundle["prices"][symbol] = frame.dropna(subset=["Close"])
+            bundle["prices"][symbol] = frame
+            if symbol in {"SPY", "QQQ", "^GSPC", "^NDX"}:
+                bundle["currencies"][symbol] = "USD"
         except Exception:
-            bundle["errors"][symbol] = "Kursreihe nicht verfügbar."
-    stock = yf.Ticker("MSFT")
+            bundle["errors"][symbol] = (
+                "n. v. – Benchmark- oder FX-Reihe nicht verfügbar."
+            )
+    stock = stocks[company.symbol]
     calls = {
         "income": lambda: stock.income_stmt,
         "quarter_income": lambda: stock.quarterly_income_stmt,
@@ -55,7 +125,6 @@ def fetch():
         "insiders": lambda: stock.insider_transactions,
         "holders": lambda: stock.institutional_holders,
         "major": lambda: stock.major_holders,
-        "info": lambda: stock.info,
         "estimates": lambda: stock.earnings_estimate,
         "revenue_estimates": lambda: stock.revenue_estimate,
         "eps_trend": lambda: stock.eps_trend,
@@ -71,11 +140,11 @@ def fetch():
             bundle[name] = value
         except Exception:  # noqa: BLE001
             bundle["errors"][name] = "Anbieterressource nicht verfügbar."
+
     try:
-        expiries = list(stock.options)
         available = [
             d
-            for d in expiries
+            for d in stock.options
             if (pd.Timestamp(d) - now.tz_localize(None).normalize()).days >= 7
         ]
         chains = {}
@@ -91,56 +160,39 @@ def fetch():
             available.remove(expiry)
             chains[expiry] = stock.option_chain(expiry).calls
         bundle["options"] = chains
-    except Exception:  # noqa: BLE001
-        bundle["errors"]["options"] = "Anbieterressource nicht verfügbar."
+    except Exception:
+        bundle["errors"]["options"] = "n. v. – Optionsdaten nicht verfügbar."
     return bundle
 
 
 def statement(bundle, name, columns):
-    """Select statement rows, keeping unavailable items as missing.
-
-    :param bundle: fetched snapshot
-    :param name: statement resource name
-    :param columns: requested Yahoo line items
-    :return: chronological amounts in original USD units
-    """
+    """Chronological reported amounts in financialCurrency; missing stays missing."""
     return bundle[name].reindex(columns).T.sort_index().dropna(how="all")
 
 
-def prices(bundle, symbols=TICKERS, currency="EUR", total=True):
-    """Convert price or adjusted-close series into one display currency.
-
-    FX gaps are filled only from prior observations, for at most seven days.
-    Listing calendars stay native. Adjusted closes approximate gross total return.
-
-    :param bundle: fetched snapshot
-    :param symbols: requested listings/benchmarks
-    :param currency: EUR or USD
-    :param total: use adjusted closes if true
-    :return: outer-aligned daily prices
-    """
+def prices(bundle, symbols=None, currency="EUR", total=True):
+    """Explicit native currencies; past-only FX, maximum seven calendar days."""
     if currency not in ("EUR", "USD"):
         raise ValueError("Display currency must be EUR or USD")
+    symbols = symbols if symbols is not None else bundle["comparison_symbols"]
     raw = bundle["prices"]
     result = {}
     for symbol in symbols:
         series = raw[symbol]["Adj Close" if total else "Close"].copy()
         series = series.where(series.gt(0) & series.lt(float("inf")))
-        native = (
-            "EUR" if symbol == "SAP.DE" else "HKD" if symbol == "9988.HK" else "USD"
-        )
+        native = bundle["currencies"][symbol]
 
-        def fx(name):
-            rate = raw[name]["Close"].reindex(
+        def usd_per_unit(code):
+            if code == "USD":
+                return 1.0
+            pair, inverse = FX[code]
+            rate = raw[pair]["Close"].reindex(
                 series.index, method="ffill", tolerance=pd.Timedelta(days=7)
             )
-            return rate.where(rate.gt(0) & rate.lt(float("inf")))
+            rate = rate.where(rate.gt(0) & rate.lt(float("inf")))
+            return 1 / rate if inverse else rate
 
-        if native == "HKD":
-            series = series / fx("USDHKD=X")
-            native = "USD"
         if native != currency:
-            rate = fx("EURUSD=X")
-            series = series / rate if currency == "EUR" else series * rate
+            series = series * usd_per_unit(native) / usd_per_unit(currency)
         result[symbol] = series
     return pd.concat(result, axis=1)

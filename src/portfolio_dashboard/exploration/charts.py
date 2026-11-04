@@ -4,7 +4,6 @@ No network or Streamlit imports. Missing resources invalidate only their topic.
 """
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -29,7 +28,7 @@ from .calculations import (
     trailing_four,
     valid_calls,
 )
-from .data import NAMES, TICKERS, dates, prices, statement
+from .data import currency_code, dates, prices, statement
 
 GROUPS = {
     "Geschäftsmodell": (28, 10, 9, 29, 3, 22),
@@ -147,6 +146,7 @@ def cash(bundle, quarterly=False):
 
 
 def pe_series(bundle):
+    symbol = bundle["symbol"]
     eps = dates(bundle["earnings"].dropna(subset=["Reported EPS"]))["Reported EPS"]
     eps = eps[~eps.index.duplicated()]
     consecutive = (
@@ -154,7 +154,7 @@ def pe_series(bundle):
     )
     ttm = eps.rolling(4).sum().where(consecutive)
     ttm.index += pd.Timedelta(days=1)
-    close = bundle["prices"]["MSFT"].Close
+    close = bundle["prices"][symbol].Close
     # Reindex with method keeps explicit missing EPS windows missing.
     known = ttm.reindex(close.index, method="ffill")
     return (close / known.where(known > 0)).rename("KGV")
@@ -174,12 +174,52 @@ def comparison_window(bundle, currency, total, months):
 
 def build(number, bundle, currency="EUR", total=True, months=12):
     a = Analysis(TITLES[number])
-    if number in {3, 9, 10, 14, 20, 21, 22, 23, 24, 27, 29}:
-        if bundle.get("info", {}).get("financialCurrency") != "USD":
-            raise AnalysisUnavailable("Berichtswährung USD ist nicht bestätigt.")
+    symbol, name = bundle["symbol"], bundle["name"]
+    tickers, names = bundle["comparison_symbols"], bundle["names"]
+    quote_currency = bundle["currencies"].get(symbol)
+    report_currency = currency_code(bundle.get("info", {}).get("financialCurrency"))
+    business_topics = {3, 9, 10, 20, 21, 22, 23, 24, 25, 27, 29}
+    money = report_currency if number in business_topics else quote_currency
+    if number == 11:
+        money = "USD"  # Reactions are explicitly compared in USD against SPY.
+    if number == 28:
+        raise AnalysisUnavailable(
+            "Noch nicht angebunden – Segmentumsätze und Segmentergebnisse brauchen eine Geschäftsberichtsquelle; Yahoo stellt keine einheitliche Segmenttabelle bereit."
+        )
+    if number in {11, 12} and bundle.get("exchange") not in {
+        "NMS",
+        "NGM",
+        "NCM",
+        "NYQ",
+        "ASE",
+    }:
+        raise AnalysisUnavailable(
+            "Noch nicht angebunden – Die Zuordnung von Veröffentlichungszeiten zu Handelssitzungen ist für diesen Börsenplatz noch nicht geprüft."
+        )
+    if number in {12, 27}:
+        if report_currency != quote_currency or report_currency is None:
+            raise AnalysisUnavailable(
+                "n. v. – Kurs- und Berichtswährung unterscheiden sich oder sind unbekannt; EPS/FCF werden nicht ungeprüft mit dem Kurs verrechnet."
+            )
+        if bundle.get("equity_form") != "share":
+            raise AnalysisUnavailable(
+                "Noch nicht angebunden – Aktien-/ADR-Zuordnung für den Vergleich von Unternehmensgewinn und Kurs fehlt."
+            )
+    if number == 17 and (
+        quote_currency != "USD"
+        or bundle.get("exchange") not in {"NMS", "NYQ", "NGM", "NCM", "ASE"}
+    ):
+        raise AnalysisUnavailable(
+            "n. v. – Die Währung der Insider-Transaktionswerte ist für dieses Listing nicht bestätigt."
+        )
+    if number in {3, 9, 10, 14, 20, 21, 22, 23, 24, 25, 27, 29}:
+        if report_currency is None:
+            raise AnalysisUnavailable(
+                "n. v. – Berichtswährung fehlt in den Yahoo-Metadaten."
+            )
     if number in {3, 9, 29}:
         cf = cash(bundle, number == 3)
-        a.note = "CFO − absoluter Cash-Capex = FCF. Geschäftsjahresende Juni; Cash-Capex trennt Erhaltungs- und Wachstumsinvestitionen nicht."
+        a.note = "CFO − absoluter Cash-Capex = FCF. Berichtete Geschäftsjahresperioden; Cash-Capex trennt Erhaltungs- und Wachstumsinvestitionen nicht."
         if number == 29:
             row = cf.iloc[-1] / 1e9
             values = [row[CF[0]], -row[CF[1]], row[CF[2]]]
@@ -259,7 +299,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
                 ),
                 "%",
             )
-        a.note = "Jahre und Quartale getrennt. Wachstum nur bei vorhandenem Vorjahreszeitpunkt; Microsoft-Geschäftsjahr endet im Juni."
+        a.note = "Jahre und Quartale getrennt. Wachstum nur bei vorhandenem Vorjahreszeitpunkt; Die Datumsachse zeigt die jeweiligen Berichtsperioden."
     elif number == 20:
         debt, liquid, leases = (
             "Total Debt",
@@ -423,40 +463,11 @@ def build(number, bundle, currency="EUR", total=True, months=12):
             "USD",
         )
         a.note = "Periodendurchschnittliche verwässerte Aktien, keine aktuelle Stichtagszahl als historischer Nenner. FCF je Aktie ist ein Proxy."
-    elif number == 28:
-        data = bundle.get("segments")
-        if data is None:
-            data = pd.read_csv(Path(__file__).with_name("segments.csv"))
-        for field_name, label in [
-            ("revenue_million_usd", "Umsatz"),
-            ("operating_income_million_usd", "Operatives Ergebnis"),
-        ]:
-            frame = (
-                data.pivot(index="year", columns="segment", values=field_name) / 1000
-            )
-            order = (
-                ["Demo · Produktivität", "Demo · Cloud", "Demo · Geräte"]
-                if bundle.get("synthetic")
-                else [
-                    "Productivity & Business Processes",
-                    "Intelligent Cloud",
-                    "More Personal Computing",
-                ]
-            )
-            frame = frame.reindex(columns=order)
-            frame.index = frame.index.map(lambda year: f"GJ {year}")
-            a.add(label, frame, "Mrd. USD", "stack")
-        a.source = (
-            "Synthetische Segmentdaten"
-            if bundle.get("synthetic")
-            else "Microsoft Annual Report 2026 · Note 18 · feste Berichtsversion"
-        )
-        a.note = "Azure ist Teil von Intelligent Cloud, kein separat ausgewiesener Umsatz. Microsoft Cloud überschneidet Segmente und wird nicht addiert. Segmentdaten werden nicht mit Yahoo aktualisiert."
     elif number in {5, 6, 7, 8, 13}:
         history, start, end = comparison_window(bundle, currency, total, months)
         recent = history.loc[start:end]
         common = recent.dropna()
-        colors = {NAMES[t]: COLORS[i] for i, t in enumerate(TICKERS)}
+        colors = {names[t]: COLORS[i] for i, t in enumerate(tickers)}
         kind = (
             "Gesamtrendite-Näherung aus bereinigten Kursen"
             if total
@@ -466,13 +477,13 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         if number == 5:
             a.add(
                 "Gemeinsame Handelstage",
-                (common / common.iloc[0] * 100).rename(columns=NAMES),
+                (common / common.iloc[0] * 100).rename(columns=names),
                 "Start = 100",
                 colors=colors,
             )
         elif number == 6:
             returns = (
-                monthly_returns(history, bundle["retrieved_at"]).rename(columns=NAMES).T
+                monthly_returns(history, bundle["retrieved_at"]).rename(columns=names).T
             )
             returns.columns = returns.columns.strftime("%m/%Y")
             fig = go.Figure(
@@ -502,18 +513,18 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         elif number == 7:
             a.add(
                 "Hoch aus der gesamten geladenen Historie",
-                drawdown(history).loc[start:end].rename(columns=NAMES),
+                drawdown(history).loc[start:end].rename(columns=names),
                 "%",
                 colors=colors,
             )
             a.note += " Referenzhoch aus bis zu 10 Jahren vor dem Ausschnitt; kein garantiertes Allzeithoch."
         elif number == 8:
             rows = {}
-            for ticker in TICKERS:
+            for ticker in tickers:
                 series = recent[ticker].dropna()
                 full = history[ticker].dropna()
                 last_peak = full[full.eq(full.max())].index[-1]
-                rows[NAMES[ticker]] = {
+                rows[names[ticker]] = {
                     "Zeitraum (%)": (series.iloc[-1] / series.iloc[0] - 1) * 100,
                     "Letzter Handelstag (%)": series.pct_change(fill_method=None).iloc[
                         -1
@@ -530,7 +541,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
             )
             a.note += " Volatilität: tägliche Log-Renditen × √252. Zeitraum-Drawdown startet am linken Rand, Hoch-Abstand nutzt Vorgeschichte."
         else:
-            symbols = ("MSFT", "SPY", "QQQ") if total else ("MSFT", "^GSPC", "^NDX")
+            symbols = (symbol, "SPY", "QQQ") if total else (symbol, "^GSPC", "^NDX")
             bench = (
                 prices(bundle, symbols, currency, total)
                 .loc[start:end]
@@ -545,29 +556,29 @@ def build(number, bundle, currency="EUR", total=True, months=12):
             bench = prices(bundle, symbols, currency, total).loc[start:end].dropna()
             idx = bench / bench.iloc[0] * 100
             a.add(
-                "Microsoft und Benchmarks",
+                f"{name} und US-Benchmarks",
                 idx,
                 "Start = 100",
                 colors={
-                    "MSFT": COLORS[1],
+                    symbol: COLORS[1],
                     symbols[1]: COLORS[0],
                     symbols[2]: COLORS[2],
                 },
             )
             a.add(
-                "Microsoft abzüglich Benchmark",
-                pd.DataFrame({s: idx.MSFT - idx[s] for s in symbols[1:]}),
+                f"{name} abzüglich US-Benchmark",
+                pd.DataFrame({s: idx[symbol] - idx[s] for s in symbols[1:]}),
                 "Prozentpunkte",
             )
             a.note += " SPY/QQQ sind bei Gesamtrendite investierbare Index-Näherungen mit Fondskosten und Tracking-Abweichung."
     elif number in {1, 2}:
-        close = prices(bundle, ("MSFT",), "EUR", False).MSFT.dropna()
+        close = prices(bundle, (symbol,), "EUR", False)[symbol].dropna()
         close = close.loc[close.index[-1] - pd.DateOffset(months=months) :]
         fig = a.add(
-            "Microsoft · unbereinigter Schlusskurs",
-            close.rename("MSFT"),
+            f"{name} · unbereinigter Schlusskurs",
+            close.rename(symbol),
             "EUR",
-            colors={"MSFT": COLORS[1]},
+            colors={symbol: COLORS[1]},
         )
         a.note = "USD-Schlusskurs mit Tages-FX in EUR, ohne Dividenden."
         if number == 2:
@@ -608,7 +619,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
     elif number == 4:
         from plotly.subplots import make_subplots
 
-        full = bundle["prices"]["MSFT"]
+        full = bundle["prices"][symbol]
         frame = full.copy()
         for n in (20, 50):
             frame[f"SMA {n}"] = full.Close.rolling(n).mean()
@@ -661,7 +672,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         a.panels.append(Panel("Letzte 60 Handelstage", frame, style_figure(fig)))
         a.note = "Hohl: Schluss ≥ Eröffnung. Gefüllt: Schluss < Eröffnung. Nicht die Vortagsveränderung. SMA aus Vorgeschichte berechnet."
     elif number == 11:
-        close = prices(bundle, ("MSFT", "SPY"), "USD", True).dropna()
+        close = prices(bundle, (symbol, "SPY"), "USD", True).dropna()
         rows = []
         for stamp, row in (
             bundle["earnings"]
@@ -690,12 +701,12 @@ def build(number, bundle, currency="EUR", total=True, months=12):
                         row["Reported EPS"] / row["EPS Estimate"] - 1
                     )
                     * 100,
-                    "MSFT (%)": ret.MSFT,
-                    "MSFT − SPY (pp)": ret.MSFT - ret.SPY,
+                    f"{symbol} (%)": ret[symbol],
+                    f"{symbol} − SPY (pp)": ret[symbol] - ret.SPY,
                 }
             )
         data = pd.DataFrame(rows).set_index("Datum")
-        for col in ["MSFT (%)", "MSFT − SPY (pp)"]:
+        for col in [f"{symbol} (%)", f"{symbol} − SPY (pp)"]:
             fig = go.Figure(
                 go.Scatter(
                     x=data["EPS-Abweichung (%)"],
@@ -720,7 +731,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         a.note = "Gewinne erst ab Folgetag; vier aufeinanderfolgende positive TTM-EPS. Yahoo-Earnings-EPS können von GAAP abweichen. Median ist kein fairer Wert."
     elif number == 14:
         payouts = dates(bundle["dividends"])
-        close = bundle["prices"]["MSFT"].Close.tail(1260)
+        close = bundle["prices"][symbol].Close.tail(1260)
         a.add(
             "Ausschüttung am Ex-Tag",
             payouts.loc[close.index[0] :].rename("Dividende"),
@@ -795,7 +806,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         data["Datum"] = (
             pd.to_datetime(data["Start Date"]).dt.tz_localize(None).dt.normalize()
         )
-        end = bundle["prices"]["MSFT"].index[-1]
+        end = bundle["prices"][symbol].index[-1]
         data = data.loc[data.Datum.between(end - pd.DateOffset(years=1), end)]
         text = data.Text.fillna("")
         data["Art"] = np.where(
@@ -838,7 +849,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         )
         a.note = "Bestandsänderung ist relativ zum Vorbericht, keine Änderung in Prozentpunkten am Unternehmen. Meldedatum ≠ Abrufdatum."
     elif number == 19:
-        spot = bundle["prices"]["MSFT"].Close.iloc[-1]
+        spot = bundle["prices"][symbol].Close.iloc[-1]
         now = pd.Timestamp(bundle["retrieved_at"])
         fig = go.Figure()
         tables = []
@@ -896,7 +907,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
             "Anzahl",
             "bar",
         )
-        a.note = "0y = laufendes Geschäftsjahr, +1y = nächstes, jeweils Ende Juni. Spannen sind keine Konfidenzintervalle; Rückblicke aus aktuellem Snapshot, keine selbst archivierte Historie."
+        a.note = "0y = laufendes Geschäftsjahr, +1y = nächstes, laut Anbieter, nicht zwingend Kalenderjahre. Spannen sind keine Konfidenzintervalle; Rückblicke aus aktuellem Snapshot, keine selbst archivierte Historie."
     elif number == 26:
         for name in ["Trailing P/E", "Forward P/E", "Enterprise Value/EBITDA"]:
             row = bundle["valuation"].loc[name]
@@ -921,7 +932,7 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         cf = cash(bundle)
         fcf = cf[CF[2]].iloc[-1]
         cap, shares = bundle["info"]["marketCap"], bundle["info"]["sharesOutstanding"]
-        spot = bundle["prices"]["MSFT"].Close.iloc[-1]
+        spot = bundle["prices"][symbol].Close.iloc[-1]
         if not all(np.isfinite(x) and x > 0 for x in (cap, shares, spot, fcf)):
             raise AnalysisUnavailable(
                 "Reverse DCF braucht positive, endliche Basiswerte."
@@ -978,4 +989,26 @@ def build(number, bundle, currency="EUR", total=True, months=12):
         a.note = f"FCF-Basis: GJ {cf.index[-1].year}. Zehn Jahre Wachstum, danach 2,5 %, konstante Aktienzahl. CFO−Capex als vereinfachter Eigenkapital-CF-Proxy, kein FCFF-Modell und keine Owner Earnings. Kein zusätzlicher Nettoschuldenabzug; getrennt von ‚Innerer Wert‘."
     else:
         raise AnalysisUnavailable("Unbekanntes Diagrammthema.")
+    for panel in a.panels:
+        if money:
+            panel.title = panel.title.replace("USD", money)
+            panel.unit = panel.unit.replace("USD", money)
+            panel.data.columns = [
+                str(c).replace("USD", money) for c in panel.data.columns
+            ]
+            if panel.figure is not None:
+                for key in panel.figure.layout:
+                    if key.startswith("yaxis") and panel.figure.layout[key].title.text:
+                        panel.figure.layout[key].title.text = panel.figure.layout[
+                            key
+                        ].title.text.replace("USD", money)
+                for trace in panel.figure.data:
+                    if trace.name:
+                        trace.name = trace.name.replace("USD", money)
+                    if getattr(trace, "hovertemplate", None):
+                        trace.hovertemplate = trace.hovertemplate.replace("USD", money)
+    if money:
+        a.note = a.note.replace("USD", money)
+    if number in business_topics:
+        a.note = f"Berichtswährung: {report_currency}. " + a.note
     return a

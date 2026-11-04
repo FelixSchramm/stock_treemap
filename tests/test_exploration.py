@@ -7,7 +7,13 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_dashboard.exploration.charts import GROUPS, build, cash, pe_series
+from portfolio_dashboard.exploration.charts import (
+    GROUPS,
+    AnalysisUnavailable,
+    build,
+    cash,
+    pe_series,
+)
 from portfolio_dashboard.exploration.data import prices
 from portfolio_dashboard.exploration.demo import demo_bundle
 from portfolio_dashboard.exploration.view import AREA, GROUP_KEY, TOPIC_KEY
@@ -21,6 +27,10 @@ def bundle():
 
 @pytest.mark.parametrize("number", range(1, 30))
 def test_all_topics_render_real_plotly_traces_from_synthetic_data(bundle, number):
+    if number == 28:
+        with pytest.raises(AnalysisUnavailable, match="Noch nicht angebunden"):
+            build(number, bundle)
+        return
     analysis = build(number, bundle)
     assert analysis.panels and analysis.note
     for panel in analysis.panels:
@@ -44,13 +54,20 @@ def test_fx_is_directional_and_never_uses_future_or_stale_rates():
         "MSFT": pd.DataFrame({"Close": [100, 100, 100]}, index=days),
         "EURUSD=X": pd.DataFrame({"Close": [2]}, index=days[1:2]),
     }
-    actual = prices({"prices": raw}, ("MSFT",), "EUR", False).MSFT
+    actual = prices(
+        {"prices": raw, "currencies": {"MSFT": "USD"}}, ("MSFT",), "EUR", False
+    ).MSFT
     assert np.isnan(actual.iloc[0])
     assert actual.iloc[1] == 50
     assert np.isnan(actual.iloc[2])
     # A native EUR series does not depend on FX being available.
     raw = {"SAP.DE": pd.DataFrame({"Close": [100, 110, 120]}, index=days)}
-    assert prices({"prices": raw}, ("SAP.DE",), "EUR", False).iloc[-1, 0] == 120
+    assert (
+        prices(
+            {"prices": raw, "currencies": {"SAP.DE": "EUR"}}, ("SAP.DE",), "EUR", False
+        ).iloc[-1, 0]
+        == 120
+    )
 
 
 def test_fcf_mismatch_is_rejected(bundle):
@@ -60,7 +77,7 @@ def test_fcf_mismatch_is_rejected(bundle):
 
 
 def test_financial_currency_and_reverse_dcf_snapshot_are_checked(bundle):
-    bundle["info"]["financialCurrency"] = "EUR"
+    bundle["info"]["financialCurrency"] = None
     with pytest.raises(ValueError, match="Berichtswährung"):
         build(9, bundle)
     bundle["info"]["financialCurrency"] = "USD"
@@ -75,6 +92,7 @@ def test_pe_only_uses_known_consecutive_earnings_and_invalidates_gaps():
     )
     dates = pd.date_range("2025-10-15", "2026-04-17")
     bundle = {
+        "symbol": "MSFT",
         "earnings": pd.DataFrame({"Reported EPS": [1] * 5}, index=eps),
         "prices": {"MSFT": pd.DataFrame({"Close": 100}, index=dates)},
     }
@@ -108,7 +126,14 @@ def test_ui_all_topics_offline_and_return_to_depot(monkeypatch):
         for topic in topics:
             app.selectbox(key=f"{TOPIC_KEY}.{group}").set_value(topic).run()
             assert not app.exception, (group, topic)
-            assert not app.warning, (group, topic)
+            if topic in {11, 12, 17, 28}:
+                assert app.warning, (group, topic)
+                assert any(
+                    "nicht angebunden" in w.value or "nicht bestätigt" in w.value
+                    for w in app.warning
+                )
+            else:
+                assert not app.warning, (group, topic)
     app.radio(key=AREA_RADIO_KEY).set_value("Depot").run()
     assert not app.exception
     assert app.dataframe[0].value["Instrument"].tolist() == [
@@ -120,25 +145,25 @@ def test_ui_all_topics_offline_and_return_to_depot(monkeypatch):
 def test_failed_live_refresh_preserves_old_snapshot(monkeypatch):
     from portfolio_dashboard.exploration import view
 
-    original = demo_bundle()
-    original["synthetic"] = False
-    monkeypatch.setattr(
-        view, "fetch", lambda: {"prices": {}, "errors": {"MSFT": "unavailable"}}
-    )
+    monkeypatch.setattr(view, "fetch", lambda *args: {"prices": {}, "errors": {}})
 
     def wrapper():
         import streamlit as st
 
         from portfolio_dashboard.exploration import view
         from portfolio_dashboard.exploration.demo import demo_bundle
+        from portfolio_dashboard.exploration.selection import Catalog, demo_catalog
 
-        st.session_state[view.STATE + ".live"] = demo_bundle()
-        view.render(demo=False, refresh_clicked=True)
+        company = demo_catalog().companies[0]
+        st.session_state[view.CATALOG_KEY + ".live"] = Catalog(depot=(company,))
+        st.session_state[view.STATE + ".live"] = {(company, ()): demo_bundle(company)}
+        view.render(
+            demo=False, refresh_clicked=True, load_companies=lambda previous: previous
+        )
 
     app = AppTest.from_function(wrapper).run()
     assert not app.exception
     assert any("vorhandener Stand" in w.value for w in app.warning)
-    assert (
-        app.session_state[view.STATE + ".live"]["retrieved_at"]
-        == original["retrieved_at"]
-    )
+    held = app.session_state[view.STATE + ".live"]
+    assert len(held) == 1
+    assert next(iter(held.values()))["retrieved_at"] == demo_bundle()["retrieved_at"]

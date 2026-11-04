@@ -276,6 +276,7 @@ class PortfolioRefreshCoordinator:
         *,
         listings: tuple[VerifiedListing, ...] = (),
         fallback_listings: Callable[[], Mapping[int, VerifiedListing]] | None = None,
+        selection_reader: Callable[[datetime], tuple[PortfolioSnapshot, Mapping[int, VerifiedListing]]] | None = None,
         fx_pairs: Mapping[str, VerifiedFxPair] | None = None,
         calendars: Mapping[str, SessionCalendar] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -286,10 +287,12 @@ class PortfolioRefreshCoordinator:
             a ``SheetsReadResult`` or ``PortfolioSnapshot``.
         :param cache: ``QuoteCache`` instance managing TTL and provider backoff.
         :param listings: Verified instrument listings registry.
+        :param selection_reader: Isolated Sheet reader for company selection; does not mutate quote mappings.
         :param fx_pairs: Optional mapping of foreign currency code to ``VerifiedFxPair``.
         :param calendars: Optional mapping of trading venue to ``SessionCalendar``.
         :param clock: Injectable timezone-aware clock callable.
         """
+        self._selection_reader = selection_reader
         self._read_holdings = read_holdings
         self._cache = cache
         self._listings = listings
@@ -337,6 +340,21 @@ class PortfolioRefreshCoordinator:
         if isinstance(result, SheetsReadResult):
             return result.snapshot
         return result
+
+    def read_selection(self) -> tuple[PortfolioSnapshot, Mapping[int, VerifiedListing]]:
+        """Read mapped Sheet identities without fetching quotes or changing bundles."""
+        if self._selection_reader is not None:
+            return self._selection_reader(self._clock())
+        snapshot = self._fetch_snapshot(self._clock())
+        alternatives = dict(self._fallback_listings()) if self._fallback_listings else {}
+        mappings = {}
+        for position in snapshot.positions:
+            listing = resolve_listing(position.instrument, self._listings)
+            if listing is None or listing.instrument.provider_mapping is None:
+                listing = alternatives.get(position.source_row)
+            if listing is not None:
+                mappings[position.source_row] = listing
+        return snapshot, mappings
 
     def _fallback_or_unavailable(
         self, now: datetime, failed_snapshot: PortfolioSnapshot | None = None

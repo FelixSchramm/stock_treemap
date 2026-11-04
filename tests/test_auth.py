@@ -462,3 +462,36 @@ def test_production_watchlist_uses_the_service_account_secret_after_the_gate(pro
     assert seen[0][0] is not None
     app.run()
     assert len(seen) == 1  # once per session
+
+
+def test_exploration_catalog_is_owner_only_and_revocation_hides_cached_names(protected_app, monkeypatch):
+    from decimal import Decimal
+
+    from portfolio_dashboard.exploration import view
+    from portfolio_dashboard.exploration.selection import Catalog, Company
+    from portfolio_dashboard.instruments import EquityForm
+
+    make_app, calls = protected_app
+    catalog_reads = []
+    market_reads = []
+    company = Company("Synthetic Protected Company", "SYNTHETIC.DE", "GER", "EUR",
+                      ("Depot",), "depot:2", Decimal(1), EquityForm.SHARE)
+    def catalog(*args):
+        catalog_reads.append(True)
+        return Catalog(depot=(company,))
+    monkeypatch.setattr(ui, "load_catalog", catalog)
+    monkeypatch.setattr(view, "fetch", lambda *args: market_reads.append(True))
+    app = make_app(owner_claims()).run()
+    app.radio(key=ui.AREA_RADIO_KEY).set_value(view.AREA).run()
+    assert not app.exception
+    assert not catalog_reads and not market_reads
+    app.button(key="exploration.load_catalog").click().run()
+    assert not app.exception
+    assert catalog_reads == [True] and not market_reads
+    assert any("Synthetic Protected Company" in text.value for text in app.markdown)
+    calls.clear()
+    monkeypatch.setattr(st, "user", owner_claims() | {"sub":"synthetic-revoked"})
+    app.run()
+    assert_closed(app, calls)
+    assert catalog_reads == [True] and not market_reads
+    assert not any("Synthetic Protected Company" in text.value for text in app.markdown)

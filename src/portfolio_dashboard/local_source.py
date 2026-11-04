@@ -347,6 +347,23 @@ def _coordinator(
         provider_listings = tuple(dict.fromkeys((*listings, *fallbacks.values())))
         return assign_listings(snapshot, listings)
 
+    def read_selection(attempted_at):
+        # A catalog read must not replace fallback mappings belonging to the
+        # depot's already cached holdings/quotes. Parse into an independent map.
+        result = adapter.read(attempted_at=attempted_at)
+        if result.snapshot.status is SnapshotStatus.FAILED:
+            return result.snapshot, {}
+        snapshot, alternatives = sheet_listing_candidates(result.parsed, listings)
+        snapshot = assign_listings(snapshot, listings)
+        mappings = {}
+        for position in snapshot.positions:
+            listing = resolve_listing(position.instrument, listings)
+            if listing is None or listing.instrument.provider_mapping is None:
+                listing = alternatives.get(position.source_row)
+            if listing is not None:
+                mappings[position.source_row] = listing
+        return snapshot, mappings
+
     def resolve_provider_listing(instrument):
         # Candidate symbols for the same ID/venue live separately until selection.
         candidates = tuple(item for item in provider_listings
@@ -358,5 +375,6 @@ def _coordinator(
         QuoteCache(YFinanceProvider(listings, listing_resolver=resolve_provider_listing), config.ttls),
         listings=listings,
         fallback_listings=lambda: fallbacks,
+        selection_reader=read_selection,
         calendars=venue_calendars(date.today()),
     )

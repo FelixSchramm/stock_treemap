@@ -493,6 +493,11 @@ class WatchlistRefreshCoordinator:
                 ),
             )
 
+    def read_selection(self) -> WatchlistSnapshot:
+        """Read the Watchlist's declarations without requesting any market data."""
+        with self._lock:
+            return self._fetch(self._clock())
+
     def _fallback(
         self, now: datetime, failed: WatchlistSnapshot | None = None
     ) -> WatchlistBundle:

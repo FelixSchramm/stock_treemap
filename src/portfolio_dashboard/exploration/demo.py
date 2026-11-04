@@ -3,10 +3,23 @@
 import numpy as np
 import pandas as pd
 
-from .data import SYMBOLS
+from .selection import Company
+
+SYMBOLS = (
+    "ORCL",
+    "MSFT",
+    "9988.HK",
+    "SAP.DE",
+    "EURUSD=X",
+    "USDHKD=X",
+    "^GSPC",
+    "^NDX",
+    "SPY",
+    "QQQ",
+)
 
 
-def demo_bundle():
+def demo_bundle(company: Company | None = None, comparisons=()):
     index = pd.bdate_range("2016-11-01", "2026-10-30")
     t = np.arange(len(index))
     bundle = {
@@ -211,4 +224,34 @@ def demo_bundle():
             ]
         ]
     )
+    bundle.update(
+        symbol="MSFT",
+        name="Demo-Unternehmen",
+        exchange="NMS",
+        equity_form="share",
+        comparison_symbols=SYMBOLS[:4],
+        names={s: s for s in SYMBOLS[:4]},
+        currencies={
+            s: ("HKD" if s == "9988.HK" else "EUR" if s == "SAP.DE" else "USD")
+            for s in SYMBOLS
+        },
+    )
+    if company is not None:
+        base = bundle["prices"]["MSFT"].copy()
+        selected = tuple({c.key: c for c in (company, *comparisons)}.values())
+        for i, item in enumerate(selected):
+            frame = base.copy()
+            frame[["Open", "High", "Low", "Close", "Adj Close"]] *= 1 + i * 0.15
+            bundle["prices"][item.symbol] = frame
+            bundle["currencies"][item.symbol] = item.currency
+        bundle.update(
+            symbol=company.symbol,
+            name=company.name,
+            exchange=company.exchange,
+            equity_form=company.equity_form.value if company.equity_form else None,
+            comparison_symbols=tuple(c.symbol for c in selected),
+            names={c.symbol: f"{c.name} ({c.symbol})" for c in selected},
+        )
+        bundle["info"]["financialCurrency"] = company.currency
+        bundle["info"]["currency"] = company.currency
     return bundle

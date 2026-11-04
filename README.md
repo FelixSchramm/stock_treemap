@@ -19,7 +19,11 @@
 Die neue Ansicht **Unternehmensanalyse** überträgt die 29 Themen der Financial-Pipeline-V4
 in Streamlit/Plotly: Geschäftszahlen, Kapitalqualität, Bewertung, Kursrisiko und
 Marktumfeld. Hover, Zoom, Tabellen und CSV-Downloads ergänzen die Originalanalyse.
-Die gemeinsame dunkle CI gilt auch für die Treemap. [Bedienung, Herkunft und Datenregeln](docs/EXPLORATION.md).
+Die Unternehmensauswahl kommt aus **Depot und Watchlist im Google Sheet**; bis zu
+drei weitere Aktien lassen sich vergleichen. Nicht verfügbare Daten zeigen **n. v.**
+oder **Noch nicht angebunden**. Das Glossar ist direkt in der Ansicht erreichbar.
+Die gemeinsame dunkle CI gilt auch für die Treemap.
+[Bedienung, Herkunft und Datenregeln](docs/EXPLORATION.md) · [Glossar](docs/glossary.md).
 
 ## Methodik
 

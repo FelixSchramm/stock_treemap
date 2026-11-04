@@ -456,3 +456,39 @@ def test_real_provider_outage_still_triggers_and_respects_provider_wide_backoff(
     set_time(coordinator, NOW + timedelta(minutes=10, seconds=5))
     assert coordinator.load(refresh=True).available
     assert len(quote_attempts(market)) == 8
+
+
+def test_exploration_selection_uses_sheet_mapping_without_market_requests(monkeypatch, tmp_path):
+    from portfolio_dashboard.exploration.selection import portfolio_companies
+
+    coordinator, session, market = loader(monkeypatch, tmp_path, primary=False)
+    snapshot, mappings = coordinator.read_selection()
+    companies = portfolio_companies(snapshot, mappings)
+    assert len(session.calls) == 1
+    assert market.calls == []
+    assert coordinator.last_bundle is None
+    assert companies[0].symbol == "ALTERNATIVE.DE"
+    assert companies[0].currency == "EUR"
+    assert companies[0].exchange == "GER"
+
+
+def test_exploration_selection_does_not_promote_display_ticker(monkeypatch, tmp_path):
+    from portfolio_dashboard.exploration.selection import portfolio_companies
+
+    coordinator, _, market = loader(monkeypatch, tmp_path, primary=False, rows=[HEADERS, sheet_row(symbol="")])
+    snapshot, mappings = coordinator.read_selection()
+    company = portfolio_companies(snapshot, mappings)[0]
+    assert company.symbol is None
+    assert "Zuordnung" in company.reason
+    assert market.calls == []
+
+
+def test_selection_refresh_does_not_replace_cached_depot_mapping(monkeypatch, tmp_path):
+    coordinator, session, _ = loader(monkeypatch, tmp_path, primary=False)
+    depot = coordinator.load()
+    original = dict(coordinator._fallback_listings())
+    session.rows = [HEADERS, sheet_row(symbol="NEW-SELECTION.DE")]
+    _, selection = coordinator.read_selection()
+    assert next(iter(selection.values())).instrument.provider_mapping.symbol == "NEW-SELECTION.DE"
+    assert dict(coordinator._fallback_listings()) == original
+    assert coordinator.last_bundle is depot
