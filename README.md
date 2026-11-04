@@ -30,6 +30,29 @@ Datenquellen stehen am Seitenende.
 Die gemeinsame dunkle CI gilt auch für die Treemap.
 [Bedienung, Herkunft und Datenregeln](docs/EXPLORATION.md) · [Glossar](docs/glossary.md).
 
+## Indizes
+
+**Indizes** ergänzt Depot, Watchlist, Analyse und Innerer Wert. Die Auswahl erkennt
+die Blätter **DAX, MDAX, Euro Stoxx 50, STOXX Europe 600, S&P 500, Nasdaq 100 und
+Dow Jones** im bereits konfigurierten Google Sheet. DAX ist die Standardauswahl.
+In A/B stehen die Überschriften **Unternehmen** und **Yahoo-Finance-Ticker**;
+gelesen werden maximal 999 Unternehmen. Es sind keine zusätzlichen Secrets nötig.
+Beim Öffnen lädt nur der gewählte Index. Zeitraumwechsel verwenden denselben
+Datenstand; **Aktualisieren** lädt den aktuellen Index erneut. Die Daten bleiben
+pro Sitzung und Index getrennt; am nächsten UTC-Tag wird automatisch neu geladen.
+
+Die Seite zeigt Marktkapitalisierung, größten Gewinner und Verlierer, aktive
+Positionen sowie eine Treemap mit Hover und darunter die vollständige Liste.
+**Heute, Woche, Monat und Jahr** folgen der bestehenden Kursperioden-Logik.
+Kachelflächen entsprechen den verfügbaren Unternehmens-Marktkapitalisierungen,
+die Farben der Kursentwicklung. Das sind **keine offiziellen Indexgewichte**.
+Kapitalisierungen werden nur bei gleicher Währung summiert. Bei gemischten
+Währungen oder komplett fehlenden Kapitalisierungen erscheinen gleich große
+Kacheln mit entsprechendem Hinweis. Fehlende Werte bleiben **NA**, keine Nullen.
+Nicht unterstützte Handelsplätze zeigen „wird noch angebunden“; Kurskalender
+stehen derzeit für die bereits unterstützten deutschen und US-Handelsplätze bereit.
+Die Indexzusammensetzung wird im Sheet gepflegt, nicht automatisch ausgetauscht.
+
 ## Methodik
 
 ### 1. Bewertung in EUR

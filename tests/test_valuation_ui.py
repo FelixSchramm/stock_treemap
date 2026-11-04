@@ -152,6 +152,7 @@ def test_area_is_offered_and_shows_the_synthetic_overview(demo):
         "Watchlist",
         "Analyse",
         "Innerer Wert",
+        "Indizes",
     ]
     app = opened(app)
     assert not app.exception and not app.error

@@ -401,7 +401,7 @@ def test_watchlist_loader_is_built_only_for_the_owner_and_only_when_opened(prote
 def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_app, monkeypatch):
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
-    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Analyse", "Innerer Wert"]
+    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Analyse", "Innerer Wert", "Indizes"]
     calls.clear()
     app.radio(key=ui.AREA_RADIO_KEY).set_value("Innerer Wert").run()
     assert not app.exception and not app.error
@@ -495,3 +495,29 @@ def test_exploration_catalog_is_owner_only_and_revocation_hides_cached_names(pro
     assert_closed(app, calls)
     assert catalog_reads == [True] and market_reads == [True, True]
     assert not any("Synthetic Protected Company" in text.value for text in app.markdown)
+
+
+def test_indices_build_only_after_owner_gate_and_hide_cached_data_on_revocation(protected_app, monkeypatch):
+    from portfolio_dashboard import indices
+    from portfolio_dashboard.indices_view import LOADER_KEY
+
+    make_app, calls = protected_app
+    builds = []
+
+    def build(config, service_account):
+        builds.append(True)
+        return indices.DemoIndices()
+
+    monkeypatch.setattr(indices, "build_production_indices", build)
+    app = make_app(owner_claims()).run()
+    assert not builds
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Indizes").run()
+    assert not app.exception and builds == [True]
+    assert app.dataframe and LOADER_KEY in app.session_state
+    app.radio(key="_indices.period").set_value("Jahr").run()
+    assert builds == [True]
+    calls.clear()
+    monkeypatch.setattr(st, "user", owner_claims() | {"sub": "synthetic-revoked"})
+    app.run()
+    assert_closed(app, calls)
+    assert builds == [True] and not app.dataframe and not app.get("plotly_chart")

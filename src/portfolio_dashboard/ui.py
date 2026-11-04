@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard import valuation_view, watchlist_view
+from portfolio_dashboard import indices_view, valuation_view, watchlist_view
 from portfolio_dashboard.design import dashboard_css, style_figure
 from portfolio_dashboard.exploration import view as exploration_view
 from portfolio_dashboard.exploration.selection import load_catalog
@@ -890,6 +890,7 @@ def render_dashboard(
     demo: bool = True,
     watchlist: Callable[[], WatchlistLoader | None] | None = None,
     overview: OverviewSource | None = None,
+    indices: Callable | None = None,
 ) -> None:
     """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
 
@@ -927,9 +928,14 @@ def render_dashboard(
     areas = (*AREAS, exploration_view.AREA)
     if overview is not None:
         areas = (*areas, VALUATION_AREA)
+    areas = (*areas, indices_view.AREA)
     if st.session_state.get(AREA_KEY) == "Unternehmensanalyse":
         st.session_state[AREA_KEY] = exploration_view.AREA
     selected = render_area_control(areas)
+    if selected == indices_view.AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
+        indices_view.render(indices, refresh_clicked=refresh_clicked, demo=demo)
+        return
     if selected == exploration_view.AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
         def read_companies(previous):
