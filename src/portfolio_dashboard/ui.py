@@ -924,8 +924,12 @@ def render_dashboard(
     with header_cols[1]:
         refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
 
-    areas = AREAS if overview is None else (*AREAS, VALUATION_AREA)
-    selected = render_area_control((*areas, exploration_view.AREA))
+    areas = (*AREAS, exploration_view.AREA)
+    if overview is not None:
+        areas = (*areas, VALUATION_AREA)
+    if st.session_state.get(AREA_KEY) == "Unternehmensanalyse":
+        st.session_state[AREA_KEY] = exploration_view.AREA
+    selected = render_area_control(areas)
     if selected == exploration_view.AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
         def read_companies(previous):

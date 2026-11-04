@@ -73,7 +73,7 @@ def portfolio_companies(snapshot, mappings):
         reason = None
         if instrument.instrument_type is not InstrumentType.STOCK:
             reason = (
-                "n. v. – Unternehmensanalyse ist nur für einzelne Aktien angebunden."
+                "n. v. – Analyse ist nur für einzelne Aktien angebunden."
             )
         elif mapping is None or mapping.provider != "yfinance":
             reason = "n. v. – Geprüfte Yahoo-Zuordnung fehlt. Anzeigename und Ticker allein reichen nicht."

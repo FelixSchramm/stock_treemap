@@ -31,11 +31,12 @@ from .calculations import (
 from .data import currency_code, dates, prices, statement
 
 GROUPS = {
-    "Geschäftsmodell": (28, 10, 9, 29, 3, 22),
-    "Kapital & Bilanz": (21, 23, 24, 20, 14),
-    "Bewertung": (25, 12, 26, 27),
-    "Kurs & Risiko": (1, 2, 4, 5, 6, 7, 8, 13, 11),
-    "Marktumfeld": (15, 16, 17, 18, 19),
+    "Überblick": (1, 5, 13),
+    "Kurs & Risiko": (6, 7, 8, 4, 2, 11),
+    "Geschäftsmodell": (10, 28, 9, 3, 29, 22),
+    "Kapital & Bilanz": (20, 21, 23, 24, 14),
+    "Bewertung": (26, 12, 25, 27),
+    "Marktumfeld": (15, 16, 18, 17, 19),
 }
 TITLES = {
     1: "Kurs in Euro",

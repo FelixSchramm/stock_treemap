@@ -1,11 +1,11 @@
-# Unternehmensanalyse: Financial Pipeline in Streamlit
+# Analyse: Financial Pipeline in Streamlit
 
-Die Ansicht **Unternehmensanalyse** ergänzt Depot, Watchlist und Innerer Wert.
+Die Ansicht **Analyse** steht direkt hinter **Watchlist**, vor **Innerer Wert**.
 Sie portiert alle 29 Themen der Financial-Pipeline-V4 in native Plotly-Charts,
 interaktive Tabellen und CSV-Downloads. Die Originalskripte, PNGs und die eingefrorene
 Baseline im Pipeline-Repository bleiben unverändert.
 
-![Unternehmensanalyse mit ausschließlich synthetischen Daten](images/exploration-demo.png)
+![Analyse mit ausschließlich synthetischen Daten](images/exploration-demo.png)
 
 ## Start
 
@@ -14,7 +14,7 @@ uv sync --locked
 uv run --locked streamlit run app.py
 ```
 
-In der Navigation **Unternehmensanalyse** auswählen. Standardmäßig läuft das
+In der Navigation **Analyse** auswählen. Standardmäßig läuft das
 Dashboard vollständig offline mit deutlich markierten synthetischen Beispielen.
 Bekannte Symbole im Demo-Modus stehen **nicht** für echte Marktdaten.
 
@@ -47,20 +47,27 @@ ursprünglichem Zeitstempel erhalten. Scheitert das Lesen einer Sheet-Quelle,
 bleibt deren zuvor geladene Liste erhalten und wird entsprechend gekennzeichnet.
 Einzelne fehlende Yahoo-Ressourcen sperren nur die betroffenen Analysen.
 
-Das **Glossar · Kennzahlen, Diagramme und Datenquellen** steht direkt auf der Seite
-auch vor dem Laden von Daten bereit. [Glossar und unverändertes Pipeline-Original](glossary.md).
+Am Seitenende stehen drei getrennte aufklappbare Bereiche: **Glossar – Kennzahlen**,
+**Glossar – Diagramme** und **Glossar – Datenquellen**. Sie bleiben auch vor dem
+Laden von Daten und bei nicht verfügbaren Analysen erreichbar.
+[Glossar und unverändertes Pipeline-Original](glossary.md).
 
 ## Gestaltung und Navigation
 
-- **Geschäftsmodell:** Segmente, Wachstum/Margen, Jahres- und Quartalscashflow,
-  Cashflow-Überleitung, Gewinnqualität.
-- **Kapital & Bilanz:** ROIC, Kapitalverwendung, Entwicklung je Aktie, Bilanz,
-  Zinsdeckung, Dividende und Ausschüttungsquote.
-- **Bewertung:** Schätzungen/Revisionen, rekonstruiertes KGV, Portal-Multiplikatoren,
-  Reverse DCF.
-- **Kurs & Risiko:** EUR-Kurs, EPS-Ereignisse, Kerzen/Volumen, Aktienvergleich,
-  Monatsrenditen, Drawdown, Risikoübersicht, Benchmark, Earnings-Reaktion.
-- **Marktumfeld:** Analystenkonsens, Zieländerungen, Insider, Institutionen, Optionen.
+Die Reihenfolge führt vom groben Überblick zum Deep Dive. Beim ersten Öffnen
+startet die Ansicht mit dem Aktienkurs in EUR:
+
+1. **Überblick:** Kursverlauf, Vergleich der gewählten Aktien ab 100, Marktvergleich.
+2. **Kurs & Risiko:** Monatsrenditen, Drawdown, Rendite/Risiko, Kerzen/Volumen,
+   Quartalsergebnisse und Reaktion auf Veröffentlichungen.
+3. **Geschäftsmodell:** Wachstum/Margen, Segmente, Jahres- und Quartalscashflow,
+   Cashflow-Überleitung und Gewinnqualität.
+4. **Kapital & Bilanz:** Bilanz/Zinsdeckung, ROIC, Kapitalverwendung,
+   Entwicklung je Aktie und Dividende/Deckung.
+5. **Bewertung:** Portal-Multiplikatoren, historisches KGV,
+   Schätzungen/Revisionen und Reverse DCF.
+6. **Marktumfeld:** Analystenkonsens, Zieländerungen, Institutionen,
+   Insider-Transaktionen und Optionen.
 
 Eine Fragestellung zur Zeit hält die Seite schnell und übersichtlich. Mehrere
 Kennzahlen eines Themas stehen in getrennten Panels, niemals auf einer Doppelachse.

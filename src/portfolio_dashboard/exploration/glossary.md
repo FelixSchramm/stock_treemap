@@ -1,21 +1,4 @@
-## Begriffe und Datenstatus
-
-**n. v. (NA)** heißt „nicht verfügbar“: Yahoo liefert keine ausreichenden Daten,
-Metadaten widersprechen dem gewählten Listing oder eine Berechnung ist fachlich
-nicht sinnvoll. Eine unbekannte Zahl wird niemals als null ersetzt.
-**Noch nicht angebunden** bezeichnet eine fehlende Datenquelle oder eine noch
-nicht geprüfte Zuordnung. Andere Analysen bleiben trotzdem nutzbar.
-
-Die Unternehmensliste kommt aus Depot und Watchlist im Google Sheet. Nur die
-vorhandene Yahoo-Zuordnung wird verwendet; ein Anzeigename oder ein freier Ticker
-ist keine bestätigte Zuordnung. Fehlende Zuordnungen bleiben mit Erklärung sichtbar.
-Doppelte identische Listings werden zusammengeführt; unterschiedliche Handelsplätze
-bleiben unterscheidbar. „Unternehmen aus Sheet laden“ liest keine Marktkurse für
-alle Positionen. Erst „Analysedaten laden“ ruft die gewählte Aktie und höchstens drei
-weitere Vergleichsaktien ab. Das Sheet wird nicht verändert.
-
 ## Kennzahlen
-
 | Begriff | Bedeutung und Grenze |
 |---|---|
 | Umsatz | Gemeldete Erlöse einer Berichtsperiode; kein Zahlungszufluss. |
@@ -45,7 +28,89 @@ weitere Vergleichsaktien ab. Das Sheet wird nicht verändert.
 | Implizite Volatilität (IV) | In Optionspreisen enthaltene annualisierte Schwankungserwartung. Keine Richtungsprognose. |
 | Abrufstand / Meldestichtag | Zeitpunkt unseres Abrufs / Zeitpunkt der berichteten Information. Beide können weit auseinanderliegen. |
 
-## Diagramme und Yahoo-Schnittstellen
+## Diagramme
+
+Die Auswahl führt vom Kursüberblick über Geschäftszahlen bis zu Bewertungsdetails.
+Die Nummern verweisen weiterhin auf die ursprünglichen V4-Themen.
+
+### Überblick
+
+| Nr. | Diagramm | Was lässt sich daraus ablesen? |
+|---|---|---|
+| 01 | Kurs in Euro | Wie hat sich der Aktienkurs in EUR entwickelt? Einstieg mit wählbarem Zeitraum. |
+| 05 | Was wurde aus 100? | Wie hätten sich gleich große Anfangsbeträge in den ausgewählten Aktien entwickelt? Alle starten bei 100. |
+| 13 | Vergleich mit dem Markt | Wie steht die Aktie gegenüber den US-Referenzen S&P 500 und Nasdaq-100 da? Kein lokaler Marktindex. |
+
+### Kurs & Risiko
+
+| Nr. | Diagramm | Was lässt sich daraus ablesen? |
+|---|---|---|
+| 06 | Monatsrenditen | In welchen der zwölf vollständigen Monate gab es Gewinne oder Verluste? |
+| 07 | Verlust seit dem Hoch | Wie weit liegt der Kurs unter seinem bisher beobachteten Hoch, und wie lange dauern Erholungen? |
+| 08 | Rendite und Kursrisiko | Wie stehen Ertrag, Schwankungen und Verluste der verglichenen Aktien zueinander? |
+| 04 | Kerzen und Volumen | Wie verliefen einzelne Handelstage vom Eröffnungs- bis zum Schlusskurs, und wie viel wurde gehandelt? |
+| 02 | Kurs und Quartalsergebnisse | Wann wurden Gewinne gemeldet und wie lagen sie gegenüber den Schätzungen? |
+| 11 | Reaktion auf Quartalszahlen | Wie bewegte sich die Aktie um Ergebnisveröffentlichungen gegenüber dem Markt? Keine Aussage über die Ursache. |
+
+### Geschäftsmodell
+
+| Nr. | Diagramm | Was lässt sich daraus ablesen? |
+|---|---|---|
+| 10 | Wachstum und Margen | Wie entwickeln sich Umsatz und Profitabilität über die Berichtsperioden? |
+| 28 | Geschäftsmodell und Segmente | Welche Geschäftsbereiche tragen Umsatz und Ergebnis? Die benötigte Segmentquelle ist noch nicht angebunden. |
+| 09 | Cashflow und Investitionen | Wie viel operatives Geld bleibt nach Cash-Investitionen jährlich übrig? |
+| 03 | Cashflow je Quartal | Wie verändert sich der Cashflow kurzfristig und auf Basis von vier aufeinanderfolgenden Quartalen? |
+| 29 | Cashflow-Überleitung | Wie wird aus operativem Cashflow durch Abzug des Cash-Capex der Free Cashflow? |
+| 22 | Gewinnqualität | Wird der ausgewiesene Gewinn durch operative Zahlungsströme und Free Cashflow gestützt? |
+
+### Kapital & Bilanz
+
+| Nr. | Diagramm | Was lässt sich daraus ablesen? |
+|---|---|---|
+| 20 | Bilanz und Zinsdeckung | Wie stehen Liquidität, Schulden und die Fähigkeit zur Zinszahlung zueinander? |
+| 21 | Kapitalrendite | Wie produktiv arbeitet das im Unternehmen gebundene Kapital? |
+| 23 | Kapitalverwendung | Wie verteilt sich das Geld auf Investitionen, Ausschüttungen und weitere Verwendungen? |
+| 24 | Entwicklung je Aktie | Wie entwickeln sich Ergebnis und Cashflow auf Basis der berichteten Aktienzahl? |
+| 14 | Dividende und Deckung | Wie hoch sind die tatsächlichen Ausschüttungen, und wie werden sie durch Gewinn und Cashflow gedeckt? |
+
+### Bewertung
+
+| Nr. | Diagramm | Was lässt sich daraus ablesen? |
+|---|---|---|
+| 26 | Bewertungsmultiplikatoren | Welche Bewertungsverhältnisse meldet Yahoo, und wie haben sie sich verändert? |
+| 12 | Historisches KGV | Wie stand der Kurs zu den zu diesem Zeitpunkt bekannten Gewinnen? Der historische Median ist kein fairer Wert. |
+| 25 | Schätzungen und Revisionen | Welche Gewinne und Umsätze werden für gleiche Zielperioden erwartet, und wie verändern sich diese Erwartungen? |
+| 27 | Reverse DCF | Welches zukünftige FCF-Wachstum erklärt den aktuellen Preis unter verschiedenen Renditeannahmen? |
+
+### Marktumfeld
+
+| Nr. | Diagramm | Was lässt sich daraus ablesen? |
+|---|---|---|
+| 15 | Analysten-Konsens | Wie verteilen sich aktuelle Empfehlungen und Kursziele? Momentaufnahme, keine Prognosegarantie. |
+| 16 | Kurszieländerungen | Welche einzelnen Analystenmeldungen wurden veröffentlicht? Kein historischer Konsens. |
+| 18 | Institutionelle Eigentümer | Welche gemeldeten institutionellen Bestände liegen zu welchen Stichtagen vor? |
+| 17 | Insider-Transaktionen | Welche Käufe und Verkäufe wurden gemeldet? Die Daten können lückenhaft oder verzögert sein. |
+| 19 | Optionsvolatilität | Welche Schwankungen sind in ausreichend liquiden Optionspreisen enthalten? Keine Richtungsprognose. |
+
+## Datenquellen
+
+### Verfügbarkeit und Unternehmensauswahl
+
+**n. v. (NA)** heißt „nicht verfügbar“: Yahoo liefert keine ausreichenden Daten,
+Metadaten widersprechen dem gewählten Listing oder eine Berechnung ist fachlich
+nicht sinnvoll. Eine unbekannte Zahl wird niemals als null ersetzt.
+**Noch nicht angebunden** bezeichnet eine fehlende Datenquelle oder eine noch
+nicht geprüfte Zuordnung. Andere Analysen bleiben trotzdem nutzbar.
+
+Die Unternehmensliste kommt aus Depot und Watchlist im Google Sheet. Nur die
+vorhandene Yahoo-Zuordnung wird verwendet; ein Anzeigename oder ein freier Ticker
+ist keine bestätigte Zuordnung. Fehlende Zuordnungen bleiben mit Erklärung sichtbar.
+Doppelte identische Listings werden zusammengeführt; unterschiedliche Handelsplätze
+bleiben unterscheidbar. „Unternehmen aus Sheet laden“ liest keine Marktkurse für
+alle Positionen. Erst „Analysedaten laden“ ruft die gewählte Aktie und höchstens drei
+weitere Vergleichsaktien ab. Das Sheet wird nicht verändert.
+
+### Yahoo Finance und Abdeckung
 
 Die Nummerierung folgt V4. `t = yf.Ticker(gewähltes_symbol)`.
 „Yahoo“ bedeutet: angebunden **sofern der Anbieter für das Unternehmen Daten liefert**.
@@ -83,8 +148,7 @@ Das ist keine Abdeckungs- oder Qualitätsgarantie.
 | 28 | Geschäftssegmente | Geschäftsberichte / Segmentquelle | **Noch nicht angebunden. Keine festen Microsoft-Zahlen als Ersatz.** |
 | 29 | Cashflow-Überleitung | `t.cashflow` | CFO − Cash-Capex = FCF, letztes vollständiges Geschäftsjahr |
 
-## Währungen und Perioden
-
+### Währungen und Perioden
 Kurse und Kerzen stehen in der bestätigten Handelswährung, Geschäftszahlen in
 `financialCurrency`. Eine Einheit wie Pence wird ohne bestätigte Normalisierung
 nicht stillschweigend als Pfund behandelt. Bei widersprüchlichen Metadaten wird

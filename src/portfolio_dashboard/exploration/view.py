@@ -10,7 +10,7 @@ from .data import fetch
 from .demo import demo_bundle
 from .selection import Catalog, demo_catalog
 
-AREA = "Unternehmensanalyse"
+AREA = "Analyse"
 STATE = "exploration.snapshot"
 GROUP_KEY = "exploration.group"
 TOPIC_KEY = "exploration.topic"
@@ -22,10 +22,20 @@ COMPARE_KEY = "exploration.comparisons"
 
 
 def render(*, demo=True, refresh_clicked=False, load_companies=None):
-    st.subheader("Unternehmensanalyse")
+    st.subheader(AREA)
     st.caption("Auswahl aus Depot und Watchlist · Geschäftszahlen von Yahoo Finance")
-    with st.expander("Glossar · Kennzahlen, Diagramme und Datenquellen"):
-        st.markdown(Path(__file__).with_name("glossary.md").read_text(encoding="utf-8"))
+    _render_analysis(
+        demo=demo, refresh_clicked=refresh_clicked, load_companies=load_companies
+    )
+    st.divider()
+    glossary = Path(__file__).with_name("glossary.md").read_text(encoding="utf-8")
+    for section in ("\n" + glossary).split("\n## ")[1:]:
+        title, _, body = section.partition("\n")
+        with st.expander(f"Glossar – {title}"):
+            st.markdown(body.strip())
+
+
+def _render_analysis(*, demo, refresh_clicked, load_companies):
     mode = ".demo" if demo else ".live"
     catalog_key = CATALOG_KEY + mode
     if demo:

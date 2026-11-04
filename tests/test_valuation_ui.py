@@ -150,8 +150,8 @@ def test_area_is_offered_and_shows_the_synthetic_overview(demo):
     assert app.radio(key=AREA_RADIO_KEY).options == [
         "Depot",
         "Watchlist",
+        "Analyse",
         "Innerer Wert",
-        "Unternehmensanalyse",
     ]
     app = opened(app)
     assert not app.exception and not app.error

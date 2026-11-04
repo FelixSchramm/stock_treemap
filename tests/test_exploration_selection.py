@@ -314,6 +314,7 @@ def test_company_switch_does_not_reuse_other_company_data_or_reload_sheet(monkey
     app.button(key="exploration.load_catalog").click().run()
     assert not app.exception and not calls
     app.button(key="exploration.load_data").click().run()
+    app.radio(key=view.GROUP_KEY).set_value("Geschäftsmodell").run()
     app.selectbox(key=f"{view.TOPIC_KEY}.Geschäftsmodell").set_value(9).run()
     assert not app.exception and app.get("plotly_chart")
     app.selectbox(key=view.COMPANY_KEY).set_value(repr(SECOND.key)).run()
@@ -330,7 +331,12 @@ def test_company_switch_does_not_reuse_other_company_data_or_reload_sheet(monkey
 def test_glossary_available_before_loading_sources():
     app = AppTest.from_function(live_page).run()
     assert not app.exception
-    assert any(
-        "ROIC" in text.value and "Noch nicht angebunden" in text.value
-        for text in app.markdown
-    )
+    assert [e.label for e in app.expander] == [
+        "Glossar – Kennzahlen", "Glossar – Diagramme", "Glossar – Datenquellen"
+    ]
+    metrics, charts, sources = app.expander
+    assert "ROIC" in metrics.markdown[0].value
+    assert "Was wurde aus 100?" in charts.markdown[0].value
+    assert "Noch nicht angebunden" in sources.markdown[0].value
+    assert "t.history" in sources.markdown[0].value
+    assert "t.history" not in metrics.markdown[0].value + charts.markdown[0].value
