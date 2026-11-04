@@ -72,8 +72,9 @@ filterbar bleiben), Kategorie (inkl. `Ohne Kategorie`). Sortierung: `Kursentwick
 (Standard, absteigend), `Name`, `Ticker`, mit Reihenfolge; fehlende Werte (`n. v.`, kein
 Ticker) stehen immer zuletzt, Gleichstände nach Name und Blattzeile.
 
-Tabelle: `Name`, `Ticker`, `Typ`, `Kategorie`, `Handelsplatz`, `Kurs` (Handelswährung; EUR mit
-Zusatz `(Sheet)` beim Sheet-Wert), `Kursentwicklung (%)`, `Quelle`, `Referenzdatum`,
+Tabelle: `Name`, `Kursentwicklung (%)`, `Ticker`, `Typ`, `Kategorie`, `Handelsplatz`,
+`Kurs` (Handelswährung; EUR mit
+Zusatz `(Sheet)` beim Sheet-Wert), `Quelle`, `Referenzdatum`,
 `Kursstand`, `Status`. **Details ohne Hover** (`Watchlist-Details ohne Hover (n)`) zeigt je
 Eintrag alle Felder, alle vier Perioden mit Herkunft und Referenzdatum, den Status, Hinweise
 und die Blattzeile als umbrechenden Text in einem einzigen Markdown-Element (200+ Einträge

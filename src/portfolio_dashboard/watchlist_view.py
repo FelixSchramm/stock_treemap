@@ -194,12 +194,12 @@ class WatchlistRow:
         """Columns of the sortable table; every cell is plain text."""
         return {
             "Name": self.name,
+            SORT_BY_PERFORMANCE: self.percent_label,
             "Ticker": self.ticker or NO_VALUE,
             "Typ": self.instrument_type,
             "Kategorie": self.category,
             "Handelsplatz": self.venue,
             "Kurs": self.price_label,
-            SORT_BY_PERFORMANCE: self.percent_label,
             "Quelle": self.source,
             "Referenzdatum": self.reference_date,
             "Kursstand": self.quote_time,
