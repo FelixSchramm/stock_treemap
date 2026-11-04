@@ -102,13 +102,17 @@ nicht sinnvoll. Eine unbekannte Zahl wird niemals als null ersetzt.
 **Noch nicht angebunden** bezeichnet eine fehlende Datenquelle oder eine noch
 nicht geprüfte Zuordnung. Andere Analysen bleiben trotzdem nutzbar.
 
-Die Unternehmensliste kommt aus Depot und Watchlist im Google Sheet. Nur die
-vorhandene Yahoo-Zuordnung wird verwendet; ein Anzeigename oder ein freier Ticker
+Die Analyse startet automatisch mit Microsoft und den Vergleichen Oracle, Alibaba
+in Hongkong und SAP auf Xetra. Diese vier Standardwerte haben explizite Yahoo-Listings.
+Weitere Unternehmen kommen automatisch aus Depot und Watchlist im Google Sheet.
+Für sie gilt die vorhandene Yahoo-Zuordnung; ein Anzeigename oder ein freier Ticker
 ist keine bestätigte Zuordnung. Fehlende Zuordnungen bleiben mit Erklärung sichtbar.
 Doppelte identische Listings werden zusammengeführt; unterschiedliche Handelsplätze
-bleiben unterscheidbar. „Unternehmen aus Sheet laden“ liest keine Marktkurse für
-alle Positionen. Erst „Analysedaten laden“ ruft die gewählte Aktie und höchstens drei
-weitere Vergleichsaktien ab. Das Sheet wird nicht verändert.
+bleiben unterscheidbar. Die Auswahl lässt sich darunter ändern; neue Auswahlen
+laden ihre Daten automatisch. Es werden nur die gewählte Aktie, höchstens drei
+Vergleichsaktien und benötigte Benchmark-/FX-Reihen abgerufen. Ein Themenwechsel
+verwendet den Sitzungscache. „Aktualisieren“ oben liest Sheet und Analyse erneut
+und wiederholt fehlgeschlagene Abrufe. Das Sheet wird nicht verändert.
 
 ### Yahoo Finance und Abdeckung
 

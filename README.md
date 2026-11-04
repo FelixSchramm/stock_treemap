@@ -19,8 +19,10 @@
 Die Ansicht **Analyse** direkt hinter **Watchlist** überträgt die 29 Themen der Financial-Pipeline-V4
 in Streamlit/Plotly: Geschäftszahlen, Kapitalqualität, Bewertung, Kursrisiko und
 Marktumfeld. Hover, Zoom, Tabellen und CSV-Downloads ergänzen die Originalanalyse.
-Die Unternehmensauswahl kommt aus **Depot und Watchlist im Google Sheet**; bis zu
-drei weitere Aktien lassen sich vergleichen. Nicht verfügbare Daten zeigen **n. v.**
+Beim Öffnen lädt **Microsoft** automatisch mit **Oracle, Alibaba und SAP** als
+Vergleich. Unternehmen aus **Depot und Watchlist im Google Sheet** ergänzen die
+Auswahl automatisch; Unternehmen und bis zu drei Vergleichsaktien lassen sich
+darunter ändern. Nicht verfügbare Daten zeigen **n. v.**
 oder **Noch nicht angebunden**. Der Einstieg zeigt den Aktienkurs; die Themen führen
 vom Überblick zum Deep Dive. Drei getrennte Glossare für Kennzahlen, Diagramme und
 Datenquellen stehen am Seitenende.

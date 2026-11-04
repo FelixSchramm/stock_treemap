@@ -482,16 +482,16 @@ def test_exploration_catalog_is_owner_only_and_revocation_hides_cached_names(pro
     monkeypatch.setattr(ui, "load_catalog", catalog)
     monkeypatch.setattr(view, "fetch", lambda *args: market_reads.append(True))
     app = make_app(owner_claims()).run()
+    assert not catalog_reads and not market_reads
     app.radio(key=ui.AREA_RADIO_KEY).set_value(view.AREA).run()
     assert not app.exception
-    assert not catalog_reads and not market_reads
-    app.button(key="exploration.load_catalog").click().run()
-    assert not app.exception
-    assert catalog_reads == [True] and not market_reads
+    assert catalog_reads == [True] and market_reads == [True]
+    app.selectbox(key=view.COMPANY_KEY).set_value(repr(company.key)).run()
+    assert not app.exception and market_reads == [True, True]
     assert any("Synthetic Protected Company" in text.value for text in app.markdown)
     calls.clear()
     monkeypatch.setattr(st, "user", owner_claims() | {"sub":"synthetic-revoked"})
     app.run()
     assert_closed(app, calls)
-    assert catalog_reads == [True] and not market_reads
+    assert catalog_reads == [True] and market_reads == [True, True]
     assert not any("Synthetic Protected Company" in text.value for text in app.markdown)

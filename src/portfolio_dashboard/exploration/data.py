@@ -37,7 +37,7 @@ def currency_code(value):
 def fetch(company: Company, comparisons=()):
     """Fetch only selected, metadata-checked listings and explicit US benchmarks.
 
-    Sheet mappings choose the symbol/venue/currency. Provider metadata must agree;
+    Public presets and Sheet mappings choose symbol/venue/currency. Metadata must agree;
     errors never fall back to Microsoft or to another company's cached snapshot.
     """
     import yfinance as yf

@@ -132,7 +132,7 @@ def test_ui_all_topics_offline_and_return_to_depot(monkeypatch):
             assert [e.label for e in app.expander][-3:] == [
                 "Glossar – Kennzahlen", "Glossar – Diagramme", "Glossar – Datenquellen"
             ]
-            if topic in {11, 12, 17, 28}:
+            if topic == 28:
                 assert app.warning, (group, topic)
                 assert any(
                     "nicht angebunden" in w.value or "nicht bestätigt" in w.value
@@ -161,6 +161,8 @@ def test_failed_live_refresh_preserves_old_snapshot(monkeypatch):
         from portfolio_dashboard.exploration.selection import Catalog, demo_catalog
 
         company = demo_catalog().companies[0]
+        st.session_state[view.COMPANY_KEY] = repr(company.key)
+        st.session_state[view.COMPARE_KEY] = []
         st.session_state[view.CATALOG_KEY + ".live"] = Catalog(depot=(company,))
         st.session_state[view.STATE + ".live"] = {(company, ()): demo_bundle(company)}
         view.render(

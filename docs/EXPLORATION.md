@@ -19,22 +19,31 @@ Dashboard vollständig offline mit deutlich markierten synthetischen Beispielen.
 Bekannte Symbole im Demo-Modus stehen **nicht** für echte Marktdaten.
 
 Im bereits eingerichteten lokalen bzw. produktiven Modus bleibt der bestehende
-Loopback-/Besitzerschutz des App-Einstiegs aktiv. Die Unternehmensauswahl verwendet
-dieselben konfigurierten Google-Sheet-Quellen wie **Depot** und **Watchlist**:
+Loopback-/Besitzerschutz des App-Einstiegs aktiv. Beim Öffnen von **Analyse**
+werden die Unternehmensliste und die Analysedaten automatisch geladen:
 
-1. **Unternehmen aus Sheet laden / aktualisieren** liest die Unternehmensliste
-   ohne Marktkurse für das gesamte Depot abzurufen.
-2. **Unternehmen** wählen; Name, Yahoo-Symbol, Handelsplatz und Herkunft stehen
-   in der Auswahl. Bis zu drei weitere Sheet-Aktien können verglichen werden.
-3. **Analysedaten laden / aktualisieren** lädt die gewählte Aktie, die Vergleiche
-   und benötigte Benchmark-/FX-Reihen. Danach funktionieren Hover, Filter und
-   Themenwechsel ohne erneuten Datenabruf.
+1. **Microsoft (MSFT)** ist die Startauswahl, **Oracle (ORCL)**,
+   **Alibaba (9988.HK)** und **SAP (SAP.DE)** sind die drei Vergleiche.
+   Diese vier öffentlichen Standardwerte sind unabhängig vom privaten Sheet verfügbar.
+2. Die vorhandenen Sheet-Quellen von **Depot** und **Watchlist** ergänzen die
+   Auswahl automatisch beim ersten Öffnen in der Sitzung. Es werden keine
+   Marktkurse für das gesamte Depot geladen.
+3. Unter **Unternehmen** und **Vergleichsunternehmen** lässt sich die Auswahl
+   ändern. Eine neue Auswahl lädt ihre Analysedaten, Benchmark- und FX-Reihen
+   automatisch. Bis zu drei weitere Aktien können verglichen werden.
+4. Der vorhandene **Aktualisieren**-Button oben liest die Sheet-Liste und die
+   aktuelle Analyse erneut. Separate Sheet- und Analysedaten-Ladebuttons entfallen.
 
-Verwendet werden vorhandene Yahoo-Zuordnungen aus der Listing-Konfiguration oder
-den unterstützten Mapping-Spalten im Sheet. Anzeigenamen und freie Ticker werden
+Hover, Filter, Themenwechsel und bereits geladene Auswahlen verwenden den
+Sitzungscache. Fehlgeschlagene Abrufe werden erst über **Aktualisieren** erneut
+versucht, damit ein normaler Seiten-Rerun keine Anfrage-Schleife auslöst.
+
+Die vier Standardwerte haben explizite Yahoo-Listings. Für zusätzliche Unternehmen
+werden vorhandene Zuordnungen aus der Listing-Konfiguration oder den unterstützten
+Mapping-Spalten im Sheet verwendet. Anzeigenamen und freie Ticker werden
 nicht automatisch als Mapping interpretiert. ETFs und fehlende Zuordnungen bleiben
-mit **n. v.** und einer Erklärung sichtbar. Identische Listings aus Depot und
-Watchlist werden zusammengeführt; verschiedene Handelsplätze bleiben getrennt.
+mit **n. v.** und einer Erklärung sichtbar. Identische Listings aus Standardauswahl,
+Depot und Watchlist werden zusammengeführt; verschiedene Handelsplätze bleiben getrennt.
 Yahoo-Metadaten müssen Symbol, Aktienart, Handelsplatz und Währung bestätigen.
 Das Sheet wird nicht verändert. Bestände, Gewichte und Einstandswerte werden
 nicht für die Unternehmensanalyse übernommen.
@@ -48,8 +57,8 @@ bleibt deren zuvor geladene Liste erhalten und wird entsprechend gekennzeichnet.
 Einzelne fehlende Yahoo-Ressourcen sperren nur die betroffenen Analysen.
 
 Am Seitenende stehen drei getrennte aufklappbare Bereiche: **Glossar – Kennzahlen**,
-**Glossar – Diagramme** und **Glossar – Datenquellen**. Sie bleiben auch vor dem
-Laden von Daten und bei nicht verfügbaren Analysen erreichbar.
+**Glossar – Diagramme** und **Glossar – Datenquellen**. Sie bleiben auch bei
+fehlgeschlagenen Abrufen und nicht verfügbaren Analysen erreichbar.
 [Glossar und unverändertes Pipeline-Original](glossary.md).
 
 ## Gestaltung und Navigation
@@ -139,10 +148,13 @@ Unternehmenswechsel ohne fremde Cache-Daten, Erhalt des letzten Stands bei Fehle
 Berichtswährungen, Metadatenabgleich und den Besitzerschutz vor dem Sheet-Zugriff.
 Die Sheet-Anbindung wird mit synthetischen Adapterantworten getestet; ein Abruf
 des privaten Google Sheets ist kein Bestandteil dieser Prüfung.
-Abschlussprüfung am 04.11.2026: **1.799 Tests bestanden**, zwei bestehende
+Abschlussprüfung am 04.11.2026: **1.802 Tests bestanden**, zwei bestehende
 yfinance/Pandas-Deprecation-Warnungen; der vollständige Ruff-Lauf ist fehlerfrei.
 Die Demo wurde in Chromium auf Desktop und mit 390 px Breite geprüft; der lokal
 gelieferte CI-Font wurde geladen und es trat kein horizontaler Seitenüberlauf auf.
+Ein zusätzlicher öffentlicher Live-Abruf bestätigte die vier Standard-Listings
+und renderte Kursverlauf sowie Aktienvergleich. Anbieterantworten wurden nicht
+als Dateien oder Testdaten gespeichert.
 
 Im Bestandsnotebook `exploratory_analysis/01_msft_api_rundgang.ipynb` wurden vor
 dem Merge ausschließlich Importformatierung und einzeilige Anweisungen korrigiert,

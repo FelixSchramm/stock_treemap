@@ -14,8 +14,10 @@ from portfolio_dashboard.exploration.charts import AnalysisUnavailable, build
 from portfolio_dashboard.exploration.data import fetch, prices
 from portfolio_dashboard.exploration.demo import demo_bundle
 from portfolio_dashboard.exploration.selection import (
+    DEFAULT_COMPANIES,
     Catalog,
     Company,
+    combine_companies,
     load_catalog,
     watchlist_companies,
 )
@@ -145,7 +147,9 @@ def test_watchlist_selection_never_requests_market_data():
     coordinator = WatchlistRefreshCoordinator(
         lambda at: calls.append(at) or watch_snapshot(),
         calendars={},
-        provider_factory=lambda listings: SimpleNamespace(latest_quote=forbidden,history=forbidden,fx=forbidden),
+        provider_factory=lambda listings: SimpleNamespace(
+            latest_quote=forbidden, history=forbidden, fx=forbidden
+        ),
         clock=lambda: NOW,
     )
     assert coordinator.read_selection().items
@@ -298,11 +302,13 @@ def live_page():
     view.render(demo=False, load_companies=load)
 
 
-def test_company_switch_does_not_reuse_other_company_data_or_reload_sheet(monkeypatch):
+def test_automatic_defaults_selection_changes_and_cache_do_not_reload_sheet(
+    monkeypatch,
+):
     calls = []
 
     def provider(company, comparisons):
-        calls.append(company.symbol)
+        calls.append((company.symbol, tuple(c.symbol for c in comparisons)))
         bundle = demo_bundle(company, comparisons)
         bundle["synthetic"] = False
         bundle["retrieved_at"] = pd.Timestamp.now(tz="UTC").isoformat()
@@ -310,29 +316,40 @@ def test_company_switch_does_not_reuse_other_company_data_or_reload_sheet(monkey
 
     monkeypatch.setattr(view, "fetch", provider)
     app = AppTest.from_function(live_page).run()
-    assert not app.exception and not calls
-    app.button(key="exploration.load_catalog").click().run()
-    assert not app.exception and not calls
-    app.button(key="exploration.load_data").click().run()
+    assert not app.exception and app.get("plotly_chart")
+    assert calls == [("MSFT", ("ORCL", "9988.HK", "SAP.DE"))]
+    assert app.selectbox(key=view.COMPANY_KEY).value == repr(DEFAULT_COMPANIES[0].key)
+    assert app.multiselect(key=view.COMPARE_KEY).value == [
+        repr(c.key) for c in DEFAULT_COMPANIES[1:]
+    ]
+    assert not app.button
+    app.run()
     app.radio(key=view.GROUP_KEY).set_value("Geschäftsmodell").run()
     app.selectbox(key=f"{view.TOPIC_KEY}.Geschäftsmodell").set_value(9).run()
     assert not app.exception and app.get("plotly_chart")
+    assert len(calls) == 1
     app.selectbox(key=view.COMPANY_KEY).set_value(repr(SECOND.key)).run()
-    assert not app.exception and not app.get("plotly_chart")
-    assert calls == [FIRST.symbol]
-    app.button(key="exploration.load_data").click().run()
+    assert not app.exception and app.get("plotly_chart")
+    assert calls[-1] == (SECOND.symbol, ("ORCL", "9988.HK", "SAP.DE"))
+    app.selectbox(key=view.COMPANY_KEY).set_value(repr(DEFAULT_COMPANIES[0].key)).run()
+    assert len(calls) == 2  # Existing Microsoft snapshot is reused.
+    app.multiselect(key=view.COMPARE_KEY).set_value([repr(FIRST.key)]).run()
     assert not app.exception
-    assert calls == [FIRST.symbol, SECOND.symbol]
+    assert calls[-1] == ("MSFT", (FIRST.symbol,))
     assert app.session_state["catalog_reads"] == 1
     snapshots = app.session_state[view.STATE + ".live"]
-    assert {b["symbol"] for b in snapshots.values()} == {FIRST.symbol, SECOND.symbol}
+    assert {b["symbol"] for b in snapshots.values()} == {"MSFT", SECOND.symbol}
+    assert len(snapshots) == 3
 
 
-def test_glossary_available_before_loading_sources():
+def test_glossary_available_when_automatic_market_loading_fails(monkeypatch):
+    monkeypatch.setattr(view, "fetch", lambda *args: {"prices": {}})
     app = AppTest.from_function(live_page).run()
     assert not app.exception
     assert [e.label for e in app.expander] == [
-        "Glossar – Kennzahlen", "Glossar – Diagramme", "Glossar – Datenquellen"
+        "Glossar – Kennzahlen",
+        "Glossar – Diagramme",
+        "Glossar – Datenquellen",
     ]
     metrics, charts, sources = app.expander
     assert "ROIC" in metrics.markdown[0].value
@@ -340,3 +357,70 @@ def test_glossary_available_before_loading_sources():
     assert "Noch nicht angebunden" in sources.markdown[0].value
     assert "t.history" in sources.markdown[0].value
     assert "t.history" not in metrics.markdown[0].value + charts.markdown[0].value
+
+
+def test_presets_merge_with_sheet_membership_without_promoting_free_tickers():
+    sheet = replace(DEFAULT_COMPANIES[0], origins=("Depot",), row_key="depot:2")
+    companies = combine_companies(DEFAULT_COMPANIES, (sheet, FIRST))
+    assert len(companies) == 5
+    assert companies[0].origins == ("Standardauswahl", "Depot")
+    assert companies[-1] == FIRST
+
+
+def test_failed_automatic_fetch_does_not_retry_on_rerun_and_refresh_recovers(
+    monkeypatch,
+):
+    calls = []
+
+    def provider(company, comparisons):
+        calls.append(company.symbol)
+        if len(calls) == 1:
+            raise RuntimeError("Synthetic provider failure")
+        return demo_bundle(company, comparisons)
+
+    def page():
+        import streamlit as st
+
+        from portfolio_dashboard.exploration import view
+        from portfolio_dashboard.exploration.selection import Catalog
+
+        def sheet(previous):
+            st.session_state["sheet_reads"] = st.session_state.get("sheet_reads", 0) + 1
+            return Catalog()
+
+        view.render(
+            demo=False, refresh_clicked=st.button("Aktualisieren"), load_companies=sheet
+        )
+
+    monkeypatch.setattr(view, "fetch", provider)
+    app = AppTest.from_function(page).run()
+    assert not app.exception and not app.get("plotly_chart")
+    assert any("Abruf fehlgeschlagen" in w.value for w in app.warning)
+    app.run()
+    assert calls == ["MSFT"] and app.session_state["sheet_reads"] == 1
+    app.button[0].click().run()
+    assert not app.exception and app.get("plotly_chart")
+    assert calls == ["MSFT", "MSFT"] and app.session_state["sheet_reads"] == 2
+    assert not app.session_state[view.STATE + ".failures.live"]
+
+
+def test_sheet_failure_keeps_defaults_available_without_retry_loop(monkeypatch):
+    def page():
+        import streamlit as st
+
+        from portfolio_dashboard.exploration import view
+
+        def sheet(previous):
+            st.session_state["sheet_reads"] = st.session_state.get("sheet_reads", 0) + 1
+            raise RuntimeError("Synthetic private error must not be displayed")
+
+        view.render(demo=False, load_companies=sheet)
+
+    monkeypatch.setattr(view, "fetch", demo_bundle)
+    app = AppTest.from_function(page).run()
+    assert not app.exception and app.get("plotly_chart")
+    assert len(app.selectbox(key=view.COMPANY_KEY).options) == 4
+    assert any("Sheet-Liste konnte nicht geladen" in w.value for w in app.warning)
+    assert not any("Synthetic private error" in w.value for w in app.warning)
+    app.run()
+    assert app.session_state["sheet_reads"] == 1

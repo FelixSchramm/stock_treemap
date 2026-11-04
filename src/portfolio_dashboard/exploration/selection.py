@@ -38,6 +38,44 @@ class Company:
         return self.name + listing + " · " + " + ".join(self.origins)
 
 
+# Public starting selection from the original analysis, independent of holdings.
+# Live Yahoo metadata must still confirm each listing before any prices are used.
+DEFAULT_COMPANIES = tuple(
+    Company(
+        name,
+        symbol,
+        exchange,
+        currency,
+        ("Standardauswahl",),
+        f"default:{symbol}",
+        Decimal("1"),
+        EquityForm.SHARE,
+    )
+    for name, symbol, exchange, currency in (
+        ("Microsoft", "MSFT", "NMS", "USD"),
+        ("Oracle", "ORCL", "NYQ", "USD"),
+        ("Alibaba", "9988.HK", "HKG", "HKD"),
+        ("SAP", "SAP.DE", "GER", "EUR"),
+    )
+)
+
+
+def combine_companies(*groups):
+    merged = {}
+    for group in groups:
+        for item in group:
+            if item.key not in merged:
+                merged[item.key] = item
+            else:
+                first = merged[item.key]
+                merged[item.key] = replace(
+                    first,
+                    origins=tuple(dict.fromkeys(first.origins + item.origins)),
+                    equity_form=first.equity_form or item.equity_form,
+                )
+    return tuple(merged.values())
+
+
 @dataclass(frozen=True, repr=False)
 class Catalog:
     depot: tuple[Company, ...] = ()
@@ -48,18 +86,7 @@ class Catalog:
 
     @property
     def companies(self):
-        merged = {}
-        for item in (*self.depot, *self.watchlist):
-            if item.key not in merged:
-                merged[item.key] = item
-            else:
-                first = merged[item.key]
-                merged[item.key] = replace(
-                    first,
-                    origins=tuple(dict.fromkeys(first.origins + item.origins)),
-                    equity_form=first.equity_form or item.equity_form,
-                )
-        return tuple(merged.values())
+        return combine_companies(self.depot, self.watchlist)
 
 
 def portfolio_companies(snapshot, mappings):
@@ -72,9 +99,7 @@ def portfolio_companies(snapshot, mappings):
         mapping = instrument.provider_mapping if listing else None
         reason = None
         if instrument.instrument_type is not InstrumentType.STOCK:
-            reason = (
-                "n. v. – Analyse ist nur für einzelne Aktien angebunden."
-            )
+            reason = "n. v. – Analyse ist nur für einzelne Aktien angebunden."
         elif mapping is None or mapping.provider != "yfinance":
             reason = "n. v. – Geprüfte Yahoo-Zuordnung fehlt. Anzeigename und Ticker allein reichen nicht."
         unit = instrument.quote_unit
