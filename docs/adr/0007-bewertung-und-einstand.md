@@ -1,7 +1,7 @@
 # ADR 0007: EUR-Bewertung und Gewinn/Verlust seit Kauf
 
 - **Datum:** 2026-10-23
-- **Status:** Angenommen; Kostenbasis nach Teilverkäufen zu verifizieren
+- **Status:** Angenommen; Kostenbasis nach Teilverkäufen zu verifizieren; Herkunft des Einstands teilweise ersetzt durch [ADR 0012](0012-sheet-datenmodell.md) (FIFO aus dem Transaktionsjournal)
 - **Herkunft:** Seit-Kauf-Prozentwert vom Nutzer; EUR aus dem Sheet abgeleitet.
 
 ## Kontext

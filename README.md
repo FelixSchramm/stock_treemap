@@ -112,8 +112,63 @@ flowchart LR
 - **Trennung von Fachlogik und Oberfläche:** Die Module unter `src/portfolio_dashboard` importieren weder Streamlit noch Datenanbieter. Ein Test prüft das in einem frischen Prozess mit gesperrtem Netzwerk.
 - **Tests:** über 1.100 Pytest-Fälle, darunter Regressionstests mit festen Abnahmewerten. Netzwerkzugriffe sind in der Testumgebung gesperrt.
 - **CI:** GitHub Actions führt bei jedem Pull Request gesperrte Installation (`uv.lock`), Ruff und Pytest aus.
-- **Nachvollziehbare Entscheidungen:** elf [Architecture Decision Records](docs/adr/README.md) dokumentieren Produktumfang, Datenquellen, Rechenregeln, Zugriff und Betrieb.
+- **Nachvollziehbare Entscheidungen:** zwölf [Architecture Decision Records](docs/adr/README.md) dokumentieren Produktumfang, Datenquellen, Rechenregeln, Zugriff und Betrieb.
 - **Sicherheit:** OIDC-Login über Streamlit/Authlib. Vor jedem Datenzugriff prüft der Server erneut Issuer, Subject, Audience und Tokenlaufzeit. Secrets liegen ausschließlich in der Secret-Verwaltung des Hosts.
+
+## Datenmodell im Google Sheet (Zielbild)
+
+Das Sheet wird wie eine kleine Datenbank geführt: ein Blatt pro Tabelle, Spaltennamen in Zeile 1, keine Formeln oder Summen in Eingabeblättern. Beschlossen in [ADR 0012](docs/adr/0012-sheet-datenmodell.md); die Umsetzung ist offen, heute liest die App noch das bisherige Depotblatt.
+
+```mermaid
+erDiagram
+    Instrumente ||--o{ Transaktionen : "isin"
+    Instrumente ||--o{ Kurse_manuell : "isin"
+    Instrumente ||--o| Watchlist : "isin"
+    Transaktionen |o--o| Transaktionen : "bezug_txn_id (Umtausch)"
+
+    Instrumente {
+        text isin PK
+        text name
+        text typ "Aktie, ETF, Derivat"
+        text aktienform "share oder adr"
+        text anteilsklasse "nur ETF"
+        text basiswert_isin "nur Derivat"
+        text kategorie
+        text google_symbol "nur Sheet-Formeln"
+        text yahoo_symbol
+        text yahoo_handelsplatz
+        text waehrung
+        date geprueft "setzt nur der Besitzer"
+    }
+    Transaktionen {
+        text txn_id PK "T00001, fortlaufend"
+        date datum
+        text isin FK
+        text art "Kauf, Sparplan, Verkauf, Einbuchung, Ausbuchung"
+        decimal stueck "immer positiv"
+        decimal kurs_eur
+        decimal gebuehr_eur
+        decimal steuern_eur
+        decimal betrag_eur
+        text bezug_txn_id FK
+        text broker_ref UK "Auftragsnummer des Brokers"
+        text notiz
+    }
+    Kurse_manuell {
+        text isin PK, FK
+        date datum PK
+        decimal kurs_eur
+    }
+    Watchlist {
+        text isin PK, FK
+        text notiz
+    }
+```
+
+- **Schlüssel:** Die ISIN identifiziert das Wertpapier, die `txn_id` die Transaktion. Positionen haben keine eigene ID, sie sind die Summe der Transaktionen je ISIN.
+- **Abgeleitet statt gepflegt:** Stückzahl, Einstand der verbleibenden Stücke (FIFO) und realisierter Gewinn/Verlust berechnet die App aus dem Journal. Ein Umtausch ist eine Ausbuchung plus eine verknüpfte Einbuchung, die den Einstand übernimmt.
+- **Geprüfte Kurszuordnung:** Live-Kurse gibt es nur für Instrumente, bei denen der Besitzer `geprueft` gesetzt hat. Der Abgleich gegen die Antwort des Kursanbieters bleibt bestehen.
+- **Ansichten:** `Depot` und `Auswertung` sind Formelblätter für den Menschen und werden von der App nicht gelesen. Die Agenten-Blätter hängen ebenfalls über die ISIN an `Instrumente`.
 
 ## Stand und Grenzen
 
@@ -124,6 +179,7 @@ flowchart LR
 | Login und Besitzerprüfung | umgesetzt |
 | FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Übersicht „Innerer Wert“ und Detail- und Annahmenansicht (Editor, Rechenweg, Sensitivität) umgesetzt; echte Annahmen trägt der Besitzer bei Nutzung ein |
 | Watchlist aus dem Sheet | Kursabruf und Ansicht umgesetzt |
+| Sheet-Datenmodell mit Transaktionsjournal ([ADR 0012](docs/adr/0012-sheet-datenmodell.md)) | beschlossen; Umsetzung in drei Stufen offen |
 | Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsübersicht und Annahmenerfassung umgesetzt; dauerhafter Speicher für Szenarien im Live-Betrieb offen (Besitzerentscheidung) |
 
 Kursdaten stammen aus `yfinance`, einer inoffiziellen Schnittstelle; Kurse können verzögert sein. Das Dashboard ist ein privates Analysewerkzeug und keine Anlageberatung.

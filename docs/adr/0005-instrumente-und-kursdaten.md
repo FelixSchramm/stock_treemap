@@ -1,7 +1,7 @@
 # ADR 0005: eindeutige Instrumente und gekennzeichnete Kursqualität
 
 - **Datum:** 2026-10-23
-- **Status:** Angenommen; Anbieterabdeckung einzelner Produkte offen
+- **Status:** Angenommen; Anbieterabdeckung einzelner Produkte offen; Ablageort der geprüften Zuordnung teilweise ersetzt durch [ADR 0012](0012-sheet-datenmodell.md)
 - **Herkunft:** Technische Entscheidung aus der Datenprüfung.
 
 ## Kontext
