@@ -44,6 +44,8 @@ LOCAL_SHEET_METADATA = SheetMetadata(
     NumberLocale.GERMAN, cost_basis_verified_remaining=True
 )
 EUR = QuoteUnit("EUR", Decimal("1"))
+# instrument_id of a Sheet stock mapped by its Yahoo symbol because it has no ISIN.
+SYMBOL_ID_PREFIX = "yahoo-symbol:"
 # Regular hours (Europe/Berlin) per supported Yahoo exchangeName code.
 VENUE_HOURS = {
     "GER": (time(9), time(17, 30)),  # Xetra
@@ -245,8 +247,16 @@ def sheet_listing_candidates(
             and item.instrument.instrument_type is source.instrument_type
         )), None)
         try:
-            if entry.venue not in VENUE_HOURS or source.source_isin is None:
+            if entry.venue not in VENUE_HOURS:
                 raise ValueError
+            # Without an ISIN the explicit symbol is the identity (stocks only,
+            # enforced by the parser); it is namespaced so it never meets an ISIN.
+            if source.source_isin is None:
+                instrument_id = f"{SYMBOL_ID_PREFIX}{entry.symbol}"
+            elif matching:
+                instrument_id = matching.instrument.instrument_id
+            else:
+                instrument_id = source.source_isin
             if any(item.isin == source.source_isin
                    and item.instrument.instrument_type is not source.instrument_type
                    for item in primary):
@@ -254,8 +264,7 @@ def sheet_listing_candidates(
             candidate = VerifiedListing(
                 Instrument(
                     source.instrument_type,
-                    instrument_id=(matching.instrument.instrument_id if matching
-                                   else source.source_isin),
+                    instrument_id=instrument_id,
                     trading_venue=entry.venue,
                     quote_unit=EUR,
                     provider_mapping=ProviderMapping("yfinance", entry.symbol),
@@ -299,13 +308,19 @@ def sheet_listing_candidates(
     )
     by_product = {
         (candidate.isin, candidate.instrument.instrument_type): candidate
-        for row, candidate in candidates.items() if row not in invalid
+        for row, candidate in candidates.items()
+        if row not in invalid and candidate.isin is not None
     }
-    return snapshot, {
-        p.source_row: by_product[(p.instrument.source_isin, p.instrument.instrument_type)]
-        for p in snapshot.positions
-        if (p.instrument.source_isin, p.instrument.instrument_type) in by_product
-    }
+    selected = {}
+    for p in snapshot.positions:
+        if p.instrument.source_isin is None:
+            if p.source_row in candidates and p.source_row not in invalid:
+                selected[p.source_row] = candidates[p.source_row]
+        elif (p.instrument.source_isin, p.instrument.instrument_type) in by_product:
+            selected[p.source_row] = by_product[
+                (p.instrument.source_isin, p.instrument.instrument_type)
+            ]
+    return snapshot, selected
 
 
 def build_local_coordinator(config: AppConfig) -> PortfolioRefreshCoordinator:

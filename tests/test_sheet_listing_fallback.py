@@ -362,6 +362,58 @@ def test_etf_sheet_mapping_requires_matching_explicit_share_class(monkeypatch, t
     assert any(w.code == "invalid_yahoo_listing" for w in bundle.snapshot.warnings)
 
 
+@pytest.mark.parametrize("mode", ["local", "production"])
+def test_stock_without_isin_is_mapped_by_its_explicit_yahoo_symbol(monkeypatch, tmp_path, mode):
+    coordinator, _, market = loader(
+        monkeypatch, tmp_path, primary=False, rows=[HEADERS, sheet_row(isin="")], mode=mode
+    )
+    bundle = coordinator.load()
+    assert active_symbol(bundle) == "ALTERNATIVE.DE"
+    assert bundle.valuation.total_eur == Decimal(220)
+    assert all(bundle.course_performances[p][0].percent == Decimal(10) for p in bundle.course_performances)
+    assert not any(w.code == "invalid_yahoo_listing" for w in bundle.snapshot.warnings)
+    assert ("ALTERNATIVE.DE", "history") in market.calls
+
+
+def test_isin_stays_primary_and_a_malformed_isin_never_falls_back_to_the_symbol(monkeypatch, tmp_path):
+    coordinator, _, _ = loader(monkeypatch, tmp_path, rows=[HEADERS, sheet_row()])
+    assert active_symbol(coordinator.load()) == "PRIMARY.DE"
+    coordinator, _, market = loader(
+        monkeypatch, tmp_path, primary=False, rows=[HEADERS, sheet_row(isin="not-an-isin")]
+    )
+    bundle = coordinator.load()
+    assert bundle.valuation.total_eur == Decimal(100)
+    assert not market.calls
+
+
+@pytest.mark.parametrize("row", [
+    sheet_row(isin="", kind="ETF", form="", share_class="Acc"),
+    sheet_row(isin="", kind="Derivat"),
+    sheet_row(isin="", form=""),
+])
+def test_symbol_fallback_without_isin_is_limited_to_complete_stock_declarations(monkeypatch, tmp_path, row):
+    coordinator, _, market = loader(monkeypatch, tmp_path, primary=False, rows=[HEADERS, row])
+    bundle = coordinator.load()
+    assert bundle.available and bundle.valuation.total_eur == Decimal(100)
+    assert any(w.code == "invalid_yahoo_listing" for w in bundle.snapshot.warnings)
+    assert not market.calls
+
+
+def test_rows_without_isin_share_a_product_only_for_the_same_symbol(monkeypatch, tmp_path):
+    coordinator, _, _ = loader(monkeypatch, tmp_path, primary=False, rows=[
+        HEADERS, sheet_row(isin=""), sheet_row(isin=""),
+    ])
+    bundle = coordinator.load()
+    assert len(bundle.valuation.groups) == 1
+    assert bundle.valuation.total_eur == Decimal(440)
+    coordinator, _, market = loader(monkeypatch, tmp_path, primary=False, rows=[
+        HEADERS, sheet_row(isin=""), sheet_row(),
+    ])
+    bundle = coordinator.load()
+    assert bundle.valuation.total_eur == Decimal(200)
+    assert not market.calls
+
+
 def test_duplicate_yahoo_header_is_a_safe_optional_error(monkeypatch, tmp_path):
     headers = list(HEADERS)
     headers[23] = "Yahoo-Symbol"

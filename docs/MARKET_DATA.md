@@ -63,6 +63,13 @@ weiter, lesen aber keine außerhalb ihres Bereichs liegenden Ersatzangaben.
 | `Yahoo-Anteilsklasse` | Für ETFs zwingend geprüfte Anteilsklasse; für Aktien leer |
 
 Die bestehende ISIN-Überschrift und der Instrumenttyp bestimmen das Produkt.
+Bleibt die ISIN-Zelle einer **Aktie** leer, ist das ausdrücklich angegebene
+`Yahoo-Symbol` die Identität (`instrument_id` = `yahoo-symbol:<Symbol>`); Zeilen
+mit demselben Symbol bilden eine Gruppe. Das gilt nicht für ETFs und Derivate
+(ISIN bzw. eigene Produktkennung bleibt Pflicht) und nicht für eine vorhandene,
+aber ungültige ISIN, die weiterhin verworfen wird und die Zuordnung ablehnt.
+Eine Zeile mit ISIN und eine ohne ISIN mit demselben Symbol widersprechen sich
+und werden beide ignoriert.
 Alle Angaben müssen vollständig sein; Form/Klasse werden nicht geraten oder
 automatisch geerbt. Die Pflege ist dieselbe ausdrückliche Besitzerbestätigung
 der Produktidentität wie ein privater TOML-Eintrag. Form und Klasse müssen mit
