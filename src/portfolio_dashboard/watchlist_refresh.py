@@ -33,7 +33,7 @@ from portfolio_dashboard.config import (
     parse_watchlist_range,
 )
 from portfolio_dashboard.instruments import EquityForm, VerifiedListing
-from portfolio_dashboard.local_source import LOCAL_SHEET_METADATA, venue_calendars
+from portfolio_dashboard.local_source import SHEET_NUMBER_LOCALE, venue_calendars
 from portfolio_dashboard.market_data import (
     FxObservation,
     MarketDataProvider,
@@ -680,7 +680,7 @@ def _coordinator(config: AppConfig, session) -> WatchlistRefreshCoordinator | No
     if config.source.watchlist_range is None:
         return None
     reader = WatchlistSheetsReader(
-        config.source, session, LOCAL_SHEET_METADATA.number_locale
+        config.source, session, SHEET_NUMBER_LOCALE
     )
     return WatchlistRefreshCoordinator(
         reader.read,

@@ -8,8 +8,6 @@ from portfolio_dashboard import local_source
 from portfolio_dashboard.local_source import (
     US_VENUE_HOURS,
     VENUE_HOURS,
-    ListingsFileError,
-    parse_listings,
     us_holidays,
     venue_calendars,
 )
@@ -166,16 +164,7 @@ def test_calendars_are_deterministic_and_cover_every_watchlist_exchange():
 
 def test_us_venues_do_not_widen_the_depot_listing_registry():
     assert set(US_VENUE_HOURS) == set(US_VENUES) and set(VENUE_HOURS) == set(GERMAN_VENUES)
-    entry = {
-        "type": "stock",
-        "isin": "DE000SYN0001",
-        "symbol": "SYN",
-        "venue": "NMS",
-        "equity_form": "share",
-    }
-    with pytest.raises(ListingsFileError):
-        parse_listings([entry])
-    assert parse_listings([{**entry, "venue": "GER"}])
+    assert local_source.DEPOT_VENUES == {venue: "EUR" for venue in GERMAN_VENUES}
     assert local_source.VENUE_HOURS is VENUE_HOURS
 
 

@@ -24,7 +24,6 @@ def production_settings() -> dict[str, str]:
         "PORTFOLIO_OWNER_ISSUER": "https://accounts.google.com",
         "PORTFOLIO_OWNER_SUBJECT": "synthetic-owner-subject",
         "PORTFOLIO_SHEET_ID": "synthetic-source-id",
-        "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
     }
 
 
@@ -32,7 +31,6 @@ def local_settings() -> dict[str, str]:
     return {
         "PORTFOLIO_MODE": "local",
         "PORTFOLIO_SHEET_ID": "synthetic-source-id",
-        "PORTFOLIO_SHEET_RANGE": "synthetic-source-range",
         "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-local-file.json",
     }
 
@@ -117,7 +115,6 @@ def test_production_never_takes_a_key_file_path():
     }
     config = load_config(values, auth_settings=production_auth())
     assert config.source.credentials_file is None
-    assert config.source.listings_file is None
 
 
 @pytest.mark.parametrize("field", ["PORTFOLIO_MODE", "PORTFOLIO_SOURCE", "PORTFOLIO_PROVIDER", "PORTFOLIO_LOGIN_PROVIDER", "PORTFOLIO_OWNER_ISSUER"])

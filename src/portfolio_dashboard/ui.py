@@ -857,7 +857,7 @@ def render_valuation_area(
             age = format_snapshot_age(bundle.last_attempt_at, datetime.now(UTC))
             stamps.append(f"Kurse Watchlist: {stamp} (Alter: {age})")
 
-    subjects = collect_subjects(portfolio, entries, source.listings)
+    subjects = collect_subjects(portfolio, entries, source.registry())
     state, loaded = valuation_view.current_state(
         source, loader, subjects, explicit=explicit, auto=demo
     )

@@ -46,86 +46,24 @@ Bewertungs-/Periodenergebnis erhalten. Tabelle, Positionsdetails und Datenstatus
 Unbekannte Codes ergeben einen neutralen deutschen Text; Warnungsmeldungen,
 Symbole, Rohantworten und Ausnahmetexte werden nie als Fehlerursache ausgegeben.
 
-## Ausdrücklich gepflegte Sheet-Ersatzzuordnung (#101)
+## Geprüfte Kurszuordnung aus dem Tab Instrumente (ADR 0012)
 
-Der lokale und der produktive Lader lesen vier optionale, eindeutig benannte
-Überschriften innerhalb **N–X**. Hinter den bisherigen Spalten können sie in
-**U–X** stehen. Der konfigurierte Sheet-Bereich muss diese Spalten einschließen
-und bleibt explizit begrenzt, beispielsweise `'<Tab>'!A1:X500`; unbeschränkte
-Spaltenbereiche bleiben gesperrt. Bestehende A–M..A–T-Bereiche funktionieren
-weiter, lesen aber keine außerhalb ihres Bereichs liegenden Ersatzangaben.
+Der lokale und der produktive Lader beziehen alle Listings aus dem Sheet-Tab
+`Instrumente`. Ein Listing wird zum `VerifiedListing`, wenn `yahoo_symbol`,
+`yahoo_handelsplatz` und `waehrung` vollständig sind, `geprueft` ein Datum trägt
+und der Handelsplatz für das Depot unterstützt ist (`GER`, `FRA`, `STU`, `MUN`,
+`DUS`; jeweils EUR, Faktor 1). Aktien benötigen `aktienform`, ETFs
+`anteilsklasse`; Derivate erhalten keine Zuordnung. Ein Symbol für mehrere ISINs
+wird für alle verworfen. Je Instrument gibt es genau ein Listing; der frühere
+Primär-/Ersatzmechanismus (#101) und die privaten Listing-Dateien sind entfernt.
 
-| Überschrift | Inhalt |
-| --- | --- |
-| `Yahoo-Symbol` | Exakter, vom Besitzer geprüfter Yahoo-Symbolstring |
-| `Yahoo-Handelsplatz` | `GER`, `FRA`, `STU`, `MUN` oder `DUS`; fest EUR, Faktor 1 |
-| `Yahoo-Aktienform` | Für Aktien zwingend `share` oder `adr`; für ETFs leer |
-| `Yahoo-Anteilsklasse` | Für ETFs zwingend geprüfte Anteilsklasse; für Aktien leer |
-
-Die bestehende ISIN-Überschrift und der Instrumenttyp bestimmen das Produkt.
-Bleibt die ISIN-Zelle einer **Aktie** leer, ist das ausdrücklich angegebene
-`Yahoo-Symbol` die Identität (`instrument_id` = `yahoo-symbol:<Symbol>`); Zeilen
-mit demselben Symbol bilden eine Gruppe. Das gilt nicht für ETFs und Derivate
-(ISIN bzw. eigene Produktkennung bleibt Pflicht) und nicht für eine vorhandene,
-aber ungültige ISIN, die weiterhin verworfen wird und die Zuordnung ablehnt.
-Eine Zeile mit ISIN und eine ohne ISIN mit demselben Symbol widersprechen sich
-und werden beide ignoriert.
-Alle Angaben müssen vollständig sein; Form/Klasse werden nicht geraten oder
-automatisch geerbt. Die Pflege ist dieselbe ausdrückliche Besitzerbestätigung
-der Produktidentität wie ein privater TOML-Eintrag. Form und Klasse müssen mit
-einem vorhandenen privaten Listing derselben ISIN/Typ-Identität übereinstimmen.
-Ein anderes Symbol am **gleichen Handelsplatz** ist zulässig, etwa als explizite
-Korrektur eines nicht mehr nutzbaren Symbols. Symbole werden nicht anhand von
-Name, Ticker, Suffix, Stammaktie, Index oder Basiswert hergeleitet. Ein technisch
-gültiges falsches Produktsymbol ist ohne externe Identitätsprüfung nicht
-erkennbar; diese Prüfung bleibt vor der privaten Eintragung beim Besitzer.
-
-Die Auswahl erfolgt einmal für das ganze Produkt, mit einer gemeinsamen Quote
-und Historie für alle vier Perioden:
-
-1. Ein vollständig nutzbares primäres App-Listing gewinnt; kein Ersatzabruf.
-2. Fehlt es oder ist seine Quote abgelehnt, wird die gepflegte Alternative versucht.
-3. Bei nutzbarer primärer Quote mit lückenhaften Perioden gewinnt die Alternative
-   nur, wenn ihre verfügbaren Perioden eine **echte Obermenge** bilden. Vorhandene
-   primäre Perioden dürfen nicht zugunsten anderer Perioden verloren gehen.
-4. Bei Gleichstand oder ungeeignetem Ersatz bleibt die primäre Zuordnung.
-   Sind beide Abrufe unbrauchbar, bleiben gekennzeichneter Sheet-Wert/n. v.
-   und die sichere Fehlerursache sichtbar. Eine gültige alternative Quote ohne
-   nutzbare Historie kann bei fehlender Primärzuordnung weiterhin bewerten;
-   Kursperioden bleiben dann n. v. mit dem Historiengrund.
-
-Ein fehlgeschlagenes Listing ist noch kein Anbieterausfall: Der Cache wertet
-Fehler je **Position** (primäres Listing plus gepflegter Ersatz, der direkt
-danach abgerufen wird). Eine Position erhöht die anbieterweite Fehlerserie
-höchstens einmal und nur, wenn alle ihre Kandidaten fehlschlagen; jeder
-erfolgreiche Abruf setzt die Serie zurück. Gesunde Ersatzlistings bleiben so
-unabhängig von davor liegenden fehlerhaften Listings erreichbar, solange der
-Anbieter antwortet. Ein echter Ausfall (alle Kandidaten fehlerhaft) öffnet das
-anbieterweite Backoff unverändert. Die Wiederaufnahme prüft Positionen mit dem
-fehlerärmsten Kandidaten zuerst. Reine Ersatzpositionen ohne primäres
-App-Listing sowie Positionen ohne Ersatz zählen einzeln und können in einem
-ersten Durchgang nachfolgende gesunde Schlüssel sperren; das heilt sich über
-die Sortierung nach Fehlerzahl ab dem nächsten Durchgang nach Ablauf des
-Backoffs.
-
-Referenzkurs und aktueller Kurs werden nie zwischen Listings gemischt. Alle
-Provider-Metadaten-, Einheiten-, Kalender-, Split- und Historienprüfungen bleiben
-streng. Fehlerhafte/unvollständige optionale Zeilen oder widersprüchliche
-Produkt-/Symbolzuordnungen werden einzeln mit neutralem Hinweis ignoriert.
-Andere Bestände bleiben verfügbar. Die bisherige Gesamtfehlerstrategie für
-ungültige private TOML-Einträge bleibt bestehen. Derivate und USD-Listings
-werden in diesen Ladewegen weiterhin nicht unterstützt; USD erfordert unter
-anderem den Kalender aus #84 und eine getrennte Besitzerentscheidung.
-
-**Kurszuordnung** in Tabelle und Positionsdetails nennt App/Sheet-Ersatz,
-Provider, aktives Symbol und Handelsplatz. Der Status und Datenstatus nennen
-die Herkunft ebenfalls, auch in **Seit Kauf**. Ein versuchter, nicht gewählter
-Ersatz wird kenntlich gemacht. Ein erfolgreicher Bestandsrefresh ersetzt die
-Kandidaten vollständig; Entfernen oder Wechseln einer Sheet-Angabe verhindert
-die weitere Nutzung der vorherigen Zuordnung. Der Cache trennt nach dem
-vollständigen Listinginstrument einschließlich Provider-Symbol und Handelsplatz.
-Ein fehlgeschlagener Bestandsrefresh behält das bisherige atomare Bundle samt
-Zuordnung und Perioden; der vorhandene Backoff bleibt wirksam.
+Die Listings gehören immer zu dem Bestandsabruf, mit dem sie gelesen wurden; ein
+fehlgeschlagener Abruf behält Bestand und Zuordnung des letzten Erfolgs. Symbole
+werden nicht anhand von Name, Ticker, Suffix oder Basiswert hergeleitet. Ein
+technisch gültiges falsches Produktsymbol ist ohne externe Identitätsprüfung nicht
+erkennbar; diese Prüfung bleibt beim Besitzer, der sie mit `geprueft` bestätigt.
+**Kurszuordnung** in Tabelle und Positionsdetails nennt Provider, Symbol und
+Handelsplatz.
 
 ## Zeitpunkt und reguläre Sitzung
 

@@ -490,12 +490,16 @@ class OverviewSource:
     versioning and conflict as there); without it the detail view (#80) cannot save.
     """
 
-    listings: tuple[VerifiedListing, ...]
+    listings: tuple[VerifiedListing, ...] | Callable[[], tuple[VerifiedListing, ...]]
     scenario_reader: Callable[[VerifiedFundamentalIdentity], ScenarioDocument | None]
     clock: Callable[[], datetime]
     portfolio: PortfolioValuation | None = None
     demo: bool = False
     scenario_saver: Callable[[ScenarioDocument], ScenarioDocument] | None = None
+
+    def registry(self) -> tuple[VerifiedListing, ...]:
+        """Current registry; production passes a callable bound to the latest holdings."""
+        return self.listings() if callable(self.listings) else self.listings
 
 
 # --- evaluation inputs -------------------------------------------------------------

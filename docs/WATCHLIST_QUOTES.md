@@ -117,7 +117,7 @@ Parser-`warnings`.
 
 ## Sheets-Abruf
 
-- Identische Abfrage wie `SheetsAdapter` (`valueRenderOption=UNFORMATTED_VALUE`,
+- Gleiche Render-Optionen wie `JournalSheetsReader` (`valueRenderOption=UNFORMATTED_VALUE`,
   `dateTimeRenderOption=SERIAL_NUMBER`), ein GET ohne Redirect und mit TLS-Prüfung,
   neutrale Fehlercodes, keine Wiederholung. Die Konstante `SHEET_REQUEST_PARAMS` wird in
   einem Test gegen die Anfrage des Depot-Adapters geprüft. Prozentspalten haben damit

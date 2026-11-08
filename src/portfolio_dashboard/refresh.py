@@ -34,7 +34,7 @@ from portfolio_dashboard.quote_cache import (
     supports_period_return,
 )
 from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
-from portfolio_dashboard.sheets_adapter import SheetsReadResult
+from portfolio_dashboard.sheets_adapter import JournalReadResult, SheetsReadResult
 from portfolio_dashboard.treemap import (
     SHEET_UNKNOWN_QUOTE_STATUS,
     Performance,
@@ -271,11 +271,10 @@ class PortfolioRefreshCoordinator:
 
     def __init__(
         self,
-        read_holdings: Callable[[datetime], SheetsReadResult | PortfolioSnapshot],
+        read_holdings: Callable[[datetime], SheetsReadResult | JournalReadResult | PortfolioSnapshot],
         cache: QuoteCache,
         *,
-        listings: tuple[VerifiedListing, ...] = (),
-        fallback_listings: Callable[[], Mapping[int, VerifiedListing]] | None = None,
+        listings: tuple[VerifiedListing, ...] | Callable[[], tuple[VerifiedListing, ...]] = (),
         selection_reader: Callable[[datetime], tuple[PortfolioSnapshot, Mapping[int, VerifiedListing]]] | None = None,
         fx_pairs: Mapping[str, VerifiedFxPair] | None = None,
         calendars: Mapping[str, SessionCalendar] | None = None,
@@ -284,9 +283,10 @@ class PortfolioRefreshCoordinator:
         """Initialize the refresh coordinator.
 
         :param read_holdings: Read-only callable taking ``attempted_at`` and returning
-            a ``SheetsReadResult`` or ``PortfolioSnapshot``.
+            a ``JournalReadResult``, ``SheetsReadResult`` or ``PortfolioSnapshot``.
         :param cache: ``QuoteCache`` instance managing TTL and provider backoff.
-        :param listings: Verified instrument listings registry.
+        :param listings: Verified instrument listings registry, or a callable returning
+            the registry read together with the latest holdings.
         :param selection_reader: Isolated Sheet reader for company selection; does not mutate quote mappings.
         :param fx_pairs: Optional mapping of foreign currency code to ``VerifiedFxPair``.
         :param calendars: Optional mapping of trading venue to ``SessionCalendar``.
@@ -295,8 +295,8 @@ class PortfolioRefreshCoordinator:
         self._selection_reader = selection_reader
         self._read_holdings = read_holdings
         self._cache = cache
-        self._listings = listings
-        self._fallback_listings = fallback_listings
+        self._listings_source = listings if callable(listings) else (lambda: listings)
+        self._listings = self._listings_source()
         self._fx_pairs = dict(fx_pairs) if fx_pairs is not None else {}
         self._calendars = dict(calendars) if calendars is not None else {}
         self._clock = clock
@@ -304,8 +304,8 @@ class PortfolioRefreshCoordinator:
 
     @property
     def listings(self) -> tuple[VerifiedListing, ...]:
-        """The verified listing registry this coordinator was built with."""
-        return self._listings
+        """The verified listing registry belonging to the latest holdings read."""
+        return self._listings_source()
 
     @property
     def last_bundle(self) -> DashboardBundle | None:
@@ -337,7 +337,7 @@ class PortfolioRefreshCoordinator:
                     ),
                 ),
             )
-        if isinstance(result, SheetsReadResult):
+        if isinstance(result, (SheetsReadResult, JournalReadResult)):
             return result.snapshot
         return result
 
@@ -346,12 +346,12 @@ class PortfolioRefreshCoordinator:
         if self._selection_reader is not None:
             return self._selection_reader(self._clock())
         snapshot = self._fetch_snapshot(self._clock())
-        alternatives = dict(self._fallback_listings()) if self._fallback_listings else {}
+        self._listings = self._listings_source()
         mappings = {}
         for position in snapshot.positions:
             listing = resolve_listing(position.instrument, self._listings)
-            if listing is None or listing.instrument.provider_mapping is None:
-                listing = alternatives.get(position.source_row)
+            if listing is not None and listing.instrument.provider_mapping is None:
+                listing = None
             if listing is not None:
                 mappings[position.source_row] = listing
         return snapshot, mappings
@@ -433,6 +433,7 @@ class PortfolioRefreshCoordinator:
         ):
             return self._fallback_or_unavailable(now, raw_snapshot)
 
+        self._listings = self._listings_source()
         try:
             mapped_instruments: list[Instrument] = []
             seen_instruments: set[Instrument] = set()
@@ -448,23 +449,7 @@ class PortfolioRefreshCoordinator:
                     seen_instruments.add(listing.instrument)
                     mapped_instruments.append(listing.instrument)
 
-            fallback_listings = dict(self._fallback_listings()) if self._fallback_listings else {}
-            replacements: dict[Instrument, list[Instrument]] = {}
-            for pos in raw_snapshot.positions:
-                alternative = fallback_listings.get(pos.source_row)
-                if pos.activity is not PositionActivity.ACTIVE or alternative is None:
-                    continue
-                primary = resolve_listing(pos.instrument, self._listings)
-                if primary is None or primary.instrument.provider_mapping is None:
-                    if alternative.instrument not in seen_instruments:
-                        seen_instruments.add(alternative.instrument)
-                        mapped_instruments.append(alternative.instrument)
-                elif alternative.instrument not in replacements.setdefault(primary.instrument, []):
-                    replacements[primary.instrument].append(alternative.instrument)
-            quote_map = self._cache.quotes(
-                mapped_instruments, refresh=refresh, replacements=replacements
-            )
-            prepared_periods: dict[Instrument, PeriodResults] = {}
+            quote_map = self._cache.quotes(mapped_instruments, refresh=refresh)
             # Verified identities without provider coverage stay in the registry so
             # their partial holdings still group; selected listings replace by key.
             active_listings: dict[tuple[str, str], VerifiedListing] = {
@@ -472,17 +457,6 @@ class PortfolioRefreshCoordinator:
                 for listing in self._listings
                 if listing.instrument.provider_mapping is None
             }
-
-            def candidate_results(candidate):
-                instrument = candidate.instrument
-                if instrument not in quote_map:
-                    quote_map[instrument] = self._cache.quote(instrument, refresh=refresh)
-                if instrument not in prepared_periods:
-                    prepared_periods[instrument] = _listing_period_results(
-                        candidate, quote_map[instrument], self._calendars, self._cache,
-                        now, refresh=refresh,
-                    )
-                return prepared_periods[instrument]
 
             enriched_positions: list[Position] = []
             needed_currencies: set[str] = set()
@@ -493,37 +467,6 @@ class PortfolioRefreshCoordinator:
                 listing = resolve_listing(pos.instrument, self._listings)
                 if listing is not None and listing.instrument.provider_mapping is None:
                     listing = None
-                alternative = fallback_listings.get(pos.source_row)
-                alternative_used = False
-                alternative_rejected = False
-                alternative_evidence: tuple[DataWarning, ...] = ()
-                if alternative is not None:
-                    primary_periods = candidate_results(listing) if listing else _missing_periods("unverified_instrument")
-                    primary_available = {key for key, value in primary_periods[0].items()
-                                         if value.percent is not None}
-                    if listing is None or len(primary_available) < len(PERIOD_KEY_TO_ENUM):
-                        alternative_periods = candidate_results(alternative)
-                        alternative_available = {key for key, value in alternative_periods[0].items()
-                                                 if value.percent is not None}
-                        primary_quote_ok = listing is not None and quote_map[listing.instrument].valuation.status is ValueStatus.AVAILABLE
-                        alternative_quote_ok = quote_map[alternative.instrument].valuation.status is ValueStatus.AVAILABLE
-                        if listing is None or (
-                            alternative_quote_ok and (
-                                not primary_quote_ok or primary_available < alternative_available
-                            )
-                        ):
-                            listing = alternative
-                            alternative_used = True
-                        else:
-                            alternative_rejected = True
-                            evidence = (
-                                quote_map[alternative.instrument].valuation.warnings
-                                + tuple(warning for performance in alternative_periods[0].values()
-                                        for warning in performance.warnings)
-                            )
-                            alternative_evidence = tuple(DataWarning(
-                                f"sheet_alternative_{code}", "Sheet-Ersatzzuordnung nicht verwendet"
-                            ) for code in dict.fromkeys(w.code for w in evidence))
                 if (
                     listing is not None
                     and listing.instrument.provider_mapping is not None
@@ -544,16 +487,10 @@ class PortfolioRefreshCoordinator:
                                 quote_unit=listing.instrument.quote_unit,
                                 provider_mapping=listing.instrument.provider_mapping)
                     )
-                    source_warning = DataWarning(
-                        "listing_source_sheet" if alternative_used else "listing_source_app",
-                        "Sheet-Ersatzzuordnung verwendet" if alternative_used else "App-Kurszuordnung",
-                    )
+                    source_warning = DataWarning("listing_source_app", "App-Kurszuordnung")
                     updated_pos = replace(
                         pos, instrument=updated_inst, valuation=chosen,
-                        warnings=pos.warnings + (source_warning,) + (
-                            (DataWarning("sheet_alternative_rejected", "Sheet-Ersatzzuordnung nicht verwendet"),)
-                            if alternative_rejected else ()
-                        ) + alternative_evidence,
+                        warnings=pos.warnings + (source_warning,),
                     )
                     active_listings[(listing.instrument.instrument_id,
                                      listing.instrument.trading_venue)] = listing
@@ -618,7 +555,6 @@ class PortfolioRefreshCoordinator:
                     self._cache,
                     now,
                     refresh=refresh,
-                    prepared_periods=prepared_periods,
                 )
                 for label in PERIOD_KEY_TO_ENUM:
                     course_perfs[label].append(g_perfs[label])

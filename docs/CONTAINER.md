@@ -36,7 +36,7 @@ Das Image installiert mit `uv sync --locked --no-dev --no-editable` exakt die Ve
 Es gibt keine Secrets im Image und keine im Build-Kontext. Der Host injiziert zur Laufzeit:
 
 - `PORTFOLIO_*`-Variablen als Umgebungsvariablen über seine Secret-Verwaltung (nicht in Kommandozeilen oder Logs).
-- Die Streamlit-Abschnitte `[auth]`, `[sheets_service_account]` und optional `[[listing]]` als schreibgeschützte Datei `/app/.streamlit/secrets.toml` (Vorlage: [`secrets.example.toml`](../.streamlit/secrets.example.toml)). Der Produktivmodus liest den Sheet-Schlüssel nur aus diesem Abschnitt, nicht aus `PORTFOLIO_SHEETS_CREDENTIALS_FILE`.
+- Die Streamlit-Abschnitte `[auth]`, `[sheets_service_account]` und optional `[[fundamental]]` als schreibgeschützte Datei `/app/.streamlit/secrets.toml` (Vorlage: [`secrets.example.toml`](../.streamlit/secrets.example.toml)). Der Produktivmodus liest den Sheet-Schlüssel nur aus diesem Abschnitt, nicht aus `PORTFOLIO_SHEETS_CREDENTIALS_FILE`.
 
 Das Image enthält keine private Datenbank und erzeugt kein persistentes Volume. Für die
 optionale private Ablage (Szenarien) muss der Besitzer zur Laufzeit einen eigenen persistenten

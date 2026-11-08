@@ -57,7 +57,7 @@ als Identität gilt, etwa über zusätzliche Spalten wie ISIN oder Anteilsklasse
 Bis zur Entscheidung gilt die enge Regel oben: Blatt-Kandidaten werden nur gegen
 bereits geprüfte Registryeinträge bestätigt und nehmen keine Identitätsentscheidung
 vorweg. Um eine Watchlist-Aktie ohne Depotposition zu bewerten, ist ihr Listing in
-die geprüfte Registry (`listings.toml`/`[[listing]]`) aufzunehmen.
+die geprüfte Registry aufzunehmen: eine Zeile in `Instrumente` mit EUR-Listing und `geprueft` ([ADR 0012](adr/0012-sheet-datenmodell.md)).
 
 ## Entfernte SQLite-Watchlist und Altbestand
 
