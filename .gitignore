@@ -13,6 +13,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+.claude
 
 # Secrets, runtime configuration and private portfolio data
 .env
