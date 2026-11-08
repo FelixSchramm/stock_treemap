@@ -38,7 +38,6 @@ from portfolio_dashboard.indices import (
     build_production_indices,
 )
 from portfolio_dashboard.local_source import (
-    ListingsFileError,
     build_local_coordinator,
     build_production_coordinator,
 )
@@ -92,7 +91,7 @@ def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals,
     if OWN_COORDINATOR_KEY not in st.session_state:
         try:
             st.session_state[OWN_COORDINATOR_KEY] = build_coordinator()
-        except (ListingsFileError, SheetsConfigurationError, SheetsCredentialError) as exc:
+        except (SheetsConfigurationError, SheetsCredentialError) as exc:
             st.error(str(exc))
             st.stop()
     if FUNDAMENTALS_LOADER_KEY not in st.session_state:
@@ -112,8 +111,9 @@ def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals,
         demo=False,
         watchlist=build_watchlist,
         indices=build_indices,
+        # Listings come with each holdings read (ADR 0012), so resolve them lazily.
         overview=private_source(
-            getattr(st.session_state[OWN_COORDINATOR_KEY], "listings", ())
+            lambda: getattr(st.session_state[OWN_COORDINATOR_KEY], "listings", ())
         ),
     )
     st.stop()
@@ -138,9 +138,7 @@ if config.mode is Mode.PRODUCTION:
     require_owner(config.login)
     render_own_portfolio(
         lambda: build_production_coordinator(
-            config,
-            st.secrets.get("sheets_service_account"),
-            st.secrets.get("listing", []),
+            config, st.secrets.get("sheets_service_account")
         ),
         lambda: build_production_watchlist_coordinator(
             config, st.secrets.get("sheets_service_account")

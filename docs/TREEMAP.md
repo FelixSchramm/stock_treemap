@@ -25,7 +25,7 @@ Umsetzung von [ADR 0008](adr/0008-treemap-und-bedienung.md). Das Modell steht in
   - Über `Sortierung` nach `Wert (EUR)`, `Anteil am bewerteten Gesamtdepot (%)`, jeder der fünf Entwicklungsspalten, `Name` und `Typ` absteigend sortierbar; fehlende Werte (`n. v.`) stehen dabei immer am Ende (Tie-Breaker: Name A–Z). Über die Spaltenköpfe lässt sich auch aufsteigend sortieren. Die Prozentwerte bleiben dabei numerisch; deutsche Formatierung und Prozentzeichen ändern nur die Anzeige.
   - Der Bereich `Positionsdetails ohne Hover` stellt sämtliche Tooltip-Informationen zusätzlich als vertikal umbrechende Detailblöcke für iPhone-/Touch-Bedienung, Tastaturnutzer und Kleinstpositionen bereit.
 - **Manuelle Aktualisierung, Lade- und Fehlerzustände (`PortfolioRefreshCoordinator`, `DashboardBundle`, `build_status_notes`):**
-  - Verbindet den „Aktualisieren“-Button mit dem lesenden Sheet-Import (`SheetsAdapter.read`, `SHEETS_READONLY_SCOPE` via `GET`) und dem `QuoteCache`.
+  - Verbindet den „Aktualisieren“-Button mit dem lesenden Sheet-Import (`JournalSheetsReader.read`, `SHEETS_READONLY_SCOPE` via `GET`) und dem `QuoteCache`.
   - Manuelle Sheet-Werte ohne beobachteten Kurszeitpunkt werden einheitlich als `Sheet-Wert, Kursstand unbekannt` benannt.
   - Tauscht das `DashboardBundle` atomar aus. Schlägt eine Aktualisierung fehl, bleibt ein vorhandener gültiger Stand samt Alter (`format_snapshot_age`) unverändert erhalten; ohne vorherigen Stand wird `Daten nicht verfügbar` angezeigt.
 - **Demo:** feste, erfundene EUR-Preise und Kursprozente; die Seit-Kauf-Ansicht bleibt ohne verifizierten Einstand „n. v.“.

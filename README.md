@@ -101,7 +101,7 @@ Jede Position trägt einen Status, etwa *Kurs fehlt*, *FX-Kurs fehlt*, *Instrume
 
 ```mermaid
 flowchart LR
-    S[Google Sheet: Bestand und Einstand] --> P[Parser und Validierung]
+    S[Google Sheet: Instrumente, Transaktionen, Kurse] --> P[Parser, Journal und FIFO]
     Q[Kursanbieter: Kurse, Historie, FX] --> C[Cache mit Zeitstempeln]
     P --> V[Bewertung und Renditen]
     C --> V
@@ -115,9 +115,9 @@ flowchart LR
 - **Nachvollziehbare Entscheidungen:** zwölf [Architecture Decision Records](docs/adr/README.md) dokumentieren Produktumfang, Datenquellen, Rechenregeln, Zugriff und Betrieb.
 - **Sicherheit:** OIDC-Login über Streamlit/Authlib. Vor jedem Datenzugriff prüft der Server erneut Issuer, Subject, Audience und Tokenlaufzeit. Secrets liegen ausschließlich in der Secret-Verwaltung des Hosts.
 
-## Datenmodell im Google Sheet (Zielbild)
+## Datenmodell im Google Sheet
 
-Das Sheet wird wie eine kleine Datenbank geführt: ein Blatt pro Tabelle, Spaltennamen in Zeile 1, keine Formeln oder Summen in Eingabeblättern. Beschlossen in [ADR 0012](docs/adr/0012-sheet-datenmodell.md); die Umsetzung ist offen, heute liest die App noch das bisherige Depotblatt.
+Das Sheet wird wie eine kleine Datenbank geführt: ein Blatt pro Tabelle, Spaltennamen in Zeile 1, keine Formeln oder Summen in Eingabeblättern. Beschlossen und umgesetzt in [ADR 0012](docs/adr/0012-sheet-datenmodell.md): Die App liest `Instrumente`, `Transaktionen` und `Kurse_manuell` in einem Abruf.
 
 ```mermaid
 erDiagram
@@ -166,9 +166,9 @@ erDiagram
 ```
 
 - **Schlüssel:** Die ISIN identifiziert das Wertpapier, die `txn_id` die Transaktion. Positionen haben keine eigene ID, sie sind die Summe der Transaktionen je ISIN.
-- **Abgeleitet statt gepflegt:** Stückzahl, Einstand der verbleibenden Stücke (FIFO) und realisierter Gewinn/Verlust berechnet die App aus dem Journal. Ein Umtausch ist eine Ausbuchung plus eine verknüpfte Einbuchung, die den Einstand übernimmt.
+- **Abgeleitet statt gepflegt:** Stückzahl und Einstand der verbleibenden Stücke (FIFO) berechnet die App aus dem Journal; den realisierten Gewinn/Verlust rechnet das Journal mit, angezeigt wird er noch nicht. Ein Umtausch ist eine Ausbuchung plus eine verknüpfte Einbuchung, die den Einstand übernimmt.
 - **Geprüfte Kurszuordnung:** Live-Kurse gibt es nur für Instrumente, bei denen der Besitzer `geprueft` gesetzt hat. Der Abgleich gegen die Antwort des Kursanbieters bleibt bestehen.
-- **Ansichten:** `Depot` und `Auswertung` sind Formelblätter für den Menschen und werden von der App nicht gelesen. Die Agenten-Blätter hängen ebenfalls über die ISIN an `Instrumente`.
+- **Ansichten:** Das bisherige Depotblatt bleibt als Formelansicht für den Menschen und wird von der App nicht gelesen. `Kurse_manuell` darf GOOGLEFINANCE-Formeln als Ersatzkurs enthalten. Die Agenten-Blätter hängen ebenfalls über die ISIN an `Instrumente`.
 
 ## Stand und Grenzen
 
@@ -179,7 +179,7 @@ erDiagram
 | Login und Besitzerprüfung | umgesetzt |
 | FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Übersicht „Innerer Wert“ und Detail- und Annahmenansicht (Editor, Rechenweg, Sensitivität) umgesetzt; echte Annahmen trägt der Besitzer bei Nutzung ein |
 | Watchlist aus dem Sheet | Kursabruf und Ansicht umgesetzt |
-| Sheet-Datenmodell mit Transaktionsjournal ([ADR 0012](docs/adr/0012-sheet-datenmodell.md)) | beschlossen; Umsetzung in drei Stufen offen |
+| Sheet-Datenmodell mit Transaktionsjournal ([ADR 0012](docs/adr/0012-sheet-datenmodell.md)) | umgesetzt: Bestand und FIFO-Einstand aus dem Journal, Kurszuordnung aus `Instrumente` |
 | Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsübersicht und Annahmenerfassung umgesetzt; dauerhafter Speicher für Szenarien im Live-Betrieb offen (Besitzerentscheidung) |
 
 Kursdaten stammen aus `yfinance`, einer inoffiziellen Schnittstelle; Kurse können verzögert sein. Das Dashboard ist ein privates Analysewerkzeug und keine Anlageberatung.

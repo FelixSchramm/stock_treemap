@@ -47,9 +47,7 @@ class CacheTTLs:
 class SourceConfig:
     kind: SourceKind = SourceKind.SYNTHETIC
     spreadsheet_id: str | None = field(default=None, repr=False)
-    worksheet_range: str | None = field(default=None, repr=False)
     credentials_file: str | None = field(default=None, repr=False)
-    listings_file: str | None = field(default=None, repr=False)
     # Optional separate Watchlist tab (ADR 0011); unset means no Sheet watchlist.
     watchlist_range: str | None = field(default=None, repr=False)
     # Local mode only: private TOML file with the fundamentals identities (M8-05).
@@ -185,7 +183,6 @@ def load_config(
     source = SourceConfig(
         kind=SourceKind.GOOGLE_SHEETS,
         spreadsheet_id=_required(values, "PORTFOLIO_SHEET_ID"),
-        worksheet_range=_required(values, "PORTFOLIO_SHEET_RANGE"),
     )
     watchlist_range = _text(values, "PORTFOLIO_WATCHLIST_RANGE") or None
     if watchlist_range is not None:
@@ -195,15 +192,9 @@ def load_config(
         source = replace(source, watchlist_range=watchlist_range)
     if mode is Mode.LOCAL:
         # No login and no auth secrets; app.py refuses non-loopback addresses.
-        # Only local mode reads key/listings files; production uses server
-        # secrets, so a hosted run switched to local finds no key there.
-        # Without a listings file the local mode stays Sheet-only.
+        # Only local mode reads the key file; production uses server secrets,
+        # so a hosted run switched to local finds no key there.
         credentials_file = _required(values, "PORTFOLIO_SHEETS_CREDENTIALS_FILE")
-        listings_file = _text(values, "PORTFOLIO_LISTINGS_FILE") or None
-        if listings_file is not None and (
-            listings_file.startswith("<") or listings_file == "CHANGE_ME"
-        ):
-            raise ConfigurationError("Lokale Konfiguration ungültig: PORTFOLIO_LISTINGS_FILE.")
         fundamentals_file = _text(values, "PORTFOLIO_FUNDAMENTALS_FILE") or None
         if fundamentals_file is not None and (
             fundamentals_file.startswith("<") or fundamentals_file == "CHANGE_ME"
@@ -214,7 +205,6 @@ def load_config(
         source = replace(
             source,
             credentials_file=credentials_file,
-            listings_file=listings_file,
             fundamentals_file=fundamentals_file,
         )
         return AppConfig(mode, source, Provider.YFINANCE, ttls, LoginConfig(), private_data_dir)

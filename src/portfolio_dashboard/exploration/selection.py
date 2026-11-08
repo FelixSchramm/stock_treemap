@@ -204,7 +204,7 @@ def demo_catalog():
     source = demo_valuation_source()
     snapshot = source.portfolio.snapshot
     mappings = {
-        p.source_row: resolve_listing(p.instrument, source.listings)
+        p.source_row: resolve_listing(p.instrument, source.registry())
         for p in snapshot.positions
     }
     return Catalog(

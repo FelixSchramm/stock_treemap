@@ -41,11 +41,15 @@ from portfolio_dashboard.refresh import (
     format_snapshot_age,
 )
 from portfolio_dashboard.sheet_parser import (
-    SHEET_HEADERS,
     NumberLocale,
     SheetMetadata,
 )
-from portfolio_dashboard.sheets_adapter import SheetsAdapter
+from portfolio_dashboard.sheet_tables import (
+    INSTRUMENT_COLUMNS,
+    PRICE_COLUMNS,
+    TRANSACTION_COLUMNS,
+)
+from portfolio_dashboard.sheets_adapter import JournalSheetsReader
 from portfolio_dashboard.treemap import (
     SHEET_UNKNOWN_QUOTE_STATUS,
     Performance,
@@ -186,7 +190,29 @@ def _sheet_metadata() -> SheetMetadata:
 
 
 def _sheet_payload(rows: list[list]) -> dict:
-    return {"majorDimension": "ROWS", "values": [list(SHEET_HEADERS), *rows]}
+    """Journal tables (ADR 0012) for synthetic depot rows in the former A–M layout."""
+    instruments = [list(INSTRUMENT_COLUMNS)]
+    transactions = [list(TRANSACTION_COLUMNS)]
+    prices = [list(PRICE_COLUMNS)]
+    for number, row in enumerate(rows, 1):
+        isin = f"XX{number:09d}{number % 10}"
+        name, kind, quantity, price, cost, category = (
+            row[0], row[2], row[3], row[6], row[8], row[11]
+        )
+        instruments.append([isin, name, kind, "", "", "", category, "", "", "", "", ""])
+        amount = cost if isinstance(cost, (int, float)) else 1
+        transactions.append(
+            [f"T{number:05d}", 46000, isin, "Kauf", quantity, "", "", "", amount, "", "", ""]
+        )
+        if price not in ("", None):
+            prices.append([isin, "", price])
+    return {"valueRanges": [{"majorDimension": "ROWS", "values": table}
+                            for table in (instruments, transactions, prices)]}
+
+
+def _journal_reader(session) -> JournalSheetsReader:
+    source = SourceConfig(kind=SourceKind.GOOGLE_SHEETS, spreadsheet_id="synthetic_sheet_id_123")
+    return JournalSheetsReader(source, session, {"FRA": "EUR"})
 
 
 def _sample_calendar() -> SessionCalendar:
@@ -266,15 +292,7 @@ def test_sheet_changes_appear_after_manual_refresh_without_write_access():
             _ReadOnlySheetResponse(200, payload_v2),
         ]
     )
-    adapter = SheetsAdapter(
-        source=SourceConfig(
-            kind=SourceKind.GOOGLE_SHEETS,
-            spreadsheet_id="synthetic_sheet_id_123",
-            worksheet_range="Bestand!A1:M20",
-        ),
-        metadata=_sheet_metadata(),
-        session=session,
-    )
+    adapter = _journal_reader(session)
     now = T0
     provider = _FakeMarketProvider()
     cache = QuoteCache(
@@ -336,15 +354,7 @@ def test_manual_sheet_values_without_timestamp_are_named_sheet_wert_kursstand_un
         ]
     )
     session = _ReadOnlySheetSession([_ReadOnlySheetResponse(200, payload)])
-    adapter = SheetsAdapter(
-        source=SourceConfig(
-            kind=SourceKind.GOOGLE_SHEETS,
-            spreadsheet_id="synthetic_sheet_id_123",
-            worksheet_range="Bestand!A1:M20",
-        ),
-        metadata=_sheet_metadata(),
-        session=session,
-    )
+    adapter = _journal_reader(session)
     cache = QuoteCache(provider=_FakeMarketProvider(), clock=lambda: T0)
     coordinator = PortfolioRefreshCoordinator(
         adapter.read, cache, clock=lambda: T0
@@ -571,15 +581,7 @@ def test_refresh_failure_retains_previous_atomic_bundle_with_age_or_shows_unavai
     session_fail_first = _ReadOnlySheetSession(
         [_ReadOnlySheetResponse(503, {})]
     )
-    adapter_fail_first = SheetsAdapter(
-        source=SourceConfig(
-            kind=SourceKind.GOOGLE_SHEETS,
-            spreadsheet_id="synthetic_sheet_id_123",
-            worksheet_range="Bestand!A1:M20",
-        ),
-        metadata=_sheet_metadata(),
-        session=session_fail_first,
-    )
+    adapter_fail_first = _journal_reader(session_fail_first)
     now = T0
     cache_fail_first = QuoteCache(
         provider=_FakeMarketProvider(), clock=lambda: now
@@ -599,15 +601,7 @@ def test_refresh_failure_retains_previous_atomic_bundle_with_age_or_shows_unavai
             _ReadOnlySheetResponse(503, {}),
         ]
     )
-    adapter_then_fail = SheetsAdapter(
-        source=SourceConfig(
-            kind=SourceKind.GOOGLE_SHEETS,
-            spreadsheet_id="synthetic_sheet_id_123",
-            worksheet_range="Bestand!A1:M20",
-        ),
-        metadata=_sheet_metadata(),
-        session=session_then_fail,
-    )
+    adapter_then_fail = _journal_reader(session_then_fail)
     cache_then_fail = QuoteCache(
         provider=_FakeMarketProvider(), clock=lambda: now
     )

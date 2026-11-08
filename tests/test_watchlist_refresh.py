@@ -18,11 +18,14 @@ from requests.exceptions import Timeout
 
 from portfolio_dashboard import watchlist_refresh
 from portfolio_dashboard.config import CacheTTLs, SourceConfig, SourceKind, load_config
-from portfolio_dashboard.local_source import LOCAL_SHEET_METADATA, venue_calendars
+from portfolio_dashboard.local_source import DEPOT_VENUES, venue_calendars
 from portfolio_dashboard.market_data import YFinanceProvider
 from portfolio_dashboard.models import SnapshotStatus
 from portfolio_dashboard.sheet_parser import NumberLocale
-from portfolio_dashboard.sheets_adapter import SheetsAdapter, SheetsConfigurationError
+from portfolio_dashboard.sheets_adapter import (
+    JournalSheetsReader,
+    SheetsConfigurationError,
+)
 from portfolio_dashboard.watchlist_quotes import (
     DATA_UNAVAILABLE_TEXT,
     PERIODS,
@@ -952,10 +955,8 @@ def source(cell_range="Watchlist!A1:J300"):
     return SourceConfig(
         SourceKind.GOOGLE_SHEETS,
         "synthetic-private-source",
-        "Bestand!A1:M20",
-        "/nonexistent/synthetic-credentials.json",
-        None,
-        cell_range,
+        credentials_file="/nonexistent/synthetic-credentials.json",
+        watchlist_range=cell_range,
     )
 
 
@@ -979,17 +980,18 @@ def test_reader_requests_exactly_the_configured_range_with_the_depot_render_opti
     assert snapshot.items[0].mapping.symbol == "SYN.DE"
 
 
-def test_reader_uses_the_same_value_render_options_as_the_depot_adapter():
-    depot_session = Session(Response({"majorDimension": "ROWS", "values": []}))
-    adapter = SheetsAdapter(
-        source("Watchlist!A1:J300"), LOCAL_SHEET_METADATA, depot_session
+def test_reader_uses_the_same_value_render_options_as_the_depot_reader():
+    depot_session = Session(Response({"valueRanges": [{"majorDimension": "ROWS"}] * 3}))
+    JournalSheetsReader(source("Watchlist!A1:J300"), depot_session, DEPOT_VENUES).read(
+        attempted_at=CLOSED
     )
-    adapter.read(attempted_at=CLOSED)
     watchlist_session = Session(Response({"majorDimension": "ROWS", "values": []}))
     reader(watchlist_session).read(CLOSED)
-    assert watchlist_session.calls[0][1]["params"] == depot_session.calls[0][1]["params"]
-    assert watchlist_session.calls[0][1]["params"]["valueRenderOption"] == "UNFORMATTED_VALUE"
-    assert set(depot_session.calls[0][1]) == set(watchlist_session.calls[0][1])
+    depot, watchlist = depot_session.calls[0][1], watchlist_session.calls[0][1]
+    for key in ("majorDimension", "valueRenderOption", "dateTimeRenderOption"):
+        assert watchlist["params"][key] == depot["params"][key]
+    assert watchlist["params"]["valueRenderOption"] == "UNFORMATTED_VALUE"
+    assert set(depot) == set(watchlist)
 
 
 def test_reader_numbers_and_percent_strings_follow_the_depot_semantics():

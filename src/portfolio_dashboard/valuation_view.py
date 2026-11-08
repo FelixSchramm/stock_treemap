@@ -7,7 +7,7 @@ shared loading path of #74 (``loader.load``); nothing is retrieved on a plain
 rerun. No buy/sell signal is drawn and no missing value is shown as zero.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import streamlit as st
@@ -146,10 +146,13 @@ def private_reader():
     return private_repository().get
 
 
-def private_source(listings: tuple[VerifiedListing, ...]) -> OverviewSource:
+def private_source(
+    listings: tuple[VerifiedListing, ...] | Callable[[], tuple[VerifiedListing, ...]],
+) -> OverviewSource:
     """Production wiring: stored scenarios from the private store, system clock.
 
-    The same repository saves new revisions from the detail view (#80).
+    ``listings`` is the registry or a callable returning the registry of the
+    latest holdings read. The same repository saves new revisions (#80).
     """
     from datetime import UTC, datetime
 
@@ -380,9 +383,10 @@ def render_overview(
     stamps: Sequence[str],
 ) -> None:
     """Draw the overview from already loaded inputs (no retrieval here)."""
-    subjects = collect_subjects(portfolio, entries, source.listings)
+    listings = source.registry()
+    subjects = collect_subjects(portfolio, entries, listings)
     context = EvaluationContext(
-        source.listings,
+        listings,
         source.clock(),
         state,
         loaded.documents if loaded is not None else {},

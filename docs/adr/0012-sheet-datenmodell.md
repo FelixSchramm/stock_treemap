@@ -1,7 +1,7 @@
 # ADR 0012: Sheet als Tabellenmodell mit ISIN-Schlüssel und Transaktionsjournal
 
 - **Datum:** 2026-11-08
-- **Status:** Angenommen; Umsetzung offen (drei Stufen, siehe unten)
+- **Status:** Angenommen; am 08.11.2026 umgesetzt (siehe Nachtrag)
 - **Herkunft:** Besitzerwunsch nach eindeutigen IDs und einem aufgeräumten Datenschema; Besitzerentscheidung vom 08.11.2026 für eine einzige Zuordnungsablage im Sheet (Variante A). Tabellenschnitt und Prüfregeln technisch.
 - **Ersetzt teilweise:** [0005](0005-instrumente-und-kursdaten.md) (Ablageort der geprüften Kurszuordnung), [0007](0007-bewertung-und-einstand.md) (Herkunft des Einstands), [0011](0011-watchlist.md) (Zuordnung im Watchlist-Blatt)
 
@@ -112,6 +112,28 @@ Bestände lassen sich vollständig aus einem Journal ableiten, sofern Umtausch, 
 
 - Splits und Zusammenlegungen, bei denen sich die Stückzahl ohne Zahlung ändert, brauchen eine Regel, bevor sie im Journal vorkommen.
 - Ob `[[fundamental]]` ebenfalls in ein Blatt wandert, ist eine eigene Entscheidung.
+
+## Nachtrag zur Umsetzung (08.11.2026)
+
+Besitzerentscheidungen bei der Umsetzung:
+
+- **EUR-Listing gewinnt.** Das Depot nutzt nur geprüfte EUR-Listings deutscher Handelsplätze (`GER`, `FRA`, `STU`, `MUN`, `DUS`). Ist für ein Wertpapier nur ein US-Listing eingetragen, nutzt es die Watchlist weiter; im Depot bleibt es beim Sheet-Kurs, bis das EUR-Listing eingetragen ist.
+- **Zuordnungen aus dem Sheet abgeleitet.** `Instrumente` wurde aus Depotblatt, Watchlist, Käufen und Verkäufen befüllt; `geprueft` ist für alle übernommenen Zuordnungen auf den Migrationstag gesetzt. `[[listing]]`, `PORTFOLIO_LISTINGS_FILE` und `PORTFOLIO_SHEET_RANGE` werden nicht mehr gelesen.
+- **Alte Blätter bleiben** mit Namen und Spalten erhalten, weil externe Agenten sie lesen könnten. Im Depotblatt sind Anzahl, Kurs und Kursdatum Formeln aus `Transaktionen` und `Kurse_manuell`; in der Watchlist sind Yahoo-Symbol, Handelsplatz und Währung Formeln aus `Instrumente` (nur bei gesetztem `geprueft`). Käufe und Verkäufe sind ein unverändertes Archiv. Die App liest weiterhin die Watchlist über ihren konfigurierten Bereich.
+
+Technische Festlegungen:
+
+- Die App liest die drei Tabellen mit festen, begrenzten Bereichen in einem `values:batchGet`; neue Secrets sind nicht nötig.
+- `Kurse_manuell` darf Formeln enthalten, etwa GOOGLEFINANCE für Wertpapiere ohne EUR-Listing. Ohne `datum` gilt „Kursstand unbekannt“; ein datierter Eintrag hat Vorrang vor einem undatierten.
+- `basiswert_isin` ist optional.
+- Die Anzeigekürzel leiten sich aus `google_symbol` ab (`NASDAQ:MSFT` → `MSFT`).
+- Der Primär-/Ersatzmechanismus aus #101 und die privaten Listing-Dateien sind entfernt.
+
+Weiter offen:
+
+- Watchlist-Zeilen ohne ISIN (Krypto, Notizen) bleiben ohne Zuordnung; eine Regel für Werte ohne ISIN fehlt.
+- Der frühere A–M-Parser (`sheet_parser.parse_sheet_rows`) ist nicht mehr im Ladepfad und wird nur noch von Regressionstests genutzt; seine Entfernung ist offen.
+- Die Unternehmensauswahl verknüpft Depotpositionen noch über die Zeilennummer in `Instrumente` statt über die ISIN.
 
 ## Referenzen
 

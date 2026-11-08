@@ -133,7 +133,7 @@ def protected_app(monkeypatch):
 
         history = fx = latest_quote
 
-    def own_coordinator(config, service_account, listing_entries):
+    def own_coordinator(config, service_account):
         # Synthetic stand-in for the owner's Sheet; real builders stay unreached.
         calls.append("build_production_coordinator")
         return PortfolioRefreshCoordinator(
@@ -241,9 +241,9 @@ def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_a
     make_app, calls = protected_app
     seen = []
 
-    def record(config, service_account, listing_entries):
-        seen.append((dict(service_account), list(listing_entries)))
-        return own(config, service_account, listing_entries)
+    def record(config, service_account):
+        seen.append(dict(service_account))
+        return own(config, service_account)
 
     own = local_source.build_production_coordinator
     monkeypatch.setattr(local_source, "build_production_coordinator", record)
@@ -258,7 +258,8 @@ def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_a
         "render_dashboard",
         "render_dashboard",
     ]
-    assert seen == [({"type": "service_account", "synthetic": True}, [{"isin": "DE000SYN0001"}])]
+    # [[listing]] secrets are no longer read (ADR 0012); listings come from the Sheet.
+    assert seen == [{"type": "service_account", "synthetic": True}]
 
 
 @pytest.mark.parametrize("section", [None, {"type": "authorized_user", "secret": "synthetic-secret"}])
@@ -279,20 +280,6 @@ def test_missing_or_invalid_sheet_key_secret_shows_only_the_safe_message(protect
         "Service-Account-Schlüssel fehlt oder ist ungültig."
     ]
     assert calls == [] and not app.dataframe and not app.title
-
-
-def test_invalid_listing_secret_shows_only_the_safe_message(protected_app, monkeypatch):
-    make_app, calls = protected_app
-    monkeypatch.setattr(
-        local_source, "build_production_coordinator", real_production_coordinator
-    )
-    app = make_app(owner_claims())
-    app.secrets["listing"] = [{"isin": "DE000SYN0001", "symbol": "SYN.DE"}]
-    app.run()
-    assert not app.exception
-    assert "Eintrag 1" in app.error[0].value
-    assert "SYN" not in app.error[0].value
-    assert calls == [] and not app.dataframe
 
 
 @pytest.mark.parametrize("missing", ["PORTFOLIO_OWNER_SUBJECT", "PORTFOLIO_SHEET_ID", "auth"])

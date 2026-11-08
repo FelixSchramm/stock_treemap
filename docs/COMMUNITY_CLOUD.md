@@ -20,7 +20,7 @@ In der Google Cloud Console:
 
 ## 3. Secrets eintragen
 
-App → **Settings → Secrets**, Aufbau wie [`secrets.example.toml`](../.streamlit/secrets.example.toml): oben die `PORTFOLIO_*`-Werte, darunter `[auth]`, `[sheets_service_account]` und optional `[[listing]]`.
+App → **Settings → Secrets**, Aufbau wie [`secrets.example.toml`](../.streamlit/secrets.example.toml): oben die `PORTFOLIO_*`-Werte, darunter `[auth]` und `[sheets_service_account]`. Kurszuordnungen stehen im Sheet-Tab `Instrumente` ([ADR 0012](adr/0012-sheet-datenmodell.md)); ein früherer `[[listing]]`-Abschnitt wird ignoriert und kann entfernt werden, ebenso `PORTFOLIO_SHEET_RANGE`.
 
 Den Service-Account-Schlüssel als Abschnitt in die Zwischenablage übernehmen, ohne ihn im Terminal auszugeben:
 
@@ -28,7 +28,6 @@ Den Service-Account-Schlüssel als Abschnitt in die Zwischenablage übernehmen, 
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("[sheets_service_account]"); [print(k, "=", json.dumps(v)) for k, v in d.items()]' "$HOME/<Pfad außerhalb des Repos>/service-account.json" | pbcopy
 ```
 
-Für Live-Kurse anschließend die eigene Zuordnungsdatei anhängen (`pbcopy < "$HOME/<Pfad>/listings.toml"`); Format siehe README. Ohne `[[listing]]` zeigt die App nur Sheet-Werte und für Kursperioden „n. v.“.
 
 ## 4. Prüfen
 
