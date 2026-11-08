@@ -1,7 +1,7 @@
 # ADR 0011: Watchlist aus eigenem Sheet-Blatt mit reiner Kursentwicklung
 
 - **Datum:** 2026-10-28
-- **Status:** Angenommen; Kursabruf umgesetzt (#84, [Watchlist-Kursabruf](../WATCHLIST_QUOTES.md)), Ansicht umgesetzt (#85, [Watchlist-Ansicht](../WATCHLIST_VIEW.md)), Heatmap folgt (#86)
+- **Status:** Angenommen; Kursabruf umgesetzt (#84, [Watchlist-Kursabruf](../WATCHLIST_QUOTES.md)), Ansicht umgesetzt (#85, [Watchlist-Ansicht](../WATCHLIST_VIEW.md)), Heatmap folgt (#86); Zuordnung im Blatt teilweise ersetzt durch [ADR 0012](0012-sheet-datenmodell.md)
 - **Herkunft:** Nutzerentscheidungen vom 25.10.2026 (Epic #82, Issue #83); Parser- und Prüfregeln technisch.
 
 ## Kontext
