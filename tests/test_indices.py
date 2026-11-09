@@ -168,6 +168,39 @@ def test_unsupported_exchange_shows_cap_but_does_not_invent_calendar():
     assert "wird noch angebunden" in row.note and not yahoo.calls
 
 
+def test_tokyo_constituent_gets_periods_and_cap_in_yen():
+    member = Constituent("Synthetische Tokio KK", "1234.T")
+    calendars = venue_calendars(CLOSED.date())
+    yahoo = FakeYahoo(calendars, lambda: CLOSED)
+    yahoo.add("1234.T", "JPX", "JPY", exchangeTimezoneName="Asia/Tokyo")
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.inner = yahoo.factory(symbol)
+
+        def get_info(self):
+            return {
+                "symbol": "1234.T", "exchange": "JPX", "currency": "JPY", "quoteType": "EQUITY",
+                "exchangeTimezoneName": "Asia/Tokyo", "marketCap": 5_000_000_000_000,
+            }
+
+        def history(self, **kwargs):
+            return self.inner.history(**kwargs)
+
+        def get_history_metadata(self):
+            return self.inner.get_history_metadata()
+
+    row = IndexMarketData(Ticker).fetch(member, CLOSED, calendars)
+    assert row.market_cap == Decimal(5_000_000_000_000) and row.currency == "JPY"
+    assert row.note is None and row.quote is not None
+    assert all(value.percent is not None for value in row.quote.periods)
+
+
+def test_nikkei_225_is_a_supported_index_tab():
+    source, _ = reader({"sheets": [{"properties": {"title": "Nikkei 225"}}]})
+    assert source.list_indices() == ("Nikkei 225",)
+
+
 class Source:
     def __init__(self):
         self.reads, self.fail = [], False

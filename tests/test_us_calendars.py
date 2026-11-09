@@ -151,7 +151,7 @@ def test_german_and_us_calendars_differ_by_their_own_holidays():
         time(9),
         time(17, 30),
     )
-    assert set(calendars) == set(GERMAN_VENUES) | set(US_VENUES)
+    assert set(GERMAN_VENUES) | set(US_VENUES) <= set(calendars)
 
 
 def test_calendars_are_deterministic_and_cover_every_watchlist_exchange():

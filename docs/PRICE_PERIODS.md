@@ -26,7 +26,9 @@ Quote-Gründe), bleiben `current_date` und `market_open` erhalten.
   Kalender).
   Die Kalender der deutschen und US-Handelsplätze (`local_source.venue_calendars`,
   US-Feiertage inklusive Wochenend-Ersatzregel) beschreibt
-  [WATCHLIST_QUOTES.md](WATCHLIST_QUOTES.md#us-kalender).
+  [WATCHLIST_QUOTES.md](WATCHLIST_QUOTES.md#us-kalender). Für die übrigen
+  Handelsplätze (`local_source.INTL_VENUES`, #134) liefert `exchange_calendars`
+  die Sitzungstage; die Abdeckung endet dort, wo die Bibliothek Feiertage kennt.
 - `now`: zeitzonenbewusster Zeitpunkt (injiziert); die Börsenzeitzone stammt
   aus der Historie.
 
