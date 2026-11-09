@@ -38,6 +38,9 @@ class SessionCalendar:
     """Expected regular sessions in exchange-local dates plus regular hours.
 
     Early closes are not modelled; supply the actual close_time if needed.
+    ``break_start``..``break_end`` is an optional midday break (Tokyo, Hong
+    Kong): no trading, so the market is not open, but the session has not
+    finished either and the morning's last price stays today's current price.
     ``first_day``..``last_day`` is the span the set is complete for. It must
     reach from the oldest period target to the local exchange date; outside it
     the result is "calendar_incomplete" instead of bridging backwards.
@@ -48,6 +51,8 @@ class SessionCalendar:
     close_time: time
     first_day: date
     last_day: date
+    break_start: time | None = None
+    break_end: time | None = None
 
     def __post_init__(self) -> None:
         if not all(type(day) is date for day in self.sessions):
@@ -56,6 +61,19 @@ class SessionCalendar:
             raise ValueError("open_time must be before close_time")
         if not self.first_day <= self.last_day:
             raise ValueError("first_day must not be after last_day")
+        if (self.break_start is None) != (self.break_end is None):
+            raise ValueError("break_start and break_end must be given together")
+        if self.break_start is not None and not (
+            self.open_time < self.break_start < self.break_end < self.close_time
+        ):
+            raise ValueError("the break must lie within the regular hours")
+
+    def in_break(self, clock: time) -> bool:
+        """True during the midday break (exchange-local ``clock``)."""
+        return (
+            self.break_start is not None
+            and self.break_start <= clock < self.break_end
+        )
 
 
 def session_calendar(
@@ -64,9 +82,17 @@ def session_calendar(
     close_time: time,
     first_day: date,
     last_day: date,
+    break_start: time | None = None,
+    break_end: time | None = None,
 ) -> SessionCalendar:
     return SessionCalendar(
-        frozenset(sessions), open_time, close_time, first_day, last_day
+        frozenset(sessions),
+        open_time,
+        close_time,
+        first_day,
+        last_day,
+        break_start,
+        break_end,
     )
 
 
@@ -137,14 +163,16 @@ def price_period_returns(
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     problem = _history_problem(history)
-    running = current_date = today = None
+    in_session = running = current_date = today = None
     if problem is None:
         local = now.astimezone(ZoneInfo(history.exchange_timezone))
         today, clock = local.date(), local.time()
-        running = (
+        in_session = (
             today in sessions.sessions
             and sessions.open_time <= clock < sessions.close_time
         )
+        # A midday break pauses trading, not the session: the quote stays current.
+        running = in_session and not sessions.in_break(clock)
         closes = {
             point.session_date: point.close
             for point in history.points
@@ -153,7 +181,7 @@ def price_period_returns(
         current_date = current = None
         if not sessions.first_day <= today <= sessions.last_day:
             problem = "calendar_incomplete"
-        elif running:
+        elif in_session:
             current_date, current, problem = _live_quote(
                 history, quote, sessions, local
             )
@@ -180,7 +208,7 @@ def price_period_returns(
     if problem is not None:
         # Keep the dates that are known: the expected session and its state.
         known = problem != "calendar_incomplete"
-        shown = current_date or (today if running and known else None)
+        shown = current_date or (today if in_session and known else None)
         return {
             period: PeriodReturn(
                 period,

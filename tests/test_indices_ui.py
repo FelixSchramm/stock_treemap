@@ -79,6 +79,17 @@ def test_error_empty_and_missing_data_remain_usable(dashboard):
     assert app.metric[1].value == "NA" and app.metric[2].value == "NA"
 
 
+def test_without_index_tabs_the_hint_names_every_supported_index(dashboard):
+    app, source, _ = dashboard
+    source.list_indices = lambda: ()
+    app.run().radio(key=AREA_RADIO_KEY).set_value("Indizes").run()
+    assert not app.exception and not source.reads
+    assert any(
+        msg.value.endswith("S&P 500, Nasdaq 100, Dow Jones, Hang Seng und Nikkei 225.")
+        for msg in app.info
+    )
+
+
 def test_winner_loser_and_table_change_with_the_selected_period(dashboard):
     app, _, _ = dashboard
     quote = demo_watchlist_entries()[0]

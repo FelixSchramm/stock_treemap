@@ -34,7 +34,7 @@ Die gemeinsame dunkle CI gilt auch für die Treemap.
 
 **Indizes** ergänzt Depot, Watchlist, Analyse und Innerer Wert. Die Auswahl erkennt
 die Blätter **DAX, MDAX, Euro Stoxx 50, STOXX Europe 600, S&P 500, Nasdaq 100,
-Dow Jones und Nikkei 225** im bereits konfigurierten Google Sheet. DAX ist die Standardauswahl.
+Dow Jones, Hang Seng und Nikkei 225** im bereits konfigurierten Google Sheet. DAX ist die Standardauswahl.
 In A/B stehen die Überschriften **Unternehmen** und **Yahoo-Finance-Ticker**;
 gelesen werden maximal 999 Unternehmen. Es sind keine zusätzlichen Secrets nötig.
 Beim Öffnen lädt nur der gewählte Index. Zeitraumwechsel verwenden denselben
@@ -56,7 +56,10 @@ Amsterdam (`AMS`), Mailand (`MIL`), Madrid (`MCE`) und Zürich (`EBS`) bereit; d
 Feiertage liefert die Bibliothek `exchange_calendars`. Reicht ihre Feiertagsliste
 nicht bis heute (Indien wird jährlich nachgetragen), zeigen die Kursperioden NA, bis
 die Bibliothek aktualisiert ist (`uv lock --upgrade-package exchange-calendars`).
-Kursentwicklungen gelten in Handelswährung, ohne Umrechnung nach EUR.
+Tokio (11:30–12:30) und Hongkong (12:00–13:00) haben eine Mittagspause: Dann gilt
+die Börse nicht als geöffnet, „Heute“ zeigt aber weiter den letzten Kurs des Vormittags.
+Kursentwicklungen gelten in Handelswährung, ohne Umrechnung nach EUR; Hang Seng
+notiert in HKD, Nikkei 225 in JPY.
 Die Indexzusammensetzung wird im Sheet gepflegt, nicht automatisch ausgetauscht.
 
 ## Methodik

@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from portfolio_dashboard.design import style_figure
-from portfolio_dashboard.indices import IndexBundle, IndexSourceError
+from portfolio_dashboard.indices import INDEX_NAMES, IndexBundle, IndexSourceError
 from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
 from portfolio_dashboard.treemap import color_for, color_scale, format_percent
@@ -103,8 +103,8 @@ def render(factory, *, refresh_clicked=False, demo=False):
         st.error("Index-Blätter konnten nicht geladen werden. Über „Aktualisieren“ erneut versuchen.")
         return
     if not names:
-        st.info("Noch keine Index-Blätter gefunden. Unterstützt werden DAX, MDAX, Euro Stoxx 50, "
-                "STOXX Europe 600, S&P 500, Nasdaq 100 und Dow Jones.")
+        st.info("Noch keine Index-Blätter gefunden. Unterstützt werden "
+                f"{', '.join(INDEX_NAMES[:-1])} und {INDEX_NAMES[-1]}.")
         return
 
     left, right = st.columns((1, 2))

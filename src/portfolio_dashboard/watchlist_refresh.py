@@ -114,7 +114,11 @@ _CACHED_SNAPSHOT_CODE = "cached_holdings_snapshot"
 
 
 def session_running(calendar: SessionCalendar, timezone: str, now: datetime) -> bool:
-    """Regular session open at ``now`` (aware), judged in the exchange's own time."""
+    """Regular session open at ``now`` (aware), judged in the exchange's own time.
+
+    A midday break counts as part of the session: the morning's last quote is
+    still today's current price, so it is fetched as during trading.
+    """
     local = now.astimezone(ZoneInfo(timezone))
     return (
         local.date() in calendar.sessions

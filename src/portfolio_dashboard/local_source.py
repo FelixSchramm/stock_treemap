@@ -65,7 +65,7 @@ US_SPECIAL_CLOSURES = frozenset(
 )
 # Further Watchlist/index exchanges (Yahoo exchangeName): regular hours in the
 # exchange's own time zone and the exchange_calendars class supplying holidays.
-# Lunch breaks are not modelled. Like the US venues they stay out of VENUE_HOURS.
+# Midday breaks: LUNCH_BREAKS. Like the US venues they stay out of VENUE_HOURS.
 # NSE (NSI) shares its trading holidays with BSE, the calendar the library provides.
 INTL_VENUES = {
     "JPX": (time(9), time(15, 30), XTKSExchangeCalendar),
@@ -78,6 +78,11 @@ INTL_VENUES = {
     "MIL": (time(9), time(17, 30), XMILExchangeCalendar),
     "MCE": (time(9), time(17, 30), XMADExchangeCalendar),
     "EBS": (time(9), time(17, 30), XSWXExchangeCalendar),
+}
+# Exchange-local midday trading breaks (#133); the other venues trade through.
+LUNCH_BREAKS = {
+    "JPX": (time(11, 30), time(12, 30)),
+    "HKG": (time(12), time(13)),
 }
 
 
@@ -139,7 +144,8 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
     """Calendars spanning more than a year back and a year ahead of ``today``.
 
     German venues use Europe/Berlin dates and hours, US venues America/New_York,
-    ``INTL_VENUES`` their own exchange time zone; early closes are modelled for none.
+    ``INTL_VENUES`` their own exchange time zone, with the midday break from
+    ``LUNCH_BREAKS``; early closes are modelled for none.
     """
     first, last = today - timedelta(days=400), today + timedelta(days=366)
     years = range(first.year, last.year + 1)
@@ -155,7 +161,9 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
     for venue, (opens, closes, _) in INTL_VENUES.items():
         span = _library_sessions(venue, first, last)
         if span is not None:  # without a span the venue stays unsupported
-            calendars[venue] = session_calendar(span[0], opens, closes, span[1], span[2])
+            calendars[venue] = session_calendar(
+                span[0], opens, closes, span[1], span[2], *LUNCH_BREAKS.get(venue, ())
+            )
     return calendars
 
 
