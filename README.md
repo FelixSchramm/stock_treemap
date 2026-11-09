@@ -14,6 +14,24 @@
 - **Technische Umsetzung:** Python 3.12, Streamlit und Plotly. Die Fachlogik liegt in reinen, UI-unabhängigen Modulen und ist durch über 1.100 automatisierte Tests mit synthetischen Daten abgesichert.
 - **Datenschutz:** Echte Depotdaten werden erst nach Google-Login und serverseitiger Besitzerprüfung geladen. Repository, Tests und Demo enthalten keine realen Daten.
 
+## Startseite vor dem Login
+
+Ohne Anmeldung zeigt die Live-App **Märkte im Überblick**; rechts oben führt
+**Login** zum Google-Login mit Besitzerprüfung. Die Seite enthält eine
+**Börsenuhr** (Tokio, Hongkong, Frankfurt, London, New York mit Status offen,
+Mittagspause oder geschlossen), die **Marktbreite** (Werte im Plus, stärkster und
+schwächster Wert), eine kleine **Treemap** mit gleich großen Kacheln für
+**Weltindizes** (15 Indizes, gruppiert nach Europa, Amerika und Asien),
+**Branchen USA** (Select Sector SPDR) und **Branchen Europa** (iShares STOXX Europe 600)
+im Zeitraum Heute, Woche, Monat oder Jahr, **Jahreskurven** für DAX und S&P 500 sowie
+Kacheln für **EUR/USD, Gold, Brent und Bitcoin** (Veränderung zum Vortagesbalken).
+Branchen-ETFs dienen als Näherung, weil Yahoo die Sektorindizes nicht verlässlich
+führt. Die Symbolliste steht fest im Code (`market_overview.py`); die Seite liest
+keine Secrets, kein Sheet und keine Depotdaten. Kurse kommen von Yahoo Finance und
+werden für alle Besucher bis zu 15 Minuten gemeinsam zwischengespeichert. Indizes
+und ETFs nutzen dieselben Börsenkalender und dieselbe Kursperioden-Logik wie die
+Watchlist; Werte bleiben in Indexpunkten bzw. Handelswährung.
+
 ## Interaktive Analyse
 
 Die Ansicht **Analyse** direkt hinter **Watchlist** überträgt die 29 Themen der Financial-Pipeline-V4

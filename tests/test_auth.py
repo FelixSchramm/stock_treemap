@@ -8,6 +8,7 @@ import builtins
 import os
 import socket
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ import portfolio_dashboard.auth as auth
 import portfolio_dashboard.demo as demo
 import portfolio_dashboard.fundamentals_loader as fundamentals_loader
 import portfolio_dashboard.local_source as local_source
+import portfolio_dashboard.start_view as start_view
 import portfolio_dashboard.ui as ui
 import portfolio_dashboard.watchlist_refresh as watchlist_refresh
 from portfolio_dashboard.config import LoginConfig
@@ -124,6 +126,8 @@ def protected_app(monkeypatch):
     monkeypatch.setattr(builtins, "open", guard_open)
     monkeypatch.setattr(Path, "open", guard_path_open)
     monkeypatch.setattr(socket, "create_connection", unexpected)
+    # The public start page's market data is synthetic here (and never private).
+    monkeypatch.setattr(start_view, "cached_quotes", lambda group: (datetime(2033, 5, 18, tzinfo=UTC), ()))
     calls = []
     snapshot = demo.demo_snapshot
 
@@ -189,10 +193,31 @@ def protected_app(monkeypatch):
 
 def assert_closed(app, calls):
     assert not app.exception
-    assert app.error
     assert calls == []
     assert not app.title and not app.dataframe and not app.radio
     assert not app.get("download_button")
+    # Denied accounts see the error; anonymous visitors the public start page with Login.
+    logged_in = st.user.get("is_logged_in") is True
+    assert any(button.key == "auth.login" for button in app.button) is not logged_in
+    if logged_in:
+        assert app.error
+
+
+def test_anonymous_visitor_gets_the_public_start_page_with_login(protected_app):
+    make_app, calls = protected_app
+    app = make_app({}).run()
+    assert_closed(app, calls)
+    assert not app.error and app.header[0].value == "Märkte im Überblick"
+    login = next(button for button in app.button if button.key == "auth.login")
+    assert login.label == "Login"
+    assert any(start_view.NOT_AVAILABLE_TEXT == info.value for info in app.info)
+
+
+def test_foreign_account_gets_the_error_but_no_start_page(protected_app):
+    make_app, calls = protected_app
+    app = make_app(owner_claims() | {"sub": "synthetic-other-subject"}).run()
+    assert_closed(app, calls)
+    assert not app.header and "Kein Besitzerzugriff" in app.error[0].value
 
 
 @pytest.mark.parametrize("changes", BAD_CLAIMS)

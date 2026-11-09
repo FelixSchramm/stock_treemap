@@ -158,8 +158,8 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
         sessions = [day for day in days if day.weekday() < 5 and day not in closed]
         for venue, (opens, closes) in hours.items():
             calendars[venue] = session_calendar(sessions, opens, closes, first, last)
-    for venue, (opens, closes, _) in INTL_VENUES.items():
-        span = _library_sessions(venue, first, last)
+    for venue, (opens, closes, factory) in INTL_VENUES.items():
+        span = _library_sessions(factory, first, last)
         if span is not None:  # without a span the venue stays unsupported
             calendars[venue] = session_calendar(
                 span[0], opens, closes, span[1], span[2], *LUNCH_BREAKS.get(venue, ())
@@ -168,20 +168,19 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
 
 
 @lru_cache(maxsize=64)
-def _library_sessions(venue: str, first: date, last: date) -> tuple[frozenset[date], date, date] | None:
-    """Regular sessions of an ``INTL_VENUES`` exchange from ``exchange_calendars``.
+def _library_sessions(factory: type, first: date, last: date) -> tuple[frozenset[date], date, date] | None:
+    """Regular sessions of one ``exchange_calendars`` exchange calendar class.
 
     The span is clipped to the years the library has holidays recorded for, so a
     calendar never claims sessions it cannot know (price periods outside the span
     become "calendar_incomplete"). Cached because some calendars are slow to build.
 
-    :param venue: Yahoo exchangeName contained in ``INTL_VENUES``.
+    :param factory: exchange_calendars class, e.g. from ``INTL_VENUES``.
     :param first: First requested exchange-local date.
     :param last: Last requested exchange-local date.
     :return: Session dates plus the first and last date the set is complete for, or
         ``None`` if the library covers no part of the requested span.
     """
-    factory = INTL_VENUES[venue][2]
     bound_min, bound_max = factory.bound_min(), factory.bound_max()
     span_first = max(first, bound_min.date()) if bound_min is not None else first
     span_last = min(last, bound_max.date()) if bound_max is not None else last

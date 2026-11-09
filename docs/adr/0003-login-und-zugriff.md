@@ -30,6 +30,10 @@ Konkrete Besitzeridentität, OIDC-Client und Callback-URL werden noch eingericht
 
 Auf Wunsch des Besitzers zeigt `PORTFOLIO_MODE=local` die eigenen Sheet-Daten auf dem eigenen Rechner ohne OIDC-Login. Der Netzwerkzugang ersetzt hier die Anmeldung: Die App lädt nur, wenn Streamlit ausschließlich auf `127.0.0.1`, `localhost` oder `::1` lauscht, und sperrt sonst vor dem ersten Sheet-Abruf. Der Modus liest keine Auth-Secrets und ist nicht für Container oder Hosting vorgesehen; jeder erreichbare Betrieb bleibt beim Produktivmodus mit Besitzerprüfung.
 
+## Nachtrag 2026-11-09: Öffentliche Startseite vor dem Login
+
+Auf Wunsch des Besitzers sehen nicht angemeldete Besucher statt einer Fehlermeldung die Startseite **Märkte im Überblick** mit **Login** rechts oben (`start_view.py`). Sie zeigt ausschließlich öffentliche Marktdaten zu einer fest im Code hinterlegten Symbolliste (`market_overview.py`: Weltindizes, Branchen-ETFs, Devisen und Rohstoffe). Die Seite liest keine Secrets außer der bestehenden Login-Konfiguration, greift nicht auf das Sheet zu und startet keine Depot-, Watchlist-, Index- oder Fundamentaldaten-Lader; die Besitzerprüfung für alles Weitere bleibt unverändert. Ein angemeldetes, aber nicht freigegebenes Konto erhält weiterhin die Fehlermeldung. Die Kurse werden für alle Besucher gemeinsam bis zu 15 Minuten zwischengespeichert, damit die Zahl der Yahoo-Abrufe nicht mit der Besucherzahl wächst. Die rechtliche Frage zur Anzeige von Yahoo-Daten in einer öffentlich erreichbaren App (Epic #115) bleibt offen; solange die Community-Cloud-App nur für eingeladene Konten sichtbar ist, sehen die Startseite nur diese.
+
 ## Referenzen
 
 - [Streamlit: OIDC, Login und Session-Verhalten](https://docs.streamlit.io/develop/concepts/connections/authentication)

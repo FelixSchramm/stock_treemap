@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import streamlit as st
 
+from portfolio_dashboard import start_view
 from portfolio_dashboard.auth import require_owner
 from portfolio_dashboard.config import (
     LOOPBACK_ADDRESSES,
@@ -134,8 +135,9 @@ if config.mode is Mode.LOCAL:
 
 if config.mode is Mode.PRODUCTION:
     # Every run passes the owner gate before secrets, loaders and output.
-    # Never cache an authorization decision.
-    require_owner(config.login)
+    # Never cache an authorization decision. Anonymous visitors only get the
+    # public start page: fixed market symbols, no secrets, no Sheet access.
+    require_owner(config.login, landing=start_view.render)
     render_own_portfolio(
         lambda: build_production_coordinator(
             config, st.secrets.get("sheets_service_account")
