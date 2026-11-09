@@ -41,7 +41,7 @@ from portfolio_dashboard.watchlist_sheet import (
 )
 
 INDEX_NAMES = (
-    "DAX", "MDAX", "Euro Stoxx 50", "STOXX Europe 600", "S&P 500", "Nasdaq 100", "Dow Jones",
+    "DAX", "MDAX", "Euro Stoxx 50", "STOXX Europe 600", "S&P 500", "Nasdaq 100", "Dow Jones", "Nikkei 225",
 )
 MAX_ROWS = 999  # Header + constituents fit the standard 1,000-row Sheet grid.
 SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9.\-]{0,19}")

@@ -44,8 +44,8 @@ Die Watchlist liegt in einem eigenen Blatt derselben Datei und wird über `PORTF
 | ab E, über Überschrift (je höchstens einmal, bis Spalte T) | `Ticker` | Anzeige, keine ID |
 | | `Typ` | `Aktie`, `ETF`; `Derivat` erhält keine Zuordnung |
 | | `Yahoo-Symbol` | Kandidat für den yfinance-Abruf (Großschreibung wird vereinheitlicht) |
-| | `Handelsplatz` | Yahoo-`exchangeName`: `GER`, `FRA`, `STU`, `MUN`, `DUS` (Berlin) oder `NMS`, `NGM`, `NCM`, `NYQ`, `ASE`, `PCX` (New York) |
-| | `Währung` | dreibuchstabiger Code in Großbuchstaben, z. B. `EUR`, `USD` |
+| | `Handelsplatz` | Yahoo-`exchangeName`: `GER`, `FRA`, `STU`, `MUN`, `DUS` (Berlin), `NMS`, `NGM`, `NCM`, `NYQ`, `ASE`, `PCX` (New York) oder `JPX` (.T), `HKG` (.HK), `NSI` (.NS), `KSC` (.KS), `TAI` (.TW), `PAR` (.PA), `AMS` (.AS), `MIL` (.MI), `MCE` (.MC), `EBS` (.SW) |
+| | `Währung` | dreibuchstabiger Code in Großbuchstaben, z. B. `EUR`, `USD`; US-Handelsplätze verlangen `USD`, die übrigen außerdeutschen ihre Handelswährung (`JPY`, `HKD`, `INR`, `KRW`, `TWD`, `EUR`, `CHF`) |
 | | `Kategorie` | Anzeige |
 
 Eine Zeile mit nur A–D ist gültig: `Heute` zeigt den Sheet-Wert als Ersatzwert, `Woche`, `Monat` und `Jahr` zeigen „n. v.“. Eine Zeile mit vollständiger und widerspruchsfreier Zuordnung (`Yahoo-Symbol`, `Handelsplatz`, `Währung`) erhält alle vier Perioden (Abruf: [WATCHLIST_QUOTES.md](WATCHLIST_QUOTES.md); Ansicht: [WATCHLIST_VIEW.md](WATCHLIST_VIEW.md)); jede unvollständige, widersprüchliche, doppelte oder derivatbezogene Zuordnung ergibt eine Zeilenwarnung und den Sheet-Wert. Dies ist die bewusste Ausnahme zu ADR 0005 (Pflege im Blatt statt in `listings.toml`); der Laufzeitabgleich gegen die Yahoo-Metadaten bleibt Pflicht. Parser: [SHEET_PARSER.md](SHEET_PARSER.md#watchlist-parser).

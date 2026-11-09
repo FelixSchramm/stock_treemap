@@ -7,8 +7,19 @@ production from the server-side secrets.
 """
 
 from datetime import date, time, timedelta
+from functools import lru_cache
 
 from dateutil.easter import easter
+from exchange_calendars.exchange_calendar_xams import XAMSExchangeCalendar
+from exchange_calendars.exchange_calendar_xbom import XBOMExchangeCalendar
+from exchange_calendars.exchange_calendar_xhkg import XHKGExchangeCalendar
+from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
+from exchange_calendars.exchange_calendar_xmad import XMADExchangeCalendar
+from exchange_calendars.exchange_calendar_xmil import XMILExchangeCalendar
+from exchange_calendars.exchange_calendar_xpar import XPARExchangeCalendar
+from exchange_calendars.exchange_calendar_xswx import XSWXExchangeCalendar
+from exchange_calendars.exchange_calendar_xtai import XTAIExchangeCalendar
+from exchange_calendars.exchange_calendar_xtks import XTKSExchangeCalendar
 
 from portfolio_dashboard.config import AppConfig
 from portfolio_dashboard.instruments import VerifiedListing, resolve_listing
@@ -52,6 +63,22 @@ US_SPECIAL_CLOSURES = frozenset(
         date(2025, 1, 9),
     }
 )
+# Further Watchlist/index exchanges (Yahoo exchangeName): regular hours in the
+# exchange's own time zone and the exchange_calendars class supplying holidays.
+# Lunch breaks are not modelled. Like the US venues they stay out of VENUE_HOURS.
+# NSE (NSI) shares its trading holidays with BSE, the calendar the library provides.
+INTL_VENUES = {
+    "JPX": (time(9), time(15, 30), XTKSExchangeCalendar),
+    "HKG": (time(9, 30), time(16), XHKGExchangeCalendar),
+    "NSI": (time(9, 15), time(15, 30), XBOMExchangeCalendar),
+    "KSC": (time(9), time(15, 30), XKRXExchangeCalendar),
+    "TAI": (time(9), time(13, 30), XTAIExchangeCalendar),
+    "PAR": (time(9), time(17, 30), XPARExchangeCalendar),
+    "AMS": (time(9), time(17, 30), XAMSExchangeCalendar),
+    "MIL": (time(9), time(17, 30), XMILExchangeCalendar),
+    "MCE": (time(9), time(17, 30), XMADExchangeCalendar),
+    "EBS": (time(9), time(17, 30), XSWXExchangeCalendar),
+}
 
 
 def _holidays(year: int) -> set[date]:
@@ -111,8 +138,8 @@ def us_holidays(year: int) -> set[date]:
 def venue_calendars(today: date) -> dict[str, SessionCalendar]:
     """Calendars spanning more than a year back and a year ahead of ``today``.
 
-    German venues use Europe/Berlin dates and hours, US venues America/New_York;
-    early closes are modelled for neither.
+    German venues use Europe/Berlin dates and hours, US venues America/New_York,
+    ``INTL_VENUES`` their own exchange time zone; early closes are modelled for none.
     """
     first, last = today - timedelta(days=400), today + timedelta(days=366)
     years = range(first.year, last.year + 1)
@@ -125,7 +152,35 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
         sessions = [day for day in days if day.weekday() < 5 and day not in closed]
         for venue, (opens, closes) in hours.items():
             calendars[venue] = session_calendar(sessions, opens, closes, first, last)
+    for venue, (opens, closes, _) in INTL_VENUES.items():
+        span = _library_sessions(venue, first, last)
+        if span is not None:  # without a span the venue stays unsupported
+            calendars[venue] = session_calendar(span[0], opens, closes, span[1], span[2])
     return calendars
+
+
+@lru_cache(maxsize=64)
+def _library_sessions(venue: str, first: date, last: date) -> tuple[frozenset[date], date, date] | None:
+    """Regular sessions of an ``INTL_VENUES`` exchange from ``exchange_calendars``.
+
+    The span is clipped to the years the library has holidays recorded for, so a
+    calendar never claims sessions it cannot know (price periods outside the span
+    become "calendar_incomplete"). Cached because some calendars are slow to build.
+
+    :param venue: Yahoo exchangeName contained in ``INTL_VENUES``.
+    :param first: First requested exchange-local date.
+    :param last: Last requested exchange-local date.
+    :return: Session dates plus the first and last date the set is complete for, or
+        ``None`` if the library covers no part of the requested span.
+    """
+    factory = INTL_VENUES[venue][2]
+    bound_min, bound_max = factory.bound_min(), factory.bound_max()
+    span_first = max(first, bound_min.date()) if bound_min is not None else first
+    span_last = min(last, bound_max.date()) if bound_max is not None else last
+    if span_last < span_first:
+        return None
+    calendar = factory(start=span_first.isoformat(), end=span_last.isoformat())
+    return frozenset(day.date() for day in calendar.sessions), span_first, span_last
 
 
 # Supported depot venues and their required currency: German EUR listings only.

@@ -216,7 +216,46 @@ def test_complete_de_and_us_mappings(kwargs, exchange, timezone_name, currency):
 def test_supported_exchange_set_is_exactly_the_adr_list():
     assert set(EXCHANGES) == {
         "GER", "FRA", "STU", "MUN", "DUS", "NMS", "NGM", "NCM", "NYQ", "ASE", "PCX",
+        "JPX", "HKG", "NSI", "KSC", "TAI", "PAR", "AMS", "MIL", "MCE", "EBS",  # #134
     }
+
+
+@pytest.mark.parametrize(
+    ("symbol", "exchange", "timezone_name", "currency"),
+    [
+        ("1234.T", "JPX", "Asia/Tokyo", "JPY"),
+        ("0123.HK", "HKG", "Asia/Hong_Kong", "HKD"),
+        ("SYN.NS", "NSI", "Asia/Kolkata", "INR"),
+        ("012345.KS", "KSC", "Asia/Seoul", "KRW"),
+        ("1234.TW", "TAI", "Asia/Taipei", "TWD"),
+        ("SYN.PA", "PAR", "Europe/Paris", "EUR"),
+        ("SYN.AS", "AMS", "Europe/Amsterdam", "EUR"),
+        ("SYN.MI", "MIL", "Europe/Rome", "EUR"),
+        ("SYN.MC", "MCE", "Europe/Madrid", "EUR"),
+        ("SYN.SW", "EBS", "Europe/Zurich", "CHF"),
+    ],
+)
+def test_complete_asian_and_further_european_mappings(symbol, exchange, timezone_name, currency):
+    (item,) = parse([row(symbol=symbol, exchange=exchange, currency=currency)]).snapshot.items
+    assert item.status is WatchlistRowStatus.MAPPED and item.warnings == ()
+    assert item.mapping == WatchlistMapping(symbol, exchange, currency, InstrumentType.STOCK)
+    assert item.mapping.timezone == timezone_name
+
+
+@pytest.mark.parametrize(
+    ("symbol", "exchange", "currency", "code"),
+    [
+        ("1234.T", "JPX", "USD", "currency_exchange_conflict"),
+        ("SYN.SW", "EBS", "EUR", "currency_exchange_conflict"),
+        ("1234", "JPX", "JPY", "symbol_exchange_conflict"),
+        ("0123.HK", "JPX", "JPY", "symbol_exchange_conflict"),
+        ("SYN.PA", "AMS", "EUR", "symbol_exchange_conflict"),
+    ],
+)
+def test_new_venues_require_their_suffix_and_trading_currency(symbol, exchange, currency, code):
+    (item,) = parse([row(symbol=symbol, exchange=exchange, currency=currency)]).snapshot.items
+    assert item.status is WatchlistRowStatus.FALLBACK and item.mapping is None
+    assert codes(item) == [code]
 
 
 def test_mapping_without_type_or_optional_text_is_allowed():
