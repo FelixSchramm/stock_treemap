@@ -8,6 +8,7 @@ import pytest
 from portfolio_dashboard import local_source
 from portfolio_dashboard.local_source import (
     INTL_VENUES,
+    LUNCH_BREAKS,
     US_VENUE_HOURS,
     VENUE_HOURS,
     venue_calendars,
@@ -58,6 +59,19 @@ def test_holidays_are_no_sessions(calendars, venue, holiday, trading_day):
     assert trading_day in calendars[venue].sessions
 
 
+def test_tokyo_and_hong_kong_carry_their_midday_break(calendars):
+    breaks = {venue: (calendars[venue].break_start, calendars[venue].break_end) for venue in INTL_VENUES}
+    assert breaks.pop("JPX") == (time(11, 30), time(12, 30))
+    assert breaks.pop("HKG") == (time(12), time(13))
+    assert set(breaks.values()) == {(None, None)}
+
+
+@pytest.mark.parametrize("venue", sorted(LUNCH_BREAKS))
+def test_lunch_breaks_match_the_library(venue):
+    factory = INTL_VENUES[venue][2]
+    assert LUNCH_BREAKS[venue] == (factory.break_start_times[-1][1], factory.break_end_times[-1][1])
+
+
 def test_calendar_span_is_clipped_to_the_recorded_holiday_years(calendars):
     full = calendars["JPX"]
     assert (full.first_day, full.last_day) == (date(2025, 9, 23), date(2027, 10, 29))
@@ -95,6 +109,7 @@ def test_new_venues_do_not_widen_the_depot_registry():
     [
         (datetime(2026, 10, 27, 23, 59, tzinfo=UTC), False),  # 08:59 JST
         (datetime(2026, 10, 28, 0, 0, tzinfo=UTC), True),  # 09:00 JST
+        (datetime(2026, 10, 28, 3, 0, tzinfo=UTC), True),  # 12:00 JST, break: quote still needed
         (datetime(2026, 10, 28, 6, 29, tzinfo=UTC), True),  # 15:29 JST
         (datetime(2026, 10, 28, 6, 30, tzinfo=UTC), False),  # 15:30 JST
     ],

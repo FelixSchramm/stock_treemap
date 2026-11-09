@@ -11,7 +11,7 @@ enthält keine UI.
 
 | Modul | Inhalt |
 | --- | --- |
-| `local_source.venue_calendars(today)` | `SessionCalendar` je Handelsplatz: `GER`, `FRA`, `STU`, `MUN`, `DUS` (Europe/Berlin), `NMS`, `NGM`, `NCM`, `NYQ`, `ASE`, `PCX` (America/New_York) sowie `INTL_VENUES` (Tokio, Hongkong, Indien, Korea, Taiwan, Paris, Amsterdam, Mailand, Madrid, Zürich; Feiertage aus `exchange_calendars`, #134) |
+| `local_source.venue_calendars(today)` | `SessionCalendar` je Handelsplatz: `GER`, `FRA`, `STU`, `MUN`, `DUS` (Europe/Berlin), `NMS`, `NGM`, `NCM`, `NYQ`, `ASE`, `PCX` (America/New_York) sowie `INTL_VENUES` (Tokio, Hongkong, Indien, Korea, Taiwan, Paris, Amsterdam, Mailand, Madrid, Zürich; Feiertage aus `exchange_calendars`, #134; Mittagspause Tokio und Hongkong aus `LUNCH_BREAKS`, #133) |
 | `watchlist_refresh.WatchlistSheetsReader` | liest das Watchlist-Blatt (`PORTFOLIO_WATCHLIST_RANGE`) mit demselben lesenden Service-Account |
 | `watchlist_refresh.WatchlistRefreshCoordinator` | `load(refresh=False)` liefert ein `WatchlistBundle`; Cache, Abgleich, Perioden, Fallbacks |
 | `watchlist_refresh.build_local_watchlist_coordinator` / `build_production_watchlist_coordinator` | Verdrahtung wie beim Depot; `None` ohne `PORTFOLIO_WATCHLIST_RANGE` |

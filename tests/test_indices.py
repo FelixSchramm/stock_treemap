@@ -1,7 +1,7 @@
 """Synthetic Sheet and Yahoo boundaries; all IP sockets remain blocked."""
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import unquote
 
@@ -168,20 +168,26 @@ def test_unsupported_exchange_shows_cap_but_does_not_invent_calendar():
     assert "wird noch angebunden" in row.note and not yahoo.calls
 
 
-def test_tokyo_constituent_gets_periods_and_cap_in_yen():
-    member = Constituent("Synthetische Tokio KK", "1234.T")
-    calendars = venue_calendars(CLOSED.date())
-    yahoo = FakeYahoo(calendars, lambda: CLOSED)
-    yahoo.add("1234.T", "JPX", "JPY", exchangeTimezoneName="Asia/Tokyo")
+# (invented constituent, Yahoo symbol, exchangeName, currency, exchange time zone)
+TOKYO = ("Synthetische Tokio KK", "1234.T", "JPX", "JPY", "Asia/Tokyo")
+HONG_KONG = ("Synthetische Hongkong Ltd", "0123.HK", "HKG", "HKD", "Asia/Hong_Kong")
+ASIA_RUNNING = datetime(2026, 10, 28, 2, 0, tzinfo=UTC)  # 11:00 JST, 10:00 HKT
+
+
+def asian_market(listing, now, **info_overrides):
+    _, symbol, exchange, currency, timezone = listing
+    calendars = venue_calendars(now.date())
+    yahoo = FakeYahoo(calendars, lambda: now)
+    yahoo.add(symbol, exchange, currency, exchangeTimezoneName=timezone)
 
     class Ticker:
-        def __init__(self, symbol):
-            self.inner = yahoo.factory(symbol)
+        def __init__(self, requested):
+            self.inner = yahoo.factory(requested)
 
         def get_info(self):
             return {
-                "symbol": "1234.T", "exchange": "JPX", "currency": "JPY", "quoteType": "EQUITY",
-                "exchangeTimezoneName": "Asia/Tokyo", "marketCap": 5_000_000_000_000,
+                "symbol": symbol, "exchange": exchange, "currency": currency, "quoteType": "EQUITY",
+                "exchangeTimezoneName": timezone, "marketCap": 5_000_000_000_000, **info_overrides,
             }
 
         def history(self, **kwargs):
@@ -190,15 +196,49 @@ def test_tokyo_constituent_gets_periods_and_cap_in_yen():
         def get_history_metadata(self):
             return self.inner.get_history_metadata()
 
-    row = IndexMarketData(Ticker).fetch(member, CLOSED, calendars)
-    assert row.market_cap == Decimal(5_000_000_000_000) and row.currency == "JPY"
+    return IndexMarketData(Ticker), yahoo, calendars
+
+
+@pytest.mark.parametrize(
+    ("listing", "now", "market_open"),
+    [
+        (TOKYO, CLOSED, False),
+        (HONG_KONG, CLOSED, False),
+        (TOKYO, ASIA_RUNNING, True),
+        (HONG_KONG, ASIA_RUNNING, True),
+        (TOKYO, datetime(2026, 10, 28, 3, 0, tzinfo=UTC), False),  # 12:00 JST, midday break
+        (HONG_KONG, datetime(2026, 10, 28, 4, 30, tzinfo=UTC), False),  # 12:30 HKT, midday break
+    ],
+)
+def test_asian_constituent_gets_periods_and_cap_in_its_currency(listing, now, market_open):
+    name, symbol, _, currency, _ = listing
+    provider, yahoo, calendars = asian_market(listing, now)
+    row = provider.fetch(Constituent(name, symbol), now, calendars)
+    assert row.market_cap == Decimal(5_000_000_000_000) and row.currency == currency
     assert row.note is None and row.quote is not None
     assert all(value.percent is not None for value in row.quote.periods)
+    assert row.quote.market_open is market_open
+    # Within the session, including its midday break, today's price is the live quote.
+    in_session = now != CLOSED
+    expected = Decimal("111.11") if in_session else Decimal(str(close_of(now.date())))
+    assert row.quote.price == expected
+    assert len(yahoo.quote_calls(symbol)) == (1 if in_session else 0)
 
 
-def test_nikkei_225_is_a_supported_index_tab():
-    source, _ = reader({"sheets": [{"properties": {"title": "Nikkei 225"}}]})
-    assert source.list_indices() == ("Nikkei 225",)
+@pytest.mark.parametrize(("listing", "currency"), [(HONG_KONG, "USD"), (TOKYO, "HKD")])
+def test_asian_constituent_in_a_foreign_currency_is_rejected(listing, currency):
+    name, symbol, *_ = listing
+    provider, yahoo, calendars = asian_market(listing, CLOSED, currency=currency)
+    row = provider.fetch(Constituent(name, symbol), CLOSED, calendars)
+    assert row.market_cap is None and row.quote is None
+    assert row.note == "NA · Yahoo-Zuordnung nicht bestätigt" and not yahoo.calls
+
+
+def test_hang_seng_and_nikkei_225_are_supported_index_tabs():
+    source, _ = reader({"sheets": [
+        {"properties": {"title": title}} for title in ("Nikkei 225", "Private tab", "Hang Seng")
+    ]})
+    assert source.list_indices() == ("Hang Seng", "Nikkei 225")
 
 
 class Source:

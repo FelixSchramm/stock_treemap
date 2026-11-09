@@ -18,7 +18,8 @@ Quote-Gründe), bleiben `current_date` und `market_open` erhalten.
   FX und Dividenden fließen nicht ein.
 - `sessions`: `SessionCalendar` mit erwarteten regulären Handelstagen
   (lokale Börsendaten, explizit vom Aufrufer, keine Kalenderbibliothek) sowie
-  Öffnungs-/Schlusszeit. Vorzeitige Schlüsse werden nicht modelliert.
+  Öffnungs-/Schlusszeit, optional eine Mittagspause (`break_start`/`break_end`).
+  Vorzeitige Schlüsse werden nicht modelliert.
   `first_day`/`last_day` geben die Abdeckung des Kalenders an. Liegt das lokale
   Börsendatum außerhalb, reicht ein Zieltag vor `first_day`, oder enthält die
   Historie neuere Balken an Tagen, die der Kalender nicht führt, ergibt sich
@@ -41,6 +42,10 @@ Quote-Gründe), bleiben `current_date` und `market_open` erhalten.
   ohne Handel am Tag), der unvollständige heutige Historienbalken wird ignoriert.
   Sonst gilt die letzte abgeschlossene Sitzung (Wochenende, Feiertag, vor
   Öffnung, nach Schluss) mit ihrem Schlusskurs.
+- Mittagspause (`break_start` <= lokale Zeit < `break_end`, nur Tokio und
+  Hongkong, `local_source.LUNCH_BREAKS`, #133): Die Sitzung ist nicht beendet,
+  es zählt weiter die Quote mit dem letzten Kurs des Vormittags. Weil nicht
+  gehandelt wird, ist `market_open` in der Pause `False`.
 - Heute: Referenz ist der Schluss der vorherigen erwarteten Sitzung.
 - Woche: 7 Kalendertage vor dem Kursdatum; Monat/Jahr: ein Kalendermonat/-jahr
   davor, Tag auf Monatsende begrenzt (29. Februar wird zum 28. Februar).
