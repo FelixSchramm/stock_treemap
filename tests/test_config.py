@@ -156,6 +156,7 @@ def test_production_app_stays_closed_before_loading_any_rows(monkeypatch, comple
     import socket
 
     import portfolio_dashboard.demo
+    import portfolio_dashboard.start_view
 
     values = production_settings() if complete else {"PORTFOLIO_MODE": "production"}
     set_app_environment(monkeypatch, values)
@@ -166,14 +167,22 @@ def test_production_app_stays_closed_before_loading_any_rows(monkeypatch, comple
     monkeypatch.setattr(portfolio_dashboard.demo, "demo_rows", unexpected)
     monkeypatch.setattr(portfolio_dashboard.demo, "demo_snapshot", unexpected)
     monkeypatch.setattr(socket, "create_connection", unexpected)
+    # Only the public start page may ask for (here synthetic) market data.
+    markets = []
+    monkeypatch.setattr(portfolio_dashboard.start_view, "cached_quotes",
+                        lambda group: markets.append(group) or (None, ()))
     app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py"))
     # Provide an in-memory secret store; never consult host secret files.
     app.secrets["auth"] = production_auth() if complete else {}
     app.run()
     assert not app.exception
-    assert len(app.error) == 1
     assert not app.dataframe
     assert not app.title
+    if complete:  # anonymous visitor: public start page with Login, no error
+        assert not app.error and app.button(key="auth.login")
+        assert markets == ["Weltindizes", portfolio_dashboard.start_view.ASSETS_GROUP]
+        return
+    assert len(app.error) == 1 and not markets
     for name, value in values.items():
         if name != "PORTFOLIO_MODE":
             assert value not in app.error[0].value

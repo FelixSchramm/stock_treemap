@@ -32,8 +32,9 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("[sheets_serv
 ## 4. Prüfen
 
 - Anonymes Fenster: Streamlit verlangt die eingeladene Anmeldung; ohne sie kein Zugang.
-- Eigenes Konto, **Mit Google anmelden**: eigenes Depot mit Datenstand, Live-Kurse für zugeordnete Positionen.
-- **Von dieser App abmelden**, neu laden: wieder gesperrt.
+- Vor dem App-Login: Startseite **Märkte im Überblick** mit öffentlichen Marktdaten, keine Depotdaten.
+- Eigenes Konto, **Login** rechts oben: eigenes Depot mit Datenstand, Live-Kurse für zugeordnete Positionen.
+- **Von dieser App abmelden**, neu laden: wieder nur die Startseite.
 - Fehlender oder ungültiger Schlüssel: nur „Service-Account-Schlüssel fehlt oder ist ungültig.“, keine Daten.
 
 Der Neustart nach dem Ruhezustand beginnt ohne Cache; die App lädt dann neu oder zeigt „Daten nicht verfügbar“ (ADR 0009). Die weitere Live-Abnahme folgt in #35–#38.

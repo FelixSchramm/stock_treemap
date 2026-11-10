@@ -91,6 +91,7 @@ def table_rows(bundle: IndexBundle, period: str) -> list[dict]:
 
 
 def render(factory, *, refresh_clicked=False, demo=False):
+    st.divider()
     if factory is None:
         st.info("Index-Daten sind noch nicht angebunden.")
         return
