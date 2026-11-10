@@ -7,11 +7,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from portfolio_dashboard import start_view
 from portfolio_dashboard.design import style_figure
 from portfolio_dashboard.indices import INDEX_NAMES, IndexBundle, IndexSourceError
 from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
-from portfolio_dashboard.treemap import color_for, color_scale, format_percent
+from portfolio_dashboard.treemap import _german, color_for, color_scale, format_percent
 from portfolio_dashboard.watchlist_quotes import PERIODS
 
 AREA = "Indizes"
@@ -90,6 +91,31 @@ def table_rows(bundle: IndexBundle, period: str) -> list[dict]:
     return rows
 
 
+def render_index_level(name: str, period: str) -> None:
+    """Index level, its own change and a one-year curve; same cache as the start page.
+
+    Public market data only (``market_overview.WORLD_INDICES``); an index without a
+    checked symbol or without data shows nothing rather than a guessed value.
+    """
+    try:
+        _, quotes = start_view.cached_quotes("Weltindizes")
+    except Exception:
+        return
+    quote = next((q for q in quotes if q.item.name == name), None)
+    if quote is None or quote.price is None:
+        return
+    change = quote.percent(period)
+    st.metric(
+        f"{name} · Indexstand",
+        f"{_german(quote.price, 2)} Pkt.",
+        format_percent(change) if change is not None else None,
+        delta_description=period if change is not None else None,
+        chart_data=[float(close) for _, close in quote.closes] or None,
+        chart_type="area",
+        help=f"Yahoo Finance ({quote.item.symbol}); Kurve: Tagesschlusskurse eines Jahres.",
+    )
+
+
 def render(factory, *, refresh_clicked=False, demo=False):
     st.divider()
     if factory is None:
@@ -117,8 +143,8 @@ def render(factory, *, refresh_clicked=False, demo=False):
     st.session_state[INDEX_KEY] = name
     with right:
         current_period = st.session_state.get(PERIOD_KEY, "Heute")
-        period = st.radio("Zeitraum", PERIODS, index=PERIODS.index(current_period),
-                          horizontal=True, key="_indices.period")
+        period = st.segmented_control("Zeitraum", PERIODS, default=current_period,
+                                      key="_indices.period") or current_period
     st.session_state[PERIOD_KEY] = period
     with st.spinner(f"{name}: Unternehmen, Kurse und Marktkapitalisierungen werden geladen …"):
         bundle = loader.load(name, refresh=refresh_clicked)
@@ -135,6 +161,8 @@ def render(factory, *, refresh_clicked=False, demo=False):
     if not bundle.rows:
         st.info("Dieses Index-Blatt enthält noch keine Unternehmen.")
         return
+    if not demo:
+        render_index_level(name, period)
 
     gains = [row for row in bundle.rows if row.percent(period) is not None and row.percent(period) > 0]
     losses = [row for row in bundle.rows if row.percent(period) is not None and row.percent(period) < 0]

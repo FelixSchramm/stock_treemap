@@ -413,7 +413,9 @@ def test_watchlist_loader_is_built_only_for_the_owner_and_only_when_opened(prote
 def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_app, monkeypatch):
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
-    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Analyse", "Innerer Wert", "Indizes"]
+    assert app.radio(key=ui.AREA_RADIO_KEY).options == [
+        "Depot", "Watchlist", "Analyse", "Innerer Wert", "Indizes", "Märkte",
+    ]
     calls.clear()
     app.radio(key=ui.AREA_RADIO_KEY).set_value("Innerer Wert").run()
     assert not app.exception and not app.error
@@ -424,6 +426,21 @@ def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_ap
     calls.clear()
     app.run()
     assert_closed(app, calls)  # revoked owner: no area, no table, no private figure
+
+
+def test_markets_area_shows_public_data_without_private_loaders(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    app = make_app(owner_claims()).run()
+    calls.clear()
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Märkte").run()
+    assert not app.exception and not app.error and not app.dataframe
+    assert calls == ["render_dashboard"]  # no Sheet, Watchlist or index loader
+    assert [info.value for info in app.info] == [start_view.NOT_AVAILABLE_TEXT]
+    assert not any(button.key == "auth.login" for button in app.button)
+    monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
+    calls.clear()
+    app.run()
+    assert_closed(app, calls)
 
 
 def test_detail_view_state_opens_nothing_for_a_revoked_owner(protected_app, monkeypatch):
@@ -526,7 +543,7 @@ def test_indices_build_only_after_owner_gate_and_hide_cached_data_on_revocation(
     app.radio(key=ui.AREA_RADIO_KEY).set_value("Indizes").run()
     assert not app.exception and builds == [True]
     assert app.dataframe and LOADER_KEY in app.session_state
-    app.radio(key="_indices.period").set_value("Jahr").run()
+    app.segmented_control(key="_indices.period").set_value("Jahr").run()
     assert builds == [True]
     calls.clear()
     monkeypatch.setattr(st, "user", owner_claims() | {"sub": "synthetic-revoked"})

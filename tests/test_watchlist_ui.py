@@ -199,7 +199,7 @@ def test_demo_starts_on_the_depot_course_view_and_offers_the_watchlist(offline_d
     assert app.radio(key=AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Analyse", "Innerer Wert", "Indizes"]
     assert app.radio(key=AREA_RADIO_KEY).value == "Depot"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
-    assert app.radio(key=PERIOD_RADIO_KEY).value == "Heute"
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).value == "Heute"
     assert "Watchlist" not in " ".join(c.value for c in app.caption)
 
 
@@ -207,7 +207,7 @@ def test_demo_watchlist_shows_synthetic_values_without_loading_anything(offline_
     app = area(new_app().run(), "Watchlist")
     assert not app.exception
     assert app.subheader[0].value == "Watchlist · Heute"
-    assert app.radio(key=PERIOD_RADIO_KEY).options == ["Heute", "Woche", "Monat", "Jahr"]
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).options == ["Heute", "Woche", "Monat", "Jahr"]
     assert any("Nur synthetische Beispieldaten" in info.value for info in app.info)
     assert [m.label for m in app.metric] == [
         "Beobachtete Werte",
@@ -233,7 +233,7 @@ def test_demo_watchlist_marks_sheet_values_and_missing_periods(offline_demo):
         for c in app.caption
     )
 
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Woche").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Woche").run()
     rows = table(app).set_index("Name")
     assert rows.loc["Demo-Krypto", "Kursentwicklung (%)"] == "n. v."
     assert "keine Yahoo-Zuordnung im Blatt" in rows.loc["Demo-Krypto", "Quelle"]
@@ -249,26 +249,26 @@ def test_demo_watchlist_marks_sheet_values_and_missing_periods(offline_demo):
 @pytest.mark.parametrize("period", ["Woche", "Monat", "Jahr"])
 def test_period_is_kept_when_switching_between_depot_and_watchlist(offline_demo, period):
     app = new_app().run()
-    app.radio(key=PERIOD_RADIO_KEY).set_value(period).run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value(period).run()
     app = area(app, "Watchlist")
-    assert app.radio(key=PERIOD_RADIO_KEY).value == period
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).value == period
     assert app.subheader[0].value == f"Watchlist · {period}"
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Heute").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Heute").run()
     app = area(app, "Depot")
-    assert app.radio(key=PERIOD_RADIO_KEY).value == "Heute"
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).value == "Heute"
     assert app.subheader[0].value == "Kursentwicklung · Heute"
-    app.radio(key=PERIOD_RADIO_KEY).set_value(period).run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value(period).run()
     assert area(app, "Watchlist").subheader[0].value == f"Watchlist · {period}"
 
 
 def test_since_purchase_falls_back_to_today_without_losing_the_depot_choice(offline_demo):
     app = new_app().run()
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
     assert app.subheader[0].value == "Meine Entwicklung · Seit Kauf"
 
     app = area(app, "Watchlist")
     assert not app.exception
-    assert app.radio(key=PERIOD_RADIO_KEY).value == "Heute"
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).value == "Heute"
     assert app.subheader[0].value == "Watchlist · Heute"
     assert any(c.value == WATCHLIST_SINCE_PURCHASE_TEXT for c in app.caption)
     assert app.session_state[COURSE_PERIOD_KEY] == "Seit Kauf"
@@ -276,15 +276,15 @@ def test_since_purchase_falls_back_to_today_without_losing_the_depot_choice(offl
     assert app.session_state[COURSE_PERIOD_KEY] == "Seit Kauf"
 
     app = area(app, "Depot")
-    assert app.radio(key=PERIOD_RADIO_KEY).value == "Seit Kauf"
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).value == "Seit Kauf"
     assert app.subheader[0].value == "Meine Entwicklung · Seit Kauf"
 
     # An explicit choice in the Watchlist replaces it and stays for the Depot.
     app = area(app, "Watchlist")
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Monat").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Monat").run()
     assert not any(c.value == WATCHLIST_SINCE_PURCHASE_TEXT for c in app.caption)
     app = area(app, "Depot")
-    assert app.radio(key=PERIOD_RADIO_KEY).value == "Monat"
+    assert app.segmented_control(key=PERIOD_RADIO_KEY).value == "Monat"
     assert app.subheader[0].value == "Kursentwicklung · Monat"
 
 
@@ -374,7 +374,7 @@ def test_watchlist_is_loaded_once_per_session_and_refreshed_on_request(local):
     loader = FakeLoader(bundle)
     state = local["use"](loader)
     app = area(new_app().run(), "Watchlist")
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Monat").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Monat").run()
     app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("alp").run()
     area(area(app, "Depot"), "Watchlist")
     assert loader.calls == [False] and state["built"] == ["local"]
@@ -420,7 +420,7 @@ def test_two_hundred_fifty_rows_without_optional_columns(local):
     assert expander_labels(app)[0] == "Watchlist-Details ohne Hover (250)"
     assert details_text(app).count("Zeile im Blatt") == 250
 
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
     assert set(column(app, "Kursentwicklung (%)")) == {"n. v."}
     assert app.metric[1].value == "0 von 250"
     assert app.metric[2].value == app.metric[3].value == "n. v."
@@ -481,7 +481,7 @@ def test_mixed_origins_are_visible_per_period_in_the_table_and_details(local):
     rows = table(app).set_index("Name")
     assert rows.loc["Alpha AG", "Quelle"].startswith(SHEET_VALUE_LABEL)
     assert rows.loc["Alpha AG", "Status"].endswith(f"Heute: {SHEET_VALUE_LABEL}")
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Woche").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Woche").run()
     rows = table(app).set_index("Name")
     assert rows.loc["Alpha AG", "Quelle"] == "Anbieter (Yahoo)"
     assert rows.loc["Alpha AG", "Referenzdatum"] == "27.10.2026"
