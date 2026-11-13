@@ -1,0 +1,73 @@
+# Nur eigene Notizen und Erklärungen werden committet, kein fremder Code.
+
+# Arbeitsverzeichnis für alle Rohdateien
+workspace/
+raw/
+extracted/
+decompiled/
+out/
+
+# App-Pakete
+*.apk
+*.apks
+*.xapk
+*.apkm
+*.aab
+*.ipa
+*.obb
+
+# Dekompilierte / extrahierte Inhalte
+*.dex
+*.odex
+*.vdex
+*.so
+*.smali
+*.jar
+*.class
+*.bundle
+*.jsbundle
+*.hbc
+*.bundle.js
+*.pretty.js
+classes*/
+smali*/
+lib/arm*/
+lib/x86*/
+
+# Modelldateien Dritter
+*.tflite
+*.lite
+*.onnx
+*.ort
+*.mlmodel
+*.mlmodelc/
+*.mlpackage/
+*.pb
+*.pt
+*.pth
+*.ptl
+*.bin
+*.ubj
+*.model
+*.xgb
+# XGBoost-JSON-Modelle bitte nur unter workspace/ ablegen
+
+# Gerätespeicher-Abzüge
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+shared_prefs/
+
+# Netzwerk-Mitschnitte (enthalten Tokens und eigene Account-Daten)
+*.har
+*.pcap
+*.pcapng
+*.mitm
+*.flow
+
+# Allgemein
+.DS_Store
+*.log
+*.tmp
