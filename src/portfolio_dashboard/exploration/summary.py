@@ -181,7 +181,8 @@ def key_figures(bundle):
             "%",
             "Free Cashflow / Umsatz des letzten Geschäftsjahres "
             "(wie Thema „Cashflow und Investitionen“).",
-            "Umsatz fehlt oder ist nicht positiv.",
+            "Umsatz oder Cashflow-Positionen fehlen für diese Periode, oder der Umsatz "
+            "ist nicht positiv.",
         ),
         _periodic(
             bundle,
@@ -193,7 +194,7 @@ def key_figures(bundle):
             "NOPAT / mittleres investiertes Kapital des letzten Geschäftsjahres "
             "(wie Thema „Kapitalrendite“).",
             "Nicht berechenbar, z. B. Vorsteuerverlust, ungewöhnliche Steuerquote "
-            "oder fehlendes Vorjahreskapital.",
+            "oder fehlendes investiertes Kapital.",
         ),
         _dividend(bundle),
     ]
@@ -212,7 +213,9 @@ def _dividend(bundle):
     help_text = "Ex-Dividenden der letzten zwölf Monate / Kurs (wie Thema „Dividende und Deckung“)."
     try:
         if currency_code(bundle.get("info", {}).get("financialCurrency")) is None:
-            raise AnalysisUnavailable("n. v. – Berichtswährung fehlt in den Yahoo-Metadaten.")
+            raise AnalysisUnavailable(
+                "n. v. – Berichtswährung fehlt in den Yahoo-Metadaten."
+            )
         payouts = dates(bundle["dividends"])
         close = bundle["prices"][bundle["symbol"]].Close.tail(1260)
         if close.dropna().empty:

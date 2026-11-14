@@ -300,14 +300,22 @@ def _render_controls():
     with controls[0]:
         currency = (
             st.segmented_control(
-                "Währung", ("EUR", "USD"), default="EUR", key=CURRENCY_KEY, required=True
+                "Währung",
+                ("EUR", "USD"),
+                default="EUR",
+                key=CURRENCY_KEY,
+                required=True,
             )
             or "EUR"
         )
     with controls[1]:
         basis = (
             st.segmented_control(
-                "Renditebasis", RETURN_BASES, default=RETURN_BASES[0], key=RETURN_KEY, required=True
+                "Renditebasis",
+                RETURN_BASES,
+                default=RETURN_BASES[0],
+                key=RETURN_KEY,
+                required=True,
             )
             or RETURN_BASES[0]
         )
@@ -318,16 +326,19 @@ def _render_controls():
                 MONTHS,
                 default=12,
                 format_func=_months_label,
-                key=MONTHS_KEY, required=True,
+                key=MONTHS_KEY,
+                required=True,
             )
             or 12
         )
     st.caption(
         "Währung, Renditebasis und Zeitraum gelten für Kurs- und Marktvergleiche. "
         "Ausnahmen: „Kurs in Euro“ und „Kurs und Quartalsergebnisse“ zeigen stets den "
-        "unbereinigten Kurs in EUR (Zeitraum gilt), Kerzen zeigen 60 Handelstage, das "
-        "KGV die volle Historie, Dividenden fünf Jahre, Monatsrenditen die letzten "
-        "zwölf vollständigen Monate. Geschäftszahlen bleiben in Berichtswährung."
+        "splitbereinigten, nicht dividendenbereinigten Kurs in EUR (Zeitraum gilt), "
+        "Kerzen 60 Handelstage in Handelswährung, „Reaktion auf Quartalszahlen“ stets "
+        "USD-Gesamtrenditen über die volle Historie, das KGV die volle Historie, "
+        "Dividenden fünf Jahre, Monatsrenditen die letzten zwölf vollständigen Monate. "
+        "Geschäftszahlen bleiben in Berichtswährung."
     )
     return group, currency, basis == RETURN_BASES[0], months
 

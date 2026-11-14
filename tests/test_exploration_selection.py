@@ -198,7 +198,7 @@ def test_generic_fx_and_missing_currency_never_assume_usd():
         prices(bundle, ("SYNTH-JP",), "EUR", False)
 
 
-def fake_yahoo(monkeypatch, *, bad=None):
+def fake_yahoo(monkeypatch, *, bad=None, extra=None):
     import yfinance
 
     calls = []
@@ -232,6 +232,8 @@ def fake_yahoo(monkeypatch, *, bad=None):
             }
             if name in resources:
                 return fixture[resources[name]]
+            if name in (extra or {}):
+                return extra[name]
             raise ValueError("Synthetic unavailable resource")
 
     monkeypatch.setattr(yfinance, "Ticker", Ticker)
@@ -424,3 +426,17 @@ def test_sheet_failure_keeps_defaults_available_without_retry_loop(monkeypatch):
     assert not any("Synthetic private error" in w.value for w in app.warning)
     app.run()
     assert app.session_state["sheet_reads"] == 1
+
+
+def test_fetch_keeps_an_empty_dividend_history_as_no_dividends(monkeypatch):
+    from portfolio_dashboard.exploration.summary import NA, key_figures
+
+    fake_yahoo(monkeypatch, extra={"dividends": pd.Series(dtype=float, name="Dividends")})
+    bundle = fetch(FIRST)
+    assert "dividends" not in bundle["errors"] and bundle["dividends"].empty
+    assert key_figures(bundle)[-1].value == "keine"
+
+    fake_yahoo(monkeypatch)  # dividend request fails: unknown, not "keine"
+    failed = fetch(FIRST)
+    assert "dividends" in failed["errors"]
+    assert key_figures(failed)[-1].value == NA

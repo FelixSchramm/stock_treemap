@@ -6,7 +6,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_dashboard.exploration.charts import TITLES, Analysis, build
+from portfolio_dashboard.exploration.charts import (
+    TITLES,
+    Analysis,
+    AnalysisUnavailable,
+    build,
+)
 from portfolio_dashboard.exploration.demo import demo_bundle
 from portfolio_dashboard.exploration.selection import DEFAULT_COMPANIES
 from portfolio_dashboard.exploration.summary import (
@@ -142,7 +147,14 @@ def test_fcf_margin_tile_shows_not_available_without_latest_revenue(bundle):
     bundle["income"].loc["Total Revenue", _latest(bundle["income"])] = np.nan
     figure = {f.label: f for f in key_figures(bundle)}["FCF-Marge"]
     assert figure.value == NA
-    assert "Umsatz fehlt" in figure.help
+    assert "Umsatz oder Cashflow-Positionen fehlen" in figure.help
+
+
+def test_fcf_margin_tile_shows_not_available_without_latest_free_cash_flow(bundle):
+    bundle["cash"].loc["Free Cash Flow", _latest(bundle["cash"])] = np.nan
+    figure = {f.label: f for f in key_figures(bundle)}["FCF-Marge"]
+    assert figure.value == NA
+    assert "Cashflow-Positionen fehlen" in figure.help
 
 
 def test_period_delta_needs_the_directly_preceding_period(bundle):
@@ -155,7 +167,7 @@ def test_period_delta_needs_the_directly_preceding_period(bundle):
 
 def test_dividend_yield_does_not_depend_on_payout_ratio_inputs(bundle):
     bundle["cash"] = bundle["cash"].drop(index="Cash Dividends Paid")
-    with pytest.raises(Exception):
+    with pytest.raises(AnalysisUnavailable):
         build(14, bundle)
     figure = {f.label: f for f in key_figures(bundle)}["Dividendenrendite"]
     assert figure.value.endswith(" %")
