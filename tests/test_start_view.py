@@ -321,3 +321,46 @@ def test_degraded_load_is_retried_soon_but_a_complete_one_is_kept(monkeypatch):
     assert loads == ["DAX", "DAX"] and not start_view.degraded(kept)
     for function in (start_view._recent_index, start_view._settled_index):
         function.clear()
+
+
+def test_one_permanently_missing_member_does_not_block_the_resting_cache():
+    from dataclasses import replace
+
+    demo = DemoIndices().load("Demo-Index")
+    good = tuple(row for row in demo.rows if start_view.has_prices(row))
+    stale = next(row for row in demo.rows if row.quote is not None and not start_view.has_prices(row))
+    many = tuple(good * 12)
+    assert not start_view.degraded(replace(demo, rows=(*many, stale)))  # 1 of 49
+    assert start_view.degraded(replace(demo, rows=(*good, stale)))  # 1 of 5
+
+
+def test_load_from_before_the_settle_time_is_not_kept(monkeypatch):
+    from datetime import timedelta
+
+    from portfolio_dashboard.market_overview import market_calendars
+
+    loads = []
+
+    class Loader:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def load(self, name):
+            loads.append(name)
+            demo = DemoIndices().load("Demo-Index")
+            return type(demo)(demo.name, tuple(r for r in demo.rows if start_view.has_prices(r)), demo.fetched_at)
+
+    for function in (start_view._recent_index, start_view._settled_index):
+        function.clear()
+    monkeypatch.setattr(start_view, "IndicesLoader", Loader)
+    monkeypatch.setattr(start_view, "index_market", lambda: None)
+    friday = date(2026, 11, 13)
+    calendars = market_calendars(friday)
+    monkeypatch.setattr(start_view, "cached_calendars", lambda day: calendars)
+    bell = _berlin(friday, calendars["GER"].close_time)
+    start_view.cached_index("DAX", bell + timedelta(minutes=16))  # settling, short slot
+    start_view.cached_index("DAX", bell + timedelta(minutes=21))  # resting: fresh load
+    start_view.cached_index("DAX", bell + timedelta(hours=3))
+    assert loads == ["DAX", "DAX"]
+    for function in (start_view._recent_index, start_view._settled_index):
+        function.clear()

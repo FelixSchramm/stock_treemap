@@ -42,6 +42,8 @@ _INDEX_LOADS = threading.BoundedSemaphore(1)
 # A visitor waits at most this long for another index load before seeing the
 # "not available" notice; nothing is cached for that rerun.
 LOAD_WAIT_SECONDS = 60
+# Share of rows without data above which a load counts as an outage.
+UNAVAILABLE_SHARE = 0.1
 # Closing prices settle a little after the bell before a closed market is cached
 # until its next session.
 SETTLE = timedelta(minutes=20)
@@ -87,16 +89,22 @@ def has_prices(row: IndexRow) -> bool:
 
 
 def degraded(bundle: IndexBundle) -> bool:
-    """Outage or throttling: no prices at all, or rows Yahoo could not serve now.
+    """Outage or throttling: no prices, a provider error, or many rows without data.
 
     Rows with a cached identity but failed history carry an UNAVAILABLE quote
-    instead of a note, so both forms count.
+    instead of a note. A single suspended or delisted member does the same for
+    good, so UNAVAILABLE counts only above ``UNAVAILABLE_SHARE`` of the rows.
     """
-    return not bundle.available or not any(has_prices(row) for row in bundle.rows) or any(
-        row.note == PROVIDER_FAILURE_NOTE
-        or (row.quote is not None and row.quote.status is WatchlistEntryStatus.UNAVAILABLE)
-        for row in bundle.rows
+    rows = bundle.rows
+    if not bundle.available or not any(has_prices(row) for row in rows):
+        return True
+    if any(row.note == PROVIDER_FAILURE_NOTE for row in rows):
+        return True
+    missing = sum(
+        row.quote is not None and row.quote.status is WatchlistEntryStatus.UNAVAILABLE
+        for row in rows
     )
+    return missing > UNAVAILABLE_SHARE * len(rows)
 
 
 @st.cache_data(ttl=CACHE_SECONDS, max_entries=60, show_spinner=False)
@@ -135,10 +143,13 @@ def cached_index(name: str, now: datetime) -> IndexBundle:
     slot = index_slot(name, now, cached_calendars(now.date()))
     if slot == running:
         return _recent_index(name, running)
+    # Own key for resting loads: a load from before the settle time ends (same
+    # 15 minutes) must not become the resting state.
+    resting = f"{running} {slot}"
     try:
-        return _settled_index(name, slot, running)
+        return _settled_index(name, slot, resting)
     except IndexUnsettled:
-        return _recent_index(name, running)
+        return _recent_index(name, resting)
 
 
 def running_slot(now: datetime) -> str:
