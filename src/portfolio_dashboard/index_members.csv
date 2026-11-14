@@ -1,0 +1,481 @@
+index,unternehmen,yahoo_ticker
+DAX,SAP,SAP.DE
+DAX,Siemens,SIE.DE
+DAX,Allianz,ALV.DE
+DAX,Airbus,AIR.DE
+DAX,Deutsche Telekom,DTE.DE
+DAX,Siemens Energy,ENR.DE
+DAX,Münchener Rück,MUV2.DE
+DAX,DHL,DHL.DE
+DAX,Merck,MRK.DE
+DAX,Infineon,IFX.DE
+DAX,Deutsche Bank,DBK.DE
+DAX,Deutsche Börse,DB1.DE
+DAX,Bayer,BAYN.DE
+DAX,E.ON,EOAN.DE
+DAX,Siemens Healthineers,SHL.DE
+DAX,BASF,BAS.DE
+DAX,RWE,RWE.DE
+DAX,Commerzbank,CBK.DE
+DAX,Mercedes-Benz Group,MBG.DE
+DAX,Hannover Rück,HNR1.DE
+DAX,Rheinmetall,RHM.DE
+DAX,Henkel,HEN3.DE
+DAX,BMW,BMW.DE
+DAX,Volkswagen,VOW3.DE
+DAX,Daimler Truck,DTG.DE
+DAX,Heidelberg Materials,HEI.DE
+DAX,Fresenius,FRE.DE
+DAX,Adidas,ADS.DE
+DAX,Hochtief,HOT.DE
+DAX,MTU Aero Engines,MTX.DE
+DAX,Beiersdorf,BEI.DE
+DAX,Continental,CON.DE
+DAX,Vonovia,VNA.DE
+DAX,Symrise,SY1.DE
+DAX,GEA Group,G1A.DE
+DAX,Fresenius Medical Care,FME.DE
+DAX,Qiagen,QIA.DE
+DAX,Brenntag,BNR.DE
+DAX,Zalando,ZAL.DE
+DAX,Scout24,G24.DE
+MDAX,Porsche AG,P911.DE
+MDAX,Talanx,TLX.DE
+MDAX,Sartorius,SRT3.DE
+MDAX,Traton,8TRA.DE
+MDAX,Knorr-Bremse,KBX.DE
+MDAX,DWS Group,DWS.DE
+MDAX,Delivery Hero,DHER.DE
+MDAX,Deutsche Lufthansa,LHA.DE
+MDAX,Evonik Industries,EVK.DE
+MDAX,Nordex,NDX1.DE
+MDAX,Hensoldt,HAG.DE
+MDAX,Thyssenkrupp,TKA.DE
+MDAX,Porsche Automobil Holding,PAH3.DE
+MDAX,Hella,HLE.DE
+MDAX,Nemetschek,NEM.DE
+MDAX,Rational,RAA.DE
+MDAX,Fraport,FRA.DE
+MDAX,Aurubis,NDA.DE
+MDAX,CTS Eventim,EVD.DE
+MDAX,Fuchs,FPE3.DE
+MDAX,Schaeffler,SHA0.DE
+MDAX,Ionos Group,IOS.DE
+MDAX,RTL Group,RRTL.DE
+MDAX,TKMS,TKMS.DE
+MDAX,Kion Group,KGX.DE
+MDAX,United Internet,UTDI.DE
+MDAX,Bechtle,BC8.DE
+MDAX,Wacker Chemie,WCH.DE
+MDAX,Puma,PUM.DE
+MDAX,TUI,TUI1.DE
+MDAX,LEG Immobilien,LEG.DE
+MDAX,Aixtron,AIXA.DE
+MDAX,Krones,KRN.DE
+MDAX,Auto1 Group,AG1.DE
+MDAX,Renk,R3NK.DE
+MDAX,Aumovio,AMV0.DE
+MDAX,Freenet,FNTN.DE
+MDAX,Salzgitter,SZG.DE
+MDAX,Flatexdegiro,FTK.DE
+MDAX,K+S,SDF.DE
+MDAX,Bilfinger,GBF.DE
+MDAX,Ströer,SAX.DE
+MDAX,TAG Immobilien,TEG.DE
+MDAX,Jenoptik,JEN.DE
+MDAX,Elmos Semiconductor,ELG.DE
+MDAX,Siltronic,WAF.DE
+MDAX,Aroundtown,AT1.DE
+MDAX,Deutz,DEZ.DE
+MDAX,Lanxess,LXS.DE
+MDAX,Suss Microtec,SMHN.DE
+Euro Stoxx 50,ASML Holding,ASML.AS
+Euro Stoxx 50,SAP,SAP.DE
+Euro Stoxx 50,L'Oréal,OR.PA
+Euro Stoxx 50,Siemens,SIE.DE
+Euro Stoxx 50,LVMH Moët Hennessy Louis Vuitton,MC.PA
+Euro Stoxx 50,Inditex,ITX.MC
+Euro Stoxx 50,TotalEnergies,TTE.PA
+Euro Stoxx 50,Allianz,ALV.DE
+Euro Stoxx 50,Airbus,AIR.PA
+Euro Stoxx 50,Banco Santander,SAN.MC
+Euro Stoxx 50,Iberdrola,IBE.MC
+Euro Stoxx 50,Anheuser-Busch InBev,ABI.BR
+Euro Stoxx 50,Schneider Electric,SU.PA
+Euro Stoxx 50,Hermès,RMS.PA
+Euro Stoxx 50,BBVA,BBVA.MC
+Euro Stoxx 50,Deutsche Telekom,DTE.DE
+Euro Stoxx 50,Safran,SAF.PA
+Euro Stoxx 50,UniCredit,UCG.MI
+Euro Stoxx 50,Air Liquide,AI.PA
+Euro Stoxx 50,Siemens Energy,ENR.DE
+Euro Stoxx 50,Intesa Sanpaolo,ISP.MI
+Euro Stoxx 50,Sanofi,SAN.PA
+Euro Stoxx 50,BNP Paribas,BNP.PA
+Euro Stoxx 50,Enel,ENEL.MI
+Euro Stoxx 50,Axa,CS.PA
+Euro Stoxx 50,ING Group,INGA.AS
+Euro Stoxx 50,EssilorLuxottica,EL.PA
+Euro Stoxx 50,Prosus,PRX.AS
+Euro Stoxx 50,Munich Re,MUV2.DE
+Euro Stoxx 50,Eni,ENI.MI
+Euro Stoxx 50,Deutsche Post,DHL.DE
+Euro Stoxx 50,Ferrari,RACE.MI
+Euro Stoxx 50,Infineon Technologies,IFX.DE
+Euro Stoxx 50,Engie,ENGI.PA
+Euro Stoxx 50,Vinci SA,DG.PA
+Euro Stoxx 50,Deutsche Bank,DBK.DE
+Euro Stoxx 50,Deutsche Börse,DB1.DE
+Euro Stoxx 50,Nordea,NDA-FI.HE
+Euro Stoxx 50,Bayer,BAYN.DE
+Euro Stoxx 50,Argenx,ARGX.BR
+Euro Stoxx 50,BASF,BAS.DE
+Euro Stoxx 50,Danone,BN.PA
+Euro Stoxx 50,Nokia,NOKIA.HE
+Euro Stoxx 50,Mercedes-Benz Group,MBG.DE
+Euro Stoxx 50,Saint-Gobain,SGO.PA
+Euro Stoxx 50,Rheinmetall,RHM.DE
+Euro Stoxx 50,BMW,BMW.DE
+Euro Stoxx 50,Ahold Delhaize,AD.AS
+Euro Stoxx 50,Adidas,ADS.DE
+Euro Stoxx 50,Adyen,ADYEN.AS
+CAC 40,L'Oréal,OR.PA
+CAC 40,LVMH,MC.PA
+CAC 40,TotalEnergies,TTE.PA
+CAC 40,Airbus,AIR.PA
+CAC 40,Schneider Electric,SU.PA
+CAC 40,Hermès,RMS.PA
+CAC 40,Safran,SAF.PA
+CAC 40,Air Liquide,AI.PA
+CAC 40,Sanofi,SAN.PA
+CAC 40,BNP Paribas,BNP.PA
+CAC 40,Axa,CS.PA
+CAC 40,EssilorLuxottica,EL.PA
+CAC 40,Engie,ENGI.PA
+CAC 40,Vinci,DG.PA
+CAC 40,Société Générale,GLE.PA
+CAC 40,Crédit Agricole,ACA.PA
+CAC 40,Thales,HO.PA
+CAC 40,Danone,BN.PA
+CAC 40,ArcelorMittal,MT.AS
+CAC 40,Orange,ORA.PA
+CAC 40,STMicroelectronics,STMPA.PA
+CAC 40,Saint-Gobain,SGO.PA
+CAC 40,Legrand,LR.PA
+CAC 40,Dassault Systèmes,DSY.PA
+CAC 40,Publicis,PUB.PA
+CAC 40,Veolia,VIE.PA
+CAC 40,Kering,KER.PA
+CAC 40,Capgemini,CAP.PA
+CAC 40,Pernod Ricard,RI.PA
+CAC 40,Bouygues,EN.PA
+CAC 40,Euronext,ENX.PA
+CAC 40,Eurofins Scientific,ERF.PA
+CAC 40,Bureau Veritas,BVI.PA
+CAC 40,Unibail-Rodamco-Westfield,URW.PA
+CAC 40,Accor,AC.PA
+CAC 40,Eiffage,FGR.PA
+CAC 40,Stellantis,STLAP.PA
+CAC 40,Carrefour,CA.PA
+CAC 40,Renault,RNO.PA
+CAC 40,Michelin,ML.PA
+SMI,Roche Holding AG,ROP.SW
+SMI,Novartis International AG,NOVN.SW
+SMI,Nestlé SA,NESN.SW
+SMI,ABB Ltd,ABBN.SW
+SMI,UBS Group AG,UBSG.SW
+SMI,Compagnie Financière Richemont SA,CFR.SW
+SMI,Zurich Insurance Group AG,ZURN.SW
+SMI,Lonza Group AG,LONN.SW
+SMI,Swiss Reinsurance Company Ltd,SREN.SW
+SMI,Galderma,GALD.SW
+SMI,Holcim Limited,HOLN.SW
+SMI,Givaudan SA,GIVN.SW
+SMI,Sandoz,SDZ.SW
+SMI,Sika AG,SIKA.SW
+SMI,Alcon Inc,ALC.SW
+SMI,Swiss Life Holding AG,SLHN.SW
+SMI,Geberit AG,GEBN.SW
+SMI,Amrize AG,AMRZ.SW
+SMI,Partners Group Holding AG,PGHN.SW
+SMI,Logitech International SA,LOGN.SW
+S&P 500,Apple Inc.,AAPL
+S&P 500,Nvidia,NVDA
+S&P 500,Microsoft,MSFT
+S&P 500,Alphabet Inc. (Class A),GOOGL
+S&P 500,Amazon,AMZN
+S&P 500,Broadcom,AVGO
+S&P 500,Meta Platforms,META
+S&P 500,"Tesla, Inc.",TSLA
+S&P 500,Lilly (Eli),LLY
+S&P 500,Berkshire Hathaway,BRK-B
+S&P 500,Walmart,WMT
+S&P 500,JPMorgan Chase,JPM
+S&P 500,Micron Technology,MU
+S&P 500,Advanced Micro Devices,AMD
+S&P 500,Visa Inc.,V
+S&P 500,ExxonMobil,XOM
+S&P 500,Johnson & Johnson,JNJ
+S&P 500,Mastercard,MA
+S&P 500,AbbVie,ABBV
+S&P 500,Costco,COST
+S&P 500,Chevron Corporation,CVX
+S&P 500,Coca-Cola Company (The),KO
+S&P 500,Palantir Technologies,PLTR
+S&P 500,Procter & Gamble,PG
+S&P 500,Oracle Corporation,ORCL
+S&P 500,Cisco,CSCO
+S&P 500,UnitedHealth Group,UNH
+S&P 500,Merck & Co.,MRK
+S&P 500,Bank of America,BAC
+S&P 500,Home Depot (The),HD
+S&P 500,GE Aerospace,GE
+S&P 500,Intel,INTC
+S&P 500,Philip Morris International,PM
+S&P 500,Morgan Stanley,MS
+S&P 500,Applied Materials,AMAT
+S&P 500,Lam Research,LRCX
+S&P 500,Texas Instruments,TXN
+S&P 500,Caterpillar Inc.,CAT
+S&P 500,RTX Corporation,RTX
+S&P 500,Goldman Sachs,GS
+S&P 500,Palo Alto Networks,PANW
+S&P 500,Thermo Fisher Scientific,TMO
+S&P 500,Wells Fargo,WFC
+S&P 500,Netflix,NFLX
+S&P 500,Amgen,AMGN
+S&P 500,Arista Networks,ANET
+S&P 500,Linde plc,LIN
+S&P 500,IBM,IBM
+S&P 500,CrowdStrike,CRWD
+S&P 500,Dell Technologies,DELL
+Nasdaq 100,Apple,AAPL
+Nasdaq 100,Nvidia,NVDA
+Nasdaq 100,Microsoft,MSFT
+Nasdaq 100,Alphabet,GOOGL
+Nasdaq 100,Amazon,AMZN
+Nasdaq 100,SpaceX,SPCX
+Nasdaq 100,Broadcom,AVGO
+Nasdaq 100,Meta Platforms,META
+Nasdaq 100,Tesla,TSLA
+Nasdaq 100,Walmart,WMT
+Nasdaq 100,Micron Technology,MU
+Nasdaq 100,AMD,AMD
+Nasdaq 100,ASML,ASML
+Nasdaq 100,Costco,COST
+Nasdaq 100,Palantir,PLTR
+Nasdaq 100,Cisco,CSCO
+Nasdaq 100,Intel,INTC
+Nasdaq 100,Applied Materials,AMAT
+Nasdaq 100,Lam Research,LRCX
+Nasdaq 100,Texas Instruments,TXN
+Nasdaq 100,Palo Alto Networks,PANW
+Nasdaq 100,Netflix,NFLX
+Nasdaq 100,Amgen,AMGN
+Nasdaq 100,Linde,LIN
+Nasdaq 100,CrowdStrike,CRWD
+Nasdaq 100,Gilead Sciences,GILD
+Nasdaq 100,Arm,ARM
+Nasdaq 100,KLA Corporation,KLAC
+Nasdaq 100,PepsiCo,PEP
+Nasdaq 100,Analog Devices,ADI
+Nasdaq 100,Shopify,SHOP
+Nasdaq 100,Qualcomm,QCOM
+Nasdaq 100,T-Mobile US,TMUS
+Nasdaq 100,Intuitive Surgical,ISRG
+Nasdaq 100,Marvell Technology,MRVL
+Nasdaq 100,Vertex,VRTX
+Nasdaq 100,AppLovin,APP
+Nasdaq 100,Sandisk,SNDK
+Nasdaq 100,ADP,ADP
+Nasdaq 100,Starbucks,SBUX
+Nasdaq 100,Seagate Technology,STX
+Nasdaq 100,Booking Holdings,BKNG
+Nasdaq 100,PDD Holdings,PDD
+Nasdaq 100,Airbnb,ABNB
+Nasdaq 100,Western Digital,WDC
+Nasdaq 100,Marriott International,MAR
+Nasdaq 100,Regeneron,REGN
+Nasdaq 100,Constellation Energy,CEG
+Nasdaq 100,CSX,CSX
+Nasdaq 100,Adobe,ADBE
+Dow Jones,Apple,AAPL
+Dow Jones,Nvidia,NVDA
+Dow Jones,Microsoft,MSFT
+Dow Jones,Alphabet,GOOGL
+Dow Jones,Amazon,AMZN
+Dow Jones,Walmart,WMT
+Dow Jones,JPMorgan Chase,JPM
+Dow Jones,Visa,V
+Dow Jones,Johnson & Johnson,JNJ
+Dow Jones,Chevron,CVX
+Dow Jones,Coca-Cola,KO
+Dow Jones,Procter & Gamble,PG
+Dow Jones,Cisco,CSCO
+Dow Jones,UnitedHealth,UNH
+Dow Jones,Merck,MRK
+Dow Jones,Home Depot,HD
+Dow Jones,Caterpillar,CAT
+Dow Jones,Goldman Sachs,GS
+Dow Jones,Amgen,AMGN
+Dow Jones,IBM,IBM
+Dow Jones,American Express,AXP
+Dow Jones,Disney,DIS
+Dow Jones,McDonald's,MCD
+Dow Jones,Salesforce,CRM
+Dow Jones,Boeing,BA
+Dow Jones,3M,MMM
+Dow Jones,Sherwin-Williams,SHW
+Dow Jones,Travelers,TRV
+Dow Jones,Honeywell Technologies,HON
+Dow Jones,Nike,NKE
+Nikkei 225,Toyota Motor Corporation,7203.T
+Nikkei 225,"Mitsubishi UFJ Financial Group, Inc.",8306.T
+Nikkei 225,Sony Group Corporation,6758.T
+Nikkei 225,"Fast Retailing Co., Ltd.",9983.T
+Nikkei 225,"Sumitomo Mitsui Financial Group, Inc.",8316.T
+Nikkei 225,"Recruit Holdings Co., Ltd.",6098.T
+Nikkei 225,Advantest Corporation,6857.T
+Nikkei 225,"Hitachi, Ltd.",6501.T
+Nikkei 225,Tokyo Electron Limited,8035.T
+Nikkei 225,SoftBank Group Corp.,9984.T
+Nikkei 225,Mitsubishi Corporation,8058.T
+Nikkei 225,"Mizuho Financial Group, Inc.",8411.T
+Nikkei 225,Keyence Corporation,6861.T
+Nikkei 225,"Tokio Marine Holdings, Inc.",8766.T
+Nikkei 225,ITOCHU Corporation,8001.T
+Nikkei 225,Kioxia Holdings Corporation,285A.T
+Nikkei 225,"Mitsui & Co., Ltd.",8031.T
+Nikkei 225,"NTT, Inc.",9432.T
+Nikkei 225,"Chugai Pharmaceutical Co., Ltd.",4519.T
+Nikkei 225,SoftBank Corp.,9434.T
+Nikkei 225,Takeda Pharmaceutical Company Limited,4502.T
+Nikkei 225,Japan Tobacco Inc.,2914.T
+Nikkei 225,KDDI Corporation,9433.T
+Nikkei 225,"Shin-Etsu Chemical Co., Ltd.",4063.T
+Nikkei 225,"Nintendo Co., Ltd.",7974.T
+Nikkei 225,"Mitsubishi Heavy Industries, Ltd.",7011.T
+Nikkei 225,Mitsubishi Electric Corporation,6503.T
+Nikkei 225,"Murata Manufacturing Co., Ltd.",6981.T
+Nikkei 225,Marubeni Corporation,8002.T
+Nikkei 225,Sumitomo Corporation,8053.T
+Nikkei 225,HOYA Corporation,7741.T
+Nikkei 225,"MS&AD Insurance Group Holdings, Inc.",8725.T
+Nikkei 225,Panasonic Holdings Corporation,6752.T
+Nikkei 225,"Honda Motor Co., Ltd.",7267.T
+Nikkei 225,"Japan Post Holdings Co., Ltd.",6178.T
+Nikkei 225,"Daikin Industries,Ltd.",6367.T
+Nikkei 225,"Daiichi Life Group, Inc.",8750.T
+Nikkei 225,"Otsuka Holdings Co., Ltd.",4578.T
+Nikkei 225,"Sompo Holdings, Inc.",8630.T
+Nikkei 225,Toyota Tsusho Corporation,8015.T
+Nikkei 225,"Oriental Land Co., Ltd.",4661.T
+Nikkei 225,Fujitsu Limited,6702.T
+Nikkei 225,ORIX Corporation,8591.T
+Nikkei 225,NEC Corporation,6701.T
+Nikkei 225,Komatsu Ltd.,6301.T
+Nikkei 225,Bridgestone Corporation,5108.T
+Nikkei 225,Renesas Electronics Corporation,6723.T
+Nikkei 225,"Daiichi Sankyo Company, Limited",4568.T
+Nikkei 225,Disco Corporation,6146.T
+Nikkei 225,Fanuc Corporation,6954.T
+Hang Seng,Tencent Holdings Limited,0700.HK
+Hang Seng,Industrial and Commercial Bank of China,1398.HK
+Hang Seng,China Construction Bank,0939.HK
+Hang Seng,HSBC Holdings plc,0005.HK
+Hang Seng,Bank of China Ltd,3988.HK
+Hang Seng,PetroChina Company Limited,0857.HK
+Hang Seng,Alibaba Group,9988.HK
+Hang Seng,China Mobile Ltd,0941.HK
+Hang Seng,China Merchants Bank,3968.HK
+Hang Seng,CNOOC Limited,0883.HK
+Hang Seng,China Shenhua Energy,1088.HK
+Hang Seng,Ping An Insurance,2318.HK
+Hang Seng,AIA Group Limited,1299.HK
+Hang Seng,Midea Group,0300.HK
+Hang Seng,Xiaomi,1810.HK
+Hang Seng,Zijin Mining,2899.HK
+Hang Seng,China Life,2628.HK
+Hang Seng,NetEase,9999.HK
+Hang Seng,BYD Company,1211.HK
+Hang Seng,WuXi AppTec,2359.HK
+Hang Seng,Sinopec Corp,0386.HK
+Hang Seng,BOC Hong Kong (Holdings) Ltd,2388.HK
+Hang Seng,Nongfu Spring,9633.HK
+Hang Seng,HKEx Limited,0388.HK
+Hang Seng,Meituan,3690.HK
+Hang Seng,Semiconductor Manufacturing International Corporation,0981.HK
+Hang Seng,CITIC Limited,0267.HK
+Hang Seng,Sun Hung Kai Properties Limited,0016.HK
+Hang Seng,JD.com,9618.HK
+Hang Seng,CK Hutchison Holdings Limited,0001.HK
+Hang Seng,Techtronic Industries,0669.HK
+Hang Seng,Anta Sports,2020.HK
+Hang Seng,Lenovo,0992.HK
+Hang Seng,China Resources Land Limited,1109.HK
+Hang Seng,Trip.com Group,9961.HK
+Hang Seng,Hansoh Pharmaceutical Group,3692.HK
+Hang Seng,CLP Holdings Limited,0002.HK
+Hang Seng,MTR Corporation Ltd,0066.HK
+Hang Seng,Baidu,9888.HK
+Hang Seng,Haier,6690.HK
+Hang Seng,WuXi Biologics,2269.HK
+Hang Seng,China Hongqiao Group,1378.HK
+Hang Seng,Pop Mart,9992.HK
+Hang Seng,Cheung Kong Infrastructure Holdings Limited,1038.HK
+Hang Seng,CK Asset Holdings,1113.HK
+Hang Seng,China Unicom,0762.HK
+Hang Seng,Galaxy Entertainment Group Ltd.,0027.HK
+Hang Seng,Geely Auto,0175.HK
+Hang Seng,Henderson Land Development Company Limited,0012.HK
+Hang Seng,Power Assets Holdings Limited,0006.HK
+Nifty 50,Reliance Industries,RELIANCE.NS
+Nifty 50,Bharti Airtel,BHARTIARTL.NS
+Nifty 50,HDFC Bank,HDFCBANK.NS
+Nifty 50,ICICI Bank,ICICIBANK.NS
+Nifty 50,State Bank of India,SBIN.NS
+Nifty 50,Tata Consultancy Services,TCS.NS
+Nifty 50,Bajaj Finance,BAJFINANCE.NS
+Nifty 50,Larsen & Toubro,LT.NS
+Nifty 50,Kotak Mahindra Bank,KOTAKBANK.NS
+Nifty 50,Hindustan Unilever,HINDUNILVR.NS
+Nifty 50,Infosys,INFY.NS
+Nifty 50,Sun Pharma,SUNPHARMA.NS
+Nifty 50,Adani Ports & SEZ,ADANIPORTS.NS
+Nifty 50,Titan Company,TITAN.NS
+Nifty 50,Axis Bank,AXISBANK.NS
+Nifty 50,Maruti Suzuki,MARUTI.NS
+Nifty 50,Mahindra & Mahindra,M&M.NS
+Nifty 50,HCLTech,HCLTECH.NS
+Nifty 50,Adani Enterprises,ADANIENT.NS
+Nifty 50,ITC,ITC.NS
+Nifty 50,UltraTech Cement,ULTRACEMCO.NS
+Nifty 50,Eternal,ETERNAL.NS
+Nifty 50,JSW Steel,JSWSTEEL.NS
+Nifty 50,NTPC,NTPC.NS
+Nifty 50,Bajaj Finserv,BAJAJFINSV.NS
+Nifty 50,Bajaj Auto,BAJAJ-AUTO.NS
+Nifty 50,Bharat Electronics,BEL.NS
+Nifty 50,Oil and Natural Gas Corporation,ONGC.NS
+Nifty 50,Coal India,COALINDIA.NS
+Nifty 50,Asian Paints,ASIANPAINT.NS
+Nifty 50,Nestlé India,NESTLEIND.NS
+Nifty 50,Power Grid,POWERGRID.NS
+Nifty 50,Tata Steel,TATASTEEL.NS
+Nifty 50,Shriram Finance,SHRIRAMFIN.NS
+Nifty 50,IndiGo,INDIGO.NS
+Nifty 50,Eicher Motors,EICHERMOT.NS
+Nifty 50,Hindalco Industries,HINDALCO.NS
+Nifty 50,Grasim Industries,GRASIM.NS
+Nifty 50,SBI Life Insurance Company,SBILIFE.NS
+Nifty 50,Tech Mahindra,TECHM.NS
+Nifty 50,Trent,TRENT.NS
+Nifty 50,BSE,BSE.NS
+Nifty 50,Jio Financial Services,JIOFIN.NS
+Nifty 50,HDFC Life,HDFCLIFE.NS
+Nifty 50,Apollo Hospitals,APOLLOHOSP.NS
+Nifty 50,Dr. Reddy's Laboratories,DRREDDY.NS
+Nifty 50,Cipla,CIPLA.NS
+Nifty 50,Tata Consumer Products,TATACONSUM.NS
+Nifty 50,Tata Motors Passenger Vehicles,TMPV.NS
+Nifty 50,Max Healthcare,MAXHEALTH.NS

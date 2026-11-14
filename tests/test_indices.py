@@ -98,15 +98,18 @@ def test_source_failures_are_neutral_and_close_response():
     assert session.response.closed
 
 
-def market(now=CLOSED, info_overrides=None, history_overrides=None):
+def market(now=CLOSED, info_overrides=None, history_overrides=None, cache_info=False):
     calendars = venue_calendars(now.date())
     yahoo = FakeYahoo(calendars, lambda: now)
     yahoo.add("SYN.DE", "GER", "EUR", **(history_overrides or {}))
     class Ticker:
+        info_calls = []
+
         def __init__(self, symbol):
             self.inner = yahoo.factory(symbol)
 
         def get_info(self):
+            self.info_calls.append(1)
             return {
                 "symbol": "SYN.DE", "exchange": "GER", "currency": "EUR",
                 "quoteType": "EQUITY", "exchangeTimezoneName": "Europe/Berlin",
@@ -118,7 +121,32 @@ def market(now=CLOSED, info_overrides=None, history_overrides=None):
 
         def get_history_metadata(self):
             return self.inner.get_history_metadata()
-    return IndexMarketData(Ticker), yahoo, calendars
+    return IndexMarketData(Ticker, cache_info=cache_info), yahoo, calendars
+
+
+@pytest.mark.parametrize("cache_info", [False, True])
+def test_daily_info_cache_skips_repeat_identity_requests_but_not_prices(cache_info):
+    provider, yahoo, calendars = market(cache_info=cache_info)
+    rows = [provider.fetch(MEMBER, CLOSED, calendars) for _ in range(2)]
+    assert rows[0] == rows[1] and rows[1].market_cap == Decimal(12_000_000_000)
+    assert len(provider._ticker.info_calls) == (1 if cache_info else 2)
+    assert len(yahoo.history_calls("SYN.DE")) == 2
+
+
+def test_info_cache_expires_with_the_utc_day():
+    class Ticker:
+        calls = 0
+
+        def get_info(self):
+            Ticker.calls += 1
+            return {"symbol": "SYN.DE", "private": SECRET}
+
+    provider = IndexMarketData(cache_info=True)
+    day = CLOSED.date()
+    assert provider._info(Ticker(), "SYN.DE", day) == {"symbol": "SYN.DE", "private": SECRET}
+    assert "private" not in provider._info(Ticker(), "SYN.DE", day)  # only checked fields kept
+    provider._info(Ticker(), "SYN.DE", day + timedelta(days=1))
+    assert Ticker.calls == 2
 
 
 @pytest.mark.parametrize("now", [CLOSED, RUNNING])
