@@ -1,9 +1,12 @@
 """Key figures and takeaways of the analysis page, with synthetic data only."""
 
+import re
+
+import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_dashboard.exploration.charts import Analysis, build
+from portfolio_dashboard.exploration.charts import TITLES, Analysis, build
 from portfolio_dashboard.exploration.demo import demo_bundle
 from portfolio_dashboard.exploration.selection import DEFAULT_COMPANIES
 from portfolio_dashboard.exploration.summary import (
@@ -89,12 +92,13 @@ def test_headline_for_statements_daily_prices_and_rebased_series(bundle):
     focus = ("MSFT", "MSFT")
     growth = headline(build(10, bundle), focus)
     assert growth.startswith("Umsatz zuletzt ")
-    assert "Mrd. USD (30.06.2026)" in growth and "ggü. Vorperiode" in growth
+    assert "Mrd. USD (30.06.2026)" in growth
+    assert re.search(r"% ggü\. \d{2}\.\d{2}\.\d{4}\.$", growth)
     price = headline(build(1, bundle), focus)
     assert price.startswith("MSFT zuletzt ") and "im gezeigten Zeitraum" in price
     assert headline(build(5, bundle), focus).startswith("MSFT: aus 100 wurden ")
     assert headline(build(21, bundle), focus).startswith("ROIC zuletzt ")
-    assert "Vorperiode" in headline(build(21, bundle), focus)
+    assert re.search(r", am \d{2}\.\d{2}\.\d{4} [\d.,−]+ %\.$", headline(build(21, bundle), focus))
 
 
 def test_headline_uses_reporting_currency(bundle):
@@ -110,3 +114,95 @@ def test_headline_falls_back_to_note_without_dated_series(bundle):
     assert headline(Analysis("leer", note="Berichtswährung: EUR. Nur Tabelle.")) == (
         "Nur Tabelle."
     )
+
+
+def _latest(frame):
+    return max(frame.columns)
+
+
+def test_pe_tile_shows_not_available_for_a_loss_instead_of_an_old_ratio(bundle):
+    # The last four quarterly EPS sum up negative: topic 12 marks the ratio NaN.
+    bundle["earnings"].iloc[-4:, bundle["earnings"].columns.get_loc("Reported EPS")] = -1.0
+    assert build(12, bundle).panels[0].data["KGV"].dropna().size > 0
+    figure = {f.label: f for f in key_figures(bundle)}["KGV"]
+    assert figure.value == NA
+    assert figure.chart is None
+    assert "negativ oder unvollständig" in figure.help
+
+
+def test_roic_tile_shows_not_available_for_a_pre_tax_loss_year(bundle):
+    bundle["income"].loc["Pretax Income", _latest(bundle["income"])] = -5e9
+    figure = {f.label: f for f in key_figures(bundle)}["ROIC"]
+    assert figure.value == NA
+    assert figure.delta is None
+    assert "Vorsteuerverlust" in figure.help
+
+
+def test_fcf_margin_tile_shows_not_available_without_latest_revenue(bundle):
+    bundle["income"].loc["Total Revenue", _latest(bundle["income"])] = np.nan
+    figure = {f.label: f for f in key_figures(bundle)}["FCF-Marge"]
+    assert figure.value == NA
+    assert "Umsatz fehlt" in figure.help
+
+
+def test_period_delta_needs_the_directly_preceding_period(bundle):
+    columns = sorted(bundle["income"].columns)
+    bundle["income"].loc["Total Revenue", columns[-2]] = np.nan
+    figure = {f.label: f for f in key_figures(bundle)}["FCF-Marge"]
+    assert figure.value != NA
+    assert figure.delta is None
+
+
+def test_dividend_yield_does_not_depend_on_payout_ratio_inputs(bundle):
+    bundle["cash"] = bundle["cash"].drop(index="Cash Dividends Paid")
+    with pytest.raises(Exception):
+        build(14, bundle)
+    figure = {f.label: f for f in key_figures(bundle)}["Dividendenrendite"]
+    assert figure.value.endswith(" %")
+
+
+def test_company_without_dividends_says_so(bundle):
+    bundle["dividends"] = bundle["dividends"].iloc[:0]
+    figure = {f.label: f for f in key_figures(bundle)}["Dividendenrendite"]
+    assert figure.value == "keine"
+    assert "keine Ex-Dividenden" in figure.help
+
+
+def test_price_tile_names_the_real_start_of_a_short_history(bundle):
+    symbol = bundle["symbol"]
+    bundle["prices"][symbol] = bundle["prices"][symbol].tail(60)
+    start = bundle["prices"][symbol].index[0]
+    labels = [f.label for f in key_figures(bundle)]
+    assert labels[0] == f"Kurs in USD · seit {start:%d.%m.%Y}"
+    assert "52 Wochen" not in key_figures(bundle)[1].help
+
+
+def test_headline_names_the_compared_date_across_gaps():
+    index = pd.to_datetime(["2026-03-31", "2026-06-30"])
+    analysis = Analysis("Test")
+    analysis.add("Panel", pd.Series([3.0, 2.0], index=index, name="Käufe"), "Mio. USD", "bar")
+    text = headline(analysis)
+    assert text == "Käufe zuletzt 2,00 Mio. USD (30.06.2026), −33,3 % ggü. 31.03.2026."
+
+
+def test_headline_keeps_small_amounts_readable_and_detects_monthly_series():
+    # 60 monthly dividends: more than 40 points, still periodic, not "im gezeigten Zeitraum".
+    index = pd.date_range("2021-07-15", periods=60, freq="MS")
+    analysis = Analysis("Test")
+    analysis.add("Panel", pd.Series(0.24, index=index, name="Dividende"), "USD / Aktie", "bar")
+    text = headline(analysis)
+    assert "0,24 USD / Aktie" in text
+    assert "ggü. 01.06.2026" in text
+    assert "gezeigten Zeitraum" not in text
+
+
+def test_insider_headline_uses_the_note(bundle):
+    analysis = build(17, bundle)
+    assert analysis.title == TITLES[17]
+    assert headline(analysis) == analysis.note.split(". ")[0].rstrip(".") + "."
+
+
+def test_months_labels_include_six_months():
+    from portfolio_dashboard.exploration import view
+
+    assert [view._months_label(n) for n in view.MONTHS] == ["6 Monate", "1 Jahr", "3 Jahre", "5 Jahre"]

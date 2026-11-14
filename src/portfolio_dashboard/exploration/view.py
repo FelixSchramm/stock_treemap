@@ -15,7 +15,7 @@ from .charts import GROUPS, TITLES, AnalysisUnavailable, build
 from .data import fetch
 from .demo import demo_bundle
 from .selection import DEFAULT_COMPANIES, Catalog, combine_companies, demo_catalog
-from .summary import DATA_ERRORS, headline, key_figures
+from .summary import DATA_ERRORS, headline, key_figures, note_sentence
 
 AREA = "Analyse"
 STATE = "exploration.snapshot"
@@ -30,7 +30,7 @@ COMPARE_KEY = "exploration.comparisons"
 
 CARD_HEIGHT = 280
 RETURN_BASES = ("Gesamtrendite-Näherung", "Kursrendite")
-MONTHS = (12, 36, 60)
+MONTHS = (6, 12, 36, 60)
 GENERIC_FAILURE = (
     "n. v. – Yahoo liefert für diese Analyse keine ausreichenden oder zueinander "
     "passenden Daten. Fehlende Zahlen werden nicht ersetzt."
@@ -274,6 +274,17 @@ def _render_key_figures(bundle):
         )
 
 
+def _months_label(months):
+    """Label a comparison window: "6 Monate", "1 Jahr", "3 Jahre".
+
+    :param months: window length in months
+    :return: German label
+    """
+    if months % 12:
+        return f"{months} Monate"
+    return f"{months // 12} Jahr" + ("e" if months > 12 else "")
+
+
 def _render_controls():
     """Render the fixed control bar valid for every chart of the page.
 
@@ -281,7 +292,7 @@ def _render_controls():
     """
     group = (
         st.segmented_control(
-            "Bereich", tuple(GROUPS), default="Überblick", key=GROUP_KEY
+            "Bereich", tuple(GROUPS), default="Überblick", key=GROUP_KEY, required=True
         )
         or "Überblick"
     )
@@ -289,14 +300,14 @@ def _render_controls():
     with controls[0]:
         currency = (
             st.segmented_control(
-                "Währung", ("EUR", "USD"), default="EUR", key=CURRENCY_KEY
+                "Währung", ("EUR", "USD"), default="EUR", key=CURRENCY_KEY, required=True
             )
             or "EUR"
         )
     with controls[1]:
         basis = (
             st.segmented_control(
-                "Renditebasis", RETURN_BASES, default=RETURN_BASES[0], key=RETURN_KEY
+                "Renditebasis", RETURN_BASES, default=RETURN_BASES[0], key=RETURN_KEY, required=True
             )
             or RETURN_BASES[0]
         )
@@ -306,15 +317,17 @@ def _render_controls():
                 "Zeitraum",
                 MONTHS,
                 default=12,
-                format_func=lambda n: f"{n // 12} Jahr" + ("e" if n > 12 else ""),
-                key=MONTHS_KEY,
+                format_func=_months_label,
+                key=MONTHS_KEY, required=True,
             )
             or 12
         )
     st.caption(
         "Währung, Renditebasis und Zeitraum gelten für Kurs- und Marktvergleiche. "
-        "Geschäftszahlen bleiben in Berichtswährung; Monatsrenditen zeigen stets "
-        "die letzten zwölf vollständigen Monate."
+        "Ausnahmen: „Kurs in Euro“ und „Kurs und Quartalsergebnisse“ zeigen stets den "
+        "unbereinigten Kurs in EUR (Zeitraum gilt), Kerzen zeigen 60 Handelstage, das "
+        "KGV die volle Historie, Dividenden fünf Jahre, Monatsrenditen die letzten "
+        "zwölf vollständigen Monate. Geschäftszahlen bleiben in Berichtswährung."
     )
     return group, currency, basis == RETURN_BASES[0], months
 
@@ -352,7 +365,11 @@ def _render_card(topic, bundle, currency, total, months, demo):
         else:
             st.dataframe(analysis.panels[0].data, width="stretch", height=CARD_HEIGHT)
         symbol = bundle["symbol"]
-        st.caption(headline(analysis, (symbol, bundle.get("names", {}).get(symbol))))
+        try:
+            takeaway = headline(analysis, (symbol, bundle.get("names", {}).get(symbol)))
+        except DATA_ERRORS:
+            takeaway = note_sentence(analysis.note)
+        st.caption(takeaway)
         with st.expander("Details"):
             st.caption(
                 "Quelle: "
