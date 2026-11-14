@@ -26,6 +26,7 @@ from portfolio_dashboard.treemap import _german, color_for, color_scale, format_
 from portfolio_dashboard.watchlist_quotes import PERIODS
 
 CACHE_SECONDS = 900
+AREA = "Märkte"
 # Index loads wait on Yahoo, not on the CPU; more parallel requests shorten the
 # first load. Kept moderate because all visitors share one host IP.
 INDEX_WORKERS = 12
@@ -201,9 +202,7 @@ def _render_index(name: str) -> None:
 def render(login_button: Callable[[], None], *, load: Callable | None = None,
            clock: Callable[[], datetime] | None = None) -> None:
     """Render the public start page; ``login_button`` comes from the owner gate."""
-    load = load or cached_quotes
-    now = (clock or (lambda: datetime.now(UTC)))()
-    st.markdown(dashboard_css() + START_CSS, unsafe_allow_html=True)
+    st.markdown(dashboard_css(), unsafe_allow_html=True)
     heading, action = st.columns((5, 1), vertical_alignment="center")
     with heading:
         st.header("Märkte im Überblick", anchor=False)
@@ -211,6 +210,14 @@ def render(login_button: Callable[[], None], *, load: Callable | None = None,
     with action:
         login_button()
     st.divider()
+    render_markets(load=load, clock=clock)
+
+
+def render_markets(*, load: Callable | None = None, clock: Callable[[], datetime] | None = None) -> None:
+    """Market clock, breadth, treemap, curves and tiles: start page and «Märkte» area."""
+    load = load or cached_quotes
+    now = (clock or (lambda: datetime.now(UTC)))()
+    st.markdown(START_CSS, unsafe_allow_html=True)
     _render_clock(now)
     selected = st.query_params.get(INDEX_PARAM)
     if selected in index_members.members():

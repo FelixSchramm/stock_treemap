@@ -78,6 +78,23 @@ def test_unavailable_market_data_keeps_login_and_shows_a_neutral_notice(monkeypa
     assert "synthetic-private-provider-error" not in str(app)
 
 
+def index_levels():
+    from portfolio_dashboard.indices_view import render_index_level
+
+    render_index_level("DAX", "Heute")
+    render_index_level("DAX", "Woche")
+    render_index_level("Demo-Index", "Heute")  # no checked symbol: nothing shown
+
+
+def test_index_page_level_tile_uses_the_shared_market_data(requests):
+    app = AppTest.from_function(index_levels, default_timeout=30).run()
+    assert not app.exception
+    assert [metric.label for metric in app.metric] == ["DAX · Indexstand", "DAX · Indexstand"]
+    assert app.metric[0].value == "101,00 Pkt." and app.metric[0].delta == "-1,50 %"
+    assert not app.metric[1].delta  # no weekly value: no invented change
+    assert requests == ["Weltindizes", "Weltindizes", "Weltindizes"]
+
+
 def test_world_treemap_groups_by_region_with_equal_tiles():
     quotes = quotes_for(GROUPS["Weltindizes"])
     trace = build_market_figure(quotes, "Heute").data[0]

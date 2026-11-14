@@ -43,7 +43,9 @@ Marktkapitalisierung werden pro Tag, Kurse 15 Minuten zwischengespeichert. FTSE 
 STOXX Europe 600, Russell 2000 und KOSPI haben keine Einzelwerte (London nicht
 angebunden bzw. keine freie Liste). Ein Klick auf eine Region zoomt hinein, die Pfadzeile zoomt wieder heraus. Indizes
 und ETFs nutzen dieselben Börsenkalender und dieselbe Kursperioden-Logik wie die
-Watchlist; Werte bleiben in Indexpunkten bzw. Handelswährung.
+Watchlist; Werte bleiben in Indexpunkten bzw. Handelswährung. Nach dem Login steht
+derselbe Inhalt als Bereich **Märkte** zur Verfügung (nicht im Demo-Modus, der nur
+synthetische Daten zeigt).
 
 ## Interaktive Analyse
 
@@ -72,8 +74,11 @@ Beim Öffnen lädt nur der gewählte Index. Zeitraumwechsel verwenden denselben
 Datenstand; **Aktualisieren** lädt den aktuellen Index erneut. Die Daten bleiben
 pro Sitzung und Index getrennt; am nächsten UTC-Tag wird automatisch neu geladen.
 
-Die Seite zeigt Marktkapitalisierung, größten Gewinner und Verlierer, aktive
-Positionen sowie eine Treemap mit Hover und darunter die vollständige Liste.
+Die Seite zeigt den Indexstand mit Veränderung im gewählten Zeitraum und Jahreskurve
+(aus dem gemeinsamen Markt-Cache der Startseite), Marktkapitalisierung, größten
+Gewinner und Verlierer, aktive Positionen sowie eine Treemap mit Hover und darunter
+die vollständige Liste. Der Zeitraum wird in Depot, Watchlist und Indizes über eine
+Umschalter-Leiste gewählt.
 **Heute, Woche, Monat und Jahr** folgen der bestehenden Kursperioden-Logik.
 Kachelflächen entsprechen den verfügbaren Unternehmens-Marktkapitalisierungen,
 die Farben der Kursentwicklung. Das sind **keine offiziellen Indexgewichte**.

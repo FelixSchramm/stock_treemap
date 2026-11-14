@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard import indices_view, valuation_view, watchlist_view
+from portfolio_dashboard import indices_view, start_view, valuation_view, watchlist_view
 from portfolio_dashboard.design import dashboard_css, style_figure
 from portfolio_dashboard.exploration import view as exploration_view
 from portfolio_dashboard.exploration.selection import load_catalog
@@ -136,12 +136,14 @@ MOBILE_ACCESSIBILITY_CSS = """
 /* Touch targets >= 44px (2.75rem) for iPhone/mobile usability */
 div.stButton > button,
 div[role="radiogroup"] label,
+div[data-testid="stButtonGroup"] button,
 div[data-baseweb="select"] > div,
 div.stTextInput input,
 details > summary {
     min-height: 2.75rem;
 }
-div[role="radiogroup"] {
+div[role="radiogroup"],
+div[data-testid="stButtonGroup"] > div {
     flex-wrap: wrap;
     row-gap: 0.4rem;
 }
@@ -152,6 +154,7 @@ div[data-testid="stTable"] {
 }
 /* Keyboard focus ring visibility */
 div.stButton > button:focus-visible,
+div[data-testid="stButtonGroup"] button:focus-visible,
 div[role="radiogroup"] input:focus-visible + div,
 div.stTextInput input:focus-visible,
 details > summary:focus-visible {
@@ -185,8 +188,9 @@ def render_accessibility_styles() -> None:
 
 
 def _remember_course_period() -> None:
-    """Persist the selected Zeitraum in the public session key."""
-    st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
+    """Persist the selected Zeitraum; deselecting the active segment keeps it."""
+    if st.session_state[_PERIOD_WIDGET_KEY] is not None:
+        st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
 
 
 def _remember_area() -> None:
@@ -221,7 +225,7 @@ def render_area_control(areas: Sequence[str] = AREAS) -> str:
 
 
 def render_view_controls(*, watchlist: bool = False) -> tuple[str, str]:
-    """Render the Zeitraum radio and derive the view from the selection.
+    """Render the Zeitraum segments and derive the view from the selection.
 
     The remembered Zeitraum is shared by Depot and Watchlist. The Watchlist offers
     only the four course periods: a remembered ``"Seit Kauf"`` is shown as ``"Heute"``
@@ -234,16 +238,14 @@ def render_view_controls(*, watchlist: bool = False) -> tuple[str, str]:
     options = COURSE_PERIODS if watchlist else (*COURSE_PERIODS, SINCE_PURCHASE)
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
     remembered = st.session_state[COURSE_PERIOD_KEY]
-    st.session_state[_PERIOD_WIDGET_KEY] = (
-        remembered if remembered in options else COURSE_PERIODS[0]
-    )
-    period = st.radio(
+    shown = remembered if remembered in options else COURSE_PERIODS[0]
+    st.session_state[_PERIOD_WIDGET_KEY] = shown
+    period = st.segmented_control(
         "Zeitraum",
         options,
         key=_PERIOD_WIDGET_KEY,
         on_change=_remember_course_period,
-        horizontal=True,
-    )
+    ) or shown
     view = PERSONAL_VIEW if period == SINCE_PURCHASE else COURSE_VIEW
     return view, period
 
@@ -929,9 +931,16 @@ def render_dashboard(
     if overview is not None:
         areas = (*areas, VALUATION_AREA)
     areas = (*areas, indices_view.AREA)
+    if not demo:  # live public market data; the demo stays fully synthetic
+        areas = (*areas, start_view.AREA)
     if st.session_state.get(AREA_KEY) == "Unternehmensanalyse":
         st.session_state[AREA_KEY] = exploration_view.AREA
     selected = render_area_control(areas)
+    if selected == start_view.AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
+        st.divider()
+        start_view.render_markets()
+        return
     if selected == indices_view.AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
         indices_view.render(indices, refresh_clicked=refresh_clicked, demo=demo)

@@ -37,14 +37,14 @@ def test_auto_load_periods_selection_refresh_and_other_areas_are_isolated(dashbo
     app.radio(key=AREA_RADIO_KEY).set_value("Indizes").run()
     assert not app.exception and source.reads == ["DAX"]
     assert app.selectbox(key="_indices.selected").value == "DAX"
-    assert app.radio(key="_indices.period").options == ["Heute", "Woche", "Monat", "Jahr"]
+    assert app.segmented_control(key="_indices.period").options == ["Heute", "Woche", "Monat", "Jahr"]
     assert [metric.label for metric in app.metric] == [
         "Marktkapitalisierung", "Größter Gewinner", "Größter Verlierer", "Aktive Positionen",
     ]
     assert app.dataframe[0].value.columns[1] == "Kursentwicklung (%)"
     assert len(app.get("plotly_chart")) == 1
     for period in ("Woche", "Monat", "Jahr"):
-        app.radio(key="_indices.period").set_value(period).run()
+        app.segmented_control(key="_indices.period").set_value(period).run()
         assert not app.exception
         assert app.subheader[0].value == f"DAX · {period}"
     assert source.reads == ["DAX"] and len(market.calls) == 1
@@ -56,7 +56,7 @@ def test_auto_load_periods_selection_refresh_and_other_areas_are_isolated(dashbo
     assert not app.exception
     assert app.session_state[INDEX_KEY] == "MDAX" and app.session_state[PERIOD_KEY] == "Jahr"
     assert app.selectbox(key="_indices.selected").value == "MDAX"
-    assert app.radio(key="_indices.period").value == "Jahr"
+    assert app.segmented_control(key="_indices.period").value == "Jahr"
     assert source.reads == ["DAX", "MDAX"]
     app.button(key=REFRESH_BUTTON_KEY).click().run()
     assert not app.exception and source.reads == ["DAX", "MDAX", "MDAX"]
@@ -104,9 +104,9 @@ def test_winner_loser_and_table_change_with_the_selected_period(dashboard):
     app.run()
     assert app.metric[1].value == "+5,00 %" and app.metric[2].value == "NA"
     assert app.dataframe[0].value["Kursentwicklung (%)"].iloc[0] == 5
-    app.radio(key="_indices.period").set_value("Woche").run()
+    app.segmented_control(key="_indices.period").set_value("Woche").run()
     assert app.metric[1].value == "NA" and app.metric[2].value == "-3,00 %"
     assert app.dataframe[0].value["Kursentwicklung (%)"].iloc[0] == -3
-    app.radio(key="_indices.period").set_value("Monat").run()
+    app.segmented_control(key="_indices.period").set_value("Monat").run()
     assert app.metric[1].value == "NA" and app.metric[2].value == "NA"
     assert app.dataframe[0].value["Kursentwicklung (%)"].iloc[0] == 0

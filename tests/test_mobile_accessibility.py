@@ -148,11 +148,11 @@ def test_narrow_screen_workflow_view_switch_filters_refresh_and_non_hover_detail
     assert "Anteil am bewerteten Depot: 40,00 %" in markdown_blobs
 
     # Exercise full workflow: view switch, period switch, filter, sort, and refresh.
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Seit Kauf").run()
     assert not app.exception
     assert app.subheader[0].value == "Meine Entwicklung · Seit Kauf"
 
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Heute").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Heute").run()
     app.selectbox(key=FILTER_TYPE_KEY).set_value("Aktie").run()
     app.selectbox(key=FILTER_CATEGORY_KEY).set_value("Demo").run()
     app.selectbox(key=SORT_FIELD_KEY).set_value("Name").run()
