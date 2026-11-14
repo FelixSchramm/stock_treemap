@@ -22,10 +22,16 @@ import streamlit as st
 from portfolio_dashboard import index_members, indices_view, market_overview
 from portfolio_dashboard.design import DARK, UP, dashboard_css, style_figure
 from portfolio_dashboard.index_members import FixedIndexReader
-from portfolio_dashboard.indices import IndexBundle, IndexMarketData, IndicesLoader
+from portfolio_dashboard.indices import (
+    PROVIDER_FAILURE_NOTE,
+    IndexBundle,
+    IndexMarketData,
+    IndexRow,
+    IndicesLoader,
+)
 from portfolio_dashboard.market_overview import MarketQuote, breadth, market_clock
 from portfolio_dashboard.treemap import _german, color_for, color_scale, format_percent
-from portfolio_dashboard.watchlist_quotes import PERIODS
+from portfolio_dashboard.watchlist_quotes import PERIODS, WatchlistEntryStatus
 
 CACHE_SECONDS = 900
 AREA = "Märkte"
@@ -33,6 +39,9 @@ AREA = "Märkte"
 # at most INDEX_WORKERS requests in parallel, one index load at a time.
 INDEX_WORKERS = 6
 _INDEX_LOADS = threading.BoundedSemaphore(1)
+# A visitor waits at most this long for another index load before seeing the
+# "not available" notice; nothing is cached for that rerun.
+LOAD_WAIT_SECONDS = 60
 # Closing prices settle a little after the bell before a closed market is cached
 # until its next session.
 SETTLE = timedelta(minutes=20)
@@ -68,15 +77,74 @@ def index_market() -> IndexMarketData:
     return IndexMarketData(cache_info=True)
 
 
-@st.cache_data(ttl=24 * 3600, max_entries=60, show_spinner=False)
-def cached_index(name: str, slot: str) -> IndexBundle:
+class IndexUnsettled(Exception):
+    """A load with missing prices: never kept until the next session."""
+
+
+def has_prices(row: IndexRow) -> bool:
+    """:return: True if Yahoo delivered at least one period return for the row."""
+    return any(row.percent(period) is not None for period in PERIODS)
+
+
+def degraded(bundle: IndexBundle) -> bool:
+    """Outage or throttling: no prices at all, or rows Yahoo could not serve now.
+
+    Rows with a cached identity but failed history carry an UNAVAILABLE quote
+    instead of a note, so both forms count.
+    """
+    return not bundle.available or not any(has_prices(row) for row in bundle.rows) or any(
+        row.note == PROVIDER_FAILURE_NOTE
+        or (row.quote is not None and row.quote.status is WatchlistEntryStatus.UNAVAILABLE)
+        for row in bundle.rows
+    )
+
+
+@st.cache_data(ttl=CACHE_SECONDS, max_entries=60, show_spinner=False)
+def _recent_index(name: str, running_slot: str) -> IndexBundle:
+    """One Yahoo load per index and 15-minute slot, healthy or not."""
+    if not _INDEX_LOADS.acquire(timeout=LOAD_WAIT_SECONDS):
+        # Not cached: the next rerun tries again instead of keeping the failure.
+        raise TimeoutError("index load queue busy")
+    try:
+        return IndicesLoader(FixedIndexReader(), index_market(), workers=INDEX_WORKERS).load(name)
+    finally:
+        _INDEX_LOADS.release()
+
+
+@st.cache_data(ttl=7 * 24 * 3600, max_entries=60, show_spinner=False)
+def _settled_index(name: str, slot: str, _running_slot: str) -> IndexBundle:
+    """Kept for the whole closed period, but only a complete load.
+
+    ``_running_slot`` is not part of the cache key (leading underscore). A
+    degraded load raises, Streamlit does not cache exceptions, and the caller
+    falls back to the 15-minute entry, so an outage is retried soon.
+    """
+    bundle = _recent_index(name, _running_slot)
+    if degraded(bundle):
+        raise IndexUnsettled(name)
+    return bundle
+
+
+def cached_index(name: str, now: datetime) -> IndexBundle:
     """Shared for all visitors: fixed members with Yahoo prices and market caps.
 
-    ``slot`` (see ``index_slot``) decides freshness: a new 15-minute slot while
-    the index's exchange trades, one slot per closed period otherwise.
+    While the index's exchange trades, a new load per 15-minute slot; while it
+    rests, one complete load until the next session (see ``index_slot``).
     """
-    with _INDEX_LOADS:
-        return IndicesLoader(FixedIndexReader(), index_market(), workers=INDEX_WORKERS).load(name)
+    running = running_slot(now)
+    slot = index_slot(name, now, cached_calendars(now.date()))
+    if slot == running:
+        return _recent_index(name, running)
+    try:
+        return _settled_index(name, slot, running)
+    except IndexUnsettled:
+        return _recent_index(name, running)
+
+
+def running_slot(now: datetime) -> str:
+    """:return: UTC 15-minute slot, e.g. ``"2026-11-13 14:15"``."""
+    utc = now.astimezone(UTC)
+    return f"{utc:%Y-%m-%d %H}:{utc.minute // 15 * 15:02d}"
 
 
 def index_slot(name: str, now: datetime, calendars: dict) -> str:
@@ -85,24 +153,32 @@ def index_slot(name: str, now: datetime, calendars: dict) -> str:
     :param name: world-index name with fixed members.
     :param now: current time.
     :param calendars: ``market_overview.market_calendars`` of the day.
-    :return: ``"YYYY-MM-DD HH:MM"`` slot while the session runs (plus ``SETTLE``),
-        ``"ruht YYYY-MM-DD"`` (local date) otherwise.
+    :return: ``running_slot`` while the session runs (plus ``SETTLE``);
+        ``"pause YYYY-MM-DD"`` during a midday break; ``"ruht nach YYYY-MM-DD"``
+        (last finished session) otherwise.
     """
     item = _INDEX_BY_NAME.get(name)
     calendar = calendars.get(item.calendar) if item is not None and item.calendar else None
-    utc = now.astimezone(UTC)
-    running = f"{utc:%Y-%m-%d %H}:{utc.minute // 15 * 15:02d}"
+    running = running_slot(now)
     if calendar is None:
         return running  # unknown trading hours: keep the short cache
     local = now.astimezone(ZoneInfo(item.timezone))
-    if not calendar.first_day <= local.date() <= calendar.last_day:
+    today = local.date()
+    if not calendar.first_day <= today <= calendar.last_day:
         return running
-    if local.date() in calendar.sessions:
-        opens = datetime.combine(local.date(), calendar.open_time, local.tzinfo)
-        settled = datetime.combine(local.date(), calendar.close_time, local.tzinfo) + SETTLE
+    if today in calendar.sessions:
+        opens = datetime.combine(today, calendar.open_time, local.tzinfo)
+        settled = datetime.combine(today, calendar.close_time, local.tzinfo) + SETTLE
         if opens <= local < settled:
-            return running
-    return f"ruht {local.date():%Y-%m-%d}"
+            # Tokyo and Hong Kong pause at midday; prices stand still meanwhile.
+            return f"pause {today:%Y-%m-%d}" if calendar.in_break(local.time()) else running
+        if local >= settled:
+            return f"ruht nach {today:%Y-%m-%d}"
+    # Before the open or on a closed day: rests since the last finished session.
+    # Euro Stoxx follows the German calendar; Paris/Madrid half days (24./31.12.)
+    # are not treated as sessions.
+    earlier = [day for day in calendar.sessions if day < today]
+    return f"ruht nach {max(earlier):%Y-%m-%d}" if earlier else running
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -222,13 +298,13 @@ def _render_index(name: str, now: datetime) -> None:
     period = st.segmented_control("Zeitraum", PERIODS, default="Heute", key=PERIOD_KEY) or "Heute"
     try:
         with st.spinner(f"{name}: Unternehmen, Kurse und Marktkapitalisierungen werden geladen …"):
-            bundle = cached_index(name, index_slot(name, now, cached_calendars(now.date())))
+            bundle = cached_index(name, now)
     except Exception:
         st.info(NOT_AVAILABLE_TEXT)
         return
     st.subheader(f"{name} · {period}", anchor=False)
     # A Yahoo outage yields rows that are all NA: say so instead of an empty table.
-    if not bundle.available or not any(row.quote is not None for row in bundle.rows):
+    if not bundle.available or not any(has_prices(row) for row in bundle.rows):
         st.info(NOT_AVAILABLE_TEXT)
         return
     st.caption(f"Die bis zu {index_members.TOP_N} größten Mitglieder nach Marktkapitalisierung "

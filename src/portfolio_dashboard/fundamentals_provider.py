@@ -54,9 +54,9 @@ _TIMEOUT_ERRORS = frozenset(
 )
 _ACCESS_STATUS = frozenset({401, 403, 429})
 _PROVIDER_LOG_LOCK = Lock()
-# Reference count of active provider batches and the logger states saved by the
-# first one; the lock guards only these updates, never a whole batch.
-_MUTED = {"count": 0, "states": []}
+# Reference count of active provider batches and the original state of every
+# logger muted meanwhile; the lock guards only these updates, never a batch.
+_MUTED: dict = {"count": 0, "states": {}}
 
 
 class FundamentalsProvider(Protocol):
@@ -102,15 +102,16 @@ def _quiet_provider_logs():
     # temporary state. Batches run concurrently: the lock is held only while
     # the counter and logger flags change.
     with _PROVIDER_LOG_LOCK:
-        if _MUTED["count"] == 0:
-            loggers = [logging.getLogger("yfinance")] + [
-                logger
-                for logger in list(logging.Logger.manager.loggerDict.values())
-                if isinstance(logger, logging.Logger)
-                and logger.name.startswith("yfinance.")
-            ]
-            _MUTED["states"] = [(logger, logger.disabled) for logger in loggers]
-            for logger in loggers:
+        # Every entry looks again, so a child logger created during an
+        # overlapping batch is muted too; each original state is saved once.
+        loggers = [logging.getLogger("yfinance")] + [
+            logger
+            for logger in list(logging.Logger.manager.loggerDict.values())
+            if isinstance(logger, logging.Logger) and logger.name.startswith("yfinance.")
+        ]
+        for logger in loggers:
+            if logger not in _MUTED["states"]:
+                _MUTED["states"][logger] = logger.disabled
                 logger.disabled = True
         _MUTED["count"] += 1
     try:
@@ -119,9 +120,9 @@ def _quiet_provider_logs():
         with _PROVIDER_LOG_LOCK:
             _MUTED["count"] -= 1
             if _MUTED["count"] == 0:
-                for logger, previous in _MUTED["states"]:
+                for logger, previous in _MUTED["states"].items():
                     logger.disabled = previous
-                _MUTED["states"] = []
+                _MUTED["states"] = {}
 
 
 def _to_decimal(value: object) -> tuple[Decimal | None, bool]:

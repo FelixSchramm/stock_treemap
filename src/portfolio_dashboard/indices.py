@@ -46,6 +46,7 @@ INDEX_NAMES = (
 )
 MAX_ROWS = 999  # Header + constituents fit the standard 1,000-row Sheet grid.
 SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9.\-]{0,19}")
+PROVIDER_FAILURE_NOTE = "NA · Yahoo-Daten zurzeit nicht verfügbar"
 INFO_KEYS = ("symbol", "quoteType", "currency", "exchange", "exchangeTimezoneName", "marketCap")
 
 
@@ -261,7 +262,7 @@ class IndexMarketData:
                 "NA · Marktkapitalisierung nicht verfügbar" if cap is None else None
             ))
         except Exception:
-            return IndexRow(constituent, note="NA · Yahoo-Daten zurzeit nicht verfügbar")
+            return IndexRow(constituent, note=PROVIDER_FAILURE_NOTE)
 
 
 class IndicesLoader:

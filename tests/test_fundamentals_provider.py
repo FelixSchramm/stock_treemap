@@ -626,3 +626,17 @@ def test_overlapping_batches_do_not_wait_for_each_other():
     finally:
         release.set()
         logger.disabled = original
+
+
+def test_child_logger_created_during_an_overlapping_batch_is_muted_and_restored():
+    from portfolio_dashboard.fundamentals_provider import _quiet_provider_logs
+
+    name = "yfinance.synthetic.late"
+    logging.Logger.manager.loggerDict.pop(name, None)
+    with _quiet_provider_logs():
+        late = logging.getLogger(name)
+        late.disabled = False
+        with _quiet_provider_logs():
+            assert late.disabled is True
+        assert late.disabled is True
+    assert late.disabled is False
