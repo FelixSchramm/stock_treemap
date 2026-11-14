@@ -1,32 +1,51 @@
-"""Company analysis within the existing authorized Streamlit dashboard shell."""
+"""Company analysis within the existing authorized Streamlit dashboard shell.
+
+Layout follows the start page: company heading with pickers, a KPI row, one
+fixed control bar and all topics of the chosen area as cards in a 2-column grid.
+"""
 
 from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from .charts import GROUPS, TITLES, AnalysisUnavailable, build
 from .data import fetch
 from .demo import demo_bundle
 from .selection import DEFAULT_COMPANIES, Catalog, combine_companies, demo_catalog
+from .summary import DATA_ERRORS, headline, key_figures
 
 AREA = "Analyse"
 STATE = "exploration.snapshot"
 GROUP_KEY = "exploration.group"
-TOPIC_KEY = "exploration.topic"
-
+CURRENCY_KEY = "exploration.currency"
+RETURN_KEY = "exploration.return"
+MONTHS_KEY = "exploration.months"
 
 CATALOG_KEY = "exploration.catalog"
 COMPANY_KEY = "exploration.company"
 COMPARE_KEY = "exploration.comparisons"
 
+CARD_HEIGHT = 280
+RETURN_BASES = ("Gesamtrendite-Näherung", "Kursrendite")
+MONTHS = (12, 36, 60)
+GENERIC_FAILURE = (
+    "n. v. – Yahoo liefert für diese Analyse keine ausreichenden oder zueinander "
+    "passenden Daten. Fehlende Zahlen werden nicht ersetzt."
+)
+PLOTLY_CONFIG = {"displaylogo": False, "scrollZoom": False}
+
 
 def render(*, demo=True, refresh_clicked=False, load_companies=None):
-    st.subheader(AREA)
-    st.caption(
-        "Standardauswahl und Unternehmen aus Depot und Watchlist · Yahoo Finance"
-    )
+    """Render the analysis area below the dashboard header.
+
+    :param demo: True uses synthetic data only, never Sheet or Yahoo
+    :param refresh_clicked: reload the company list and the current analysis
+    :param load_companies: callable reading the Sheet catalog, or None
+    :return: None
+    """
     _render_analysis(
         demo=demo, refresh_clicked=refresh_clicked, load_companies=load_companies
     )
@@ -38,13 +57,15 @@ def render(*, demo=True, refresh_clicked=False, load_companies=None):
             st.markdown(body.strip())
 
 
-def _render_analysis(*, demo, refresh_clicked, load_companies):
-    mode = ".demo" if demo else ".live"
-    catalog_key = CATALOG_KEY + mode
-    if demo:
-        st.info(
-            "Nur synthetische Beispieldaten – auch für Microsoft, Oracle, Alibaba und SAP. Kein Sheet- oder Yahoo-Zugriff."
-        )
+def _load_catalog(*, demo, refresh_clicked, load_companies, catalog_key):
+    """Read the company list once per session or on explicit refresh.
+
+    :param demo: use the synthetic catalog
+    :param refresh_clicked: force a new read
+    :param load_companies: Sheet loader or None
+    :param catalog_key: session key including the mode suffix
+    :return: Catalog
+    """
     if catalog_key not in st.session_state or refresh_clicked:
         previous = st.session_state.get(catalog_key, Catalog())
         if demo:
@@ -66,18 +87,15 @@ def _render_analysis(*, demo, refresh_clicked, load_companies):
                             "Sheet-Liste konnte nicht geladen werden. Standardauswahl und zuvor geladene Einträge bleiben verfügbar. ‚Aktualisieren‘ versucht es erneut.",
                         ),
                     )
-    catalog = st.session_state.get(catalog_key, Catalog())
-    for note in catalog.notes:
-        st.warning(note)
-    for label, stamp in (
-        ("Depot", catalog.depot_at),
-        ("Watchlist", catalog.watchlist_at),
-    ):
-        if stamp:
-            st.caption(f"Listenstand {label}: {stamp:%d.%m.%Y, %H:%M UTC}")
-    companies = {
-        repr(c.key): c for c in combine_companies(DEFAULT_COMPANIES, catalog.companies)
-    }
+    return st.session_state.get(catalog_key, Catalog())
+
+
+def _pick_companies(companies):
+    """Render company and comparison pickers.
+
+    :param companies: selectable companies keyed by ``repr(key)``
+    :return: (company, comparisons)
+    """
     if st.session_state.get(COMPANY_KEY) not in companies:
         st.session_state.pop(COMPANY_KEY, None)
     selected = st.selectbox(
@@ -87,10 +105,8 @@ def _render_analysis(*, demo, refresh_clicked, load_companies):
         key=COMPANY_KEY,
     )
     company = companies[selected]
-    st.markdown(f"**{company.name}**")
     if company.reason:
-        st.info(company.reason)
-        return
+        return company, ()
     candidates = {
         key: c
         for key, c in companies.items()
@@ -100,18 +116,30 @@ def _render_analysis(*, demo, refresh_clicked, load_companies):
     if current is not None:
         st.session_state[COMPARE_KEY] = [key for key in current if key in candidates]
     compare_keys = st.multiselect(
-        "Vergleichsunternehmen (max. 3)",
+        "Vergleichswerte (max. 3)",
         list(candidates),
-        default=[repr(c.key) for c in DEFAULT_COMPANIES if repr(c.key) in candidates][
-            :3
-        ]
-        if current is None
-        else None,
+        default=(
+            [repr(c.key) for c in DEFAULT_COMPANIES if repr(c.key) in candidates][:3]
+            if current is None
+            else None
+        ),
         format_func=lambda key: candidates[key].label,
         max_selections=3,
         key=COMPARE_KEY,
     )
-    comparisons = tuple(candidates[key] for key in compare_keys)
+    return company, tuple(candidates[key] for key in compare_keys)
+
+
+def _load_bundle(*, demo, refresh_clicked, company, comparisons, mode):
+    """Load or reuse the session snapshot of the selection.
+
+    :param demo: synthetic data only
+    :param refresh_clicked: force a new provider request
+    :param company: selected company
+    :param comparisons: comparison companies
+    :param mode: ".demo" or ".live" session suffix
+    :return: (bundle or None, failure text or None)
+    """
     signature = (company, comparisons)
     snapshots = st.session_state.setdefault(STATE + mode, {})
     failures = st.session_state.setdefault(STATE + ".failures" + mode, {})
@@ -142,104 +170,200 @@ def _render_analysis(*, demo, refresh_clicked, load_companies):
                 )
             while len(failures) > 8:
                 del failures[next(iter(failures))]
-    if signature in failures:
-        st.warning(failures[signature])
-    bundle = snapshots.get(signature)
+    return snapshots.get(signature), failures.get(signature)
+
+
+def _render_analysis(*, demo, refresh_clicked, load_companies):
+    mode = ".demo" if demo else ".live"
+    catalog = _load_catalog(
+        demo=demo,
+        refresh_clicked=refresh_clicked,
+        load_companies=load_companies,
+        catalog_key=CATALOG_KEY + mode,
+    )
+    companies = {
+        repr(c.key): c for c in combine_companies(DEFAULT_COMPANIES, catalog.companies)
+    }
+    heading, pickers = st.columns((3, 2), vertical_alignment="center")
+    with pickers:
+        company, comparisons = _pick_companies(companies)
+    with heading:
+        st.header(company.name, anchor=False)
+        details = [company.symbol, company.currency, "Yahoo Finance"]
+        st.caption("Analyse · " + " · ".join(str(item) for item in details if item))
+    if demo:
+        st.info(
+            "Nur synthetische Beispieldaten – auch für Microsoft, Oracle, Alibaba und SAP. Kein Sheet- oder Yahoo-Zugriff."
+        )
+    for note in catalog.notes:
+        st.warning(note)
+    if company.reason:
+        st.info(company.reason)
+        return
+    bundle, failure = _load_bundle(
+        demo=demo,
+        refresh_clicked=refresh_clicked,
+        company=company,
+        comparisons=comparisons,
+        mode=mode,
+    )
+    if failure:
+        st.warning(failure)
     if bundle is None:
         st.info(
             "Für diese Auswahl sind noch keine Analysedaten verfügbar. Über ‚Aktualisieren‘ kannst du den Abruf erneut starten."
         )
         return
     stamp = pd.Timestamp(bundle["retrieved_at"])
-    prefix = "Synthetischer Stand" if demo else "Abrufstand"
+    stamps = [
+        f"{'Synthetischer Stand' if demo else 'Abrufstand'}: {stamp:%d.%m.%Y, %H:%M UTC}"
+    ]
+    for label, listed in (
+        ("Depot", catalog.depot_at),
+        ("Watchlist", catalog.watchlist_at),
+    ):
+        if listed:
+            stamps.append(f"Listenstand {label}: {listed:%d.%m.%Y, %H:%M UTC}")
     st.caption(
-        f"{prefix}: {stamp:%d.%m.%Y, %H:%M UTC} · Originalanalyse: Financial Pipeline V4 · CI 1.3"
+        " · ".join(stamps) + " · Originalanalyse: Financial Pipeline V4 · CI 1.3"
     )
     if not demo and pd.Timestamp.now(tz="UTC") - stamp > pd.Timedelta(hours=1):
         st.warning(
             "Dieser Snapshot ist älter als eine Stunde. ‚Aktualisieren‘ lädt einen neuen Stand."
         )
-    group = st.radio("Analysebereich", list(GROUPS), horizontal=True, key=GROUP_KEY)
-    topic = st.selectbox(
-        "Fragestellung",
-        GROUPS[group],
-        format_func=TITLES.get,
-        key=f"{TOPIC_KEY}.{group}",
-    )
-    currency, total, months = "EUR", True, 12
-    if topic in {5, 6, 7, 8, 13}:
-        controls = st.columns(3)
-        currency = controls[0].selectbox(
-            "Vergleichswährung", ["EUR", "USD"], key="exploration.currency"
-        )
-        total = (
-            controls[1].selectbox(
-                "Renditebasis",
-                ["Gesamtrendite-Näherung", "Kursrendite"],
-                key="exploration.return",
-            )
-            == "Gesamtrendite-Näherung"
-        )
-        months = controls[2].selectbox(
-            "Zeitraum",
-            [12, 36, 60],
-            format_func=lambda n: f"{n // 12} Jahr" + ("e" if n > 12 else ""),
-            key="exploration.months",
-            disabled=topic == 6,
-        )
-    if topic in {1, 2}:
-        months = st.selectbox(
-            "Kurszeitraum",
-            [6, 12, 36, 60],
-            format_func=lambda n: f"{n} Monate",
-            index=1,
-        )
+    _render_key_figures(bundle)
     st.divider()
-    st.markdown(f"### {TITLES[topic]}")
-    try:
-        analysis = build(topic, bundle, currency, total, months)
-    except AnalysisUnavailable as exc:
-        st.warning(str(exc))
-        return
-    except (
-        KeyError,
-        ValueError,
-        IndexError,
-        TypeError,
-        AttributeError,
-        ZeroDivisionError,
-    ):
-        st.warning(
-            "n. v. – Yahoo liefert für diese Analyse keine ausreichenden oder zueinander passenden Daten. Wähle ein anderes Thema oder aktualisiere den Stand. Fehlende Zahlen werden nicht ersetzt."
+    group, currency, total, months = _render_controls()
+    topics = GROUPS[group]
+    for start in range(0, len(topics), 2):
+        columns = st.columns(2)
+        for column, topic in zip(columns, topics[start : start + 2]):
+            with column:
+                _render_card(topic, bundle, currency, total, months, demo)
+    with st.expander("Bedienung und Einordnung"):
+        st.markdown(
+            "Hover zeigt Einzelwerte. Ziehen zoomt in den Chart; Doppelklick setzt den Ausschnitt zurück. Ein Klick auf einen Legendeneintrag blendet die Reihe aus. Weitere Panels, alle Werte als Tabelle und der CSV-Download stehen in jeder Karte unter ‚Details‘."
         )
-        if bundle.get("errors"):
-            with st.expander("Datenstatus"):
-                for resource, reason in bundle["errors"].items():
-                    st.write(f"{resource}: {reason}")
+        st.markdown(
+            "Geschäftszahlen verwenden die gemeldete Berichtswährung und die jeweiligen Perioden. Nicht angebundene Datenquellen bleiben als solche sichtbar. Währung, Renditebasis und Zeitraum gelten für Kurs- und Marktvergleiche. Snapshot-Daten wie Analysten und Optionen sind keine historische Zeitreihe. Die ursprünglichen V1–V4-Analysen bleiben unverändert in der Financial Pipeline."
+        )
+        st.markdown(
+            "[Originalanalyse und Methodik](https://github.com/FelixSchramm/real-time-stock-market-pipeline/tree/52133fcaba5a734567880cab191a826d1ade6bab/data_exploration/v4)"
+        )
+
+
+def _render_key_figures(bundle):
+    """Render the KPI row; any failure leaves the tiles at "n. v.".
+
+    :param bundle: analysis bundle
+    :return: None
+    """
+    try:
+        figures = key_figures(bundle)
+    except DATA_ERRORS:
+        st.caption("Kennzahlen: n. v. – Kursdaten reichen nicht für die Kopfzeile.")
         return
-    st.caption("Quelle: " + ("Synthetische Demonstration" if demo else analysis.source))
-    st.caption(analysis.note)
-    for index, panel in enumerate(analysis.panels):
-        with st.container(border=True):
-            st.markdown(f"**{panel.title}**")
-            if panel.figure is not None:
-                st.plotly_chart(
-                    panel.figure,
-                    theme=None,
-                    width="stretch",
-                    key=f"exploration.{topic}.{index}",
-                    config={"displaylogo": False, "scrollZoom": False},
-                )
-                with st.expander("Daten ansehen und herunterladen"):
-                    st.dataframe(panel.data, width="stretch")
-                    st.download_button(
-                        "CSV herunterladen",
-                        panel.data.to_csv().encode("utf-8-sig"),
-                        file_name=f"analyse_{topic:02d}_{index}.csv",
-                        mime="text/csv",
-                        key=f"exploration.csv.{topic}.{index}",
-                    )
-            else:
+    for column, figure in zip(st.columns(len(figures)), figures):
+        column.metric(
+            figure.label,
+            figure.value,
+            figure.delta,
+            chart_data=figure.chart,
+            chart_type=figure.chart_type,
+            help=figure.help,
+        )
+
+
+def _render_controls():
+    """Render the fixed control bar valid for every chart of the page.
+
+    :return: (group, currency, total, months)
+    """
+    group = (
+        st.segmented_control(
+            "Bereich", tuple(GROUPS), default="Überblick", key=GROUP_KEY
+        )
+        or "Überblick"
+    )
+    controls = st.columns((1, 2, 2))
+    with controls[0]:
+        currency = (
+            st.segmented_control(
+                "Währung", ("EUR", "USD"), default="EUR", key=CURRENCY_KEY
+            )
+            or "EUR"
+        )
+    with controls[1]:
+        basis = (
+            st.segmented_control(
+                "Renditebasis", RETURN_BASES, default=RETURN_BASES[0], key=RETURN_KEY
+            )
+            or RETURN_BASES[0]
+        )
+    with controls[2]:
+        months = (
+            st.segmented_control(
+                "Zeitraum",
+                MONTHS,
+                default=12,
+                format_func=lambda n: f"{n // 12} Jahr" + ("e" if n > 12 else ""),
+                key=MONTHS_KEY,
+            )
+            or 12
+        )
+    st.caption(
+        "Währung, Renditebasis und Zeitraum gelten für Kurs- und Marktvergleiche. "
+        "Geschäftszahlen bleiben in Berichtswährung; Monatsrenditen zeigen stets "
+        "die letzten zwölf vollständigen Monate."
+    )
+    return group, currency, basis == RETURN_BASES[0], months
+
+
+def _render_card(topic, bundle, currency, total, months, demo):
+    """Render one topic: main chart, takeaway and collapsed details.
+
+    :param topic: topic number in ``TITLES``
+    :param bundle: analysis bundle
+    :param currency: comparison currency
+    :param total: True for the total-return approximation
+    :param months: comparison window in months
+    :param demo: label the source as synthetic
+    :return: None
+    """
+    with st.container(border=True):
+        st.markdown(f"**{TITLES[topic]}**")
+        try:
+            analysis = build(topic, bundle, currency, total, months)
+        except AnalysisUnavailable as exc:
+            st.warning(str(exc))
+            return
+        except DATA_ERRORS:
+            st.warning(GENERIC_FAILURE)
+            if bundle.get("errors"):
+                with st.expander("Datenstatus"):
+                    for resource, reason in bundle["errors"].items():
+                        st.write(f"{resource}: {reason}")
+            return
+        main = next(
+            (i for i, p in enumerate(analysis.panels) if p.figure is not None), None
+        )
+        if main is not None:
+            _chart(analysis.panels[main].figure, f"exploration.{topic}.{main}")
+        else:
+            st.dataframe(analysis.panels[0].data, width="stretch", height=CARD_HEIGHT)
+        symbol = bundle["symbol"]
+        st.caption(headline(analysis, (symbol, bundle.get("names", {}).get(symbol))))
+        with st.expander("Details"):
+            st.caption(
+                "Quelle: "
+                + ("Synthetische Demonstration" if demo else analysis.source)
+                + " · "
+                + analysis.note
+            )
+            for index, panel in enumerate(analysis.panels):
+                st.markdown(f"**{panel.title}**")
+                if panel.figure is not None and index != main:
+                    _chart(panel.figure, f"exploration.{topic}.{index}")
                 st.dataframe(panel.data, width="stretch")
                 st.download_button(
                     "CSV herunterladen",
@@ -248,13 +372,15 @@ def _render_analysis(*, demo, refresh_clicked, load_companies):
                     mime="text/csv",
                     key=f"exploration.csv.{topic}.{index}",
                 )
-    with st.expander("Bedienung und Einordnung"):
-        st.markdown(
-            "Hover zeigt Einzelwerte. Ziehen zoomt in den Chart; Doppelklick setzt den Ausschnitt zurück. Ein Klick auf einen Legendeneintrag blendet die Reihe aus. Alle Werte stehen zusätzlich als Tabelle bereit."
-        )
-        st.markdown(
-            "Geschäftszahlen verwenden die gemeldete Berichtswährung und die jeweiligen Perioden. Nicht angebundene Datenquellen bleiben als solche sichtbar. Währungs- und Renditewahl gelten nur im Marktvergleich. Snapshot-Daten wie Analysten und Optionen sind keine historische Zeitreihe. Die ursprünglichen V1–V4-Analysen bleiben unverändert in der Financial Pipeline."
-        )
-        st.markdown(
-            "[Originalanalyse und Methodik](https://github.com/FelixSchramm/real-time-stock-market-pipeline/tree/52133fcaba5a734567880cab191a826d1ade6bab/data_exploration/v4)"
-        )
+
+
+def _chart(figure, key):
+    """Show a copy of a topic figure at card height; charts.py stays untouched.
+
+    :param figure: Plotly figure from ``charts.build``
+    :param key: unique widget key
+    :return: None
+    """
+    card = go.Figure(figure)
+    card.update_layout(height=CARD_HEIGHT, margin=dict(l=8, r=12, t=40, b=24))
+    st.plotly_chart(card, theme=None, width="stretch", key=key, config=PLOTLY_CONFIG)

@@ -500,13 +500,14 @@ def test_exploration_catalog_is_owner_only_and_revocation_hides_cached_names(pro
     assert catalog_reads == [True] and market_reads == [True]
     app.selectbox(key=view.COMPANY_KEY).set_value(repr(company.key)).run()
     assert not app.exception and market_reads == [True, True]
-    assert any("Synthetic Protected Company" in text.value for text in app.markdown)
+    assert any("Synthetic Protected Company" in text.value for text in app.header)
     calls.clear()
     monkeypatch.setattr(st, "user", owner_claims() | {"sub":"synthetic-revoked"})
     app.run()
     assert_closed(app, calls)
     assert catalog_reads == [True] and market_reads == [True, True]
-    assert not any("Synthetic Protected Company" in text.value for text in app.markdown)
+    assert not any("Synthetic Protected Company" in text.value
+                   for text in (*app.markdown, *app.header))
 
 
 def test_indices_build_only_after_owner_gate_and_hide_cached_data_on_revocation(protected_app, monkeypatch):
