@@ -152,7 +152,7 @@ def test_tile_click_opens_only_indices_with_fixed_members(symbol, expected):
 def test_index_view_shows_companies_and_returns_to_the_overview(requests, monkeypatch):
     loaded = []
 
-    def load_index(name):
+    def load_index(name, slot):
         loaded.append(name)
         return DemoIndices().load("Demo-Index")
 
@@ -176,3 +176,63 @@ def test_unknown_index_parameter_shows_the_overview(requests):
     app.query_params[start_view.INDEX_PARAM] = "FTSE 100"
     app.run()
     assert not app.exception and app.metric[0].label == "Im Plus"
+
+
+def _berlin(day, clock):
+    from zoneinfo import ZoneInfo
+
+    return datetime.combine(day, clock, ZoneInfo("Europe/Berlin"))
+
+
+def test_index_slot_is_short_while_trading_and_long_while_closed():
+    from datetime import timedelta
+
+    from portfolio_dashboard.market_overview import market_calendars
+
+    friday = date(2026, 11, 13)
+    calendars = market_calendars(friday)
+    ger = calendars["GER"]
+    assert friday in ger.sessions
+    opened = _berlin(friday, ger.open_time) + timedelta(minutes=1)
+    later = opened + timedelta(minutes=20)
+    slot = start_view.index_slot("DAX", opened, calendars)
+    assert not slot.startswith("ruht") and slot != start_view.index_slot("DAX", later, calendars)
+    # Shortly after the bell prices may still settle; afterwards one slot until Monday.
+    bell = _berlin(friday, ger.close_time)
+    assert not start_view.index_slot("DAX", bell + timedelta(minutes=5), calendars).startswith("ruht")
+    evening = start_view.index_slot("DAX", bell + timedelta(hours=1), calendars)
+    assert evening == start_view.index_slot("DAX", bell + timedelta(hours=3), calendars) == "ruht 2026-11-13"
+    saturday = _berlin(date(2026, 11, 14), ger.open_time)
+    assert start_view.index_slot("DAX", saturday, calendars) == "ruht 2026-11-14"
+    # Without a calendar the short slot stays.
+    assert not start_view.index_slot("DAX", saturday, {}).startswith("ruht")
+
+
+def test_all_rows_without_quote_say_not_available(requests, monkeypatch):
+    from dataclasses import replace
+
+    bundle = DemoIndices().load("Demo-Index")
+    empty = replace(bundle, rows=tuple(replace(row, quote=None) for row in bundle.rows))
+    monkeypatch.setattr(start_view, "cached_index", lambda name, slot: empty)
+    app = AppTest.from_function(landing, default_timeout=30)
+    app.query_params[start_view.INDEX_PARAM] = "DAX"
+    app.run()
+    assert not app.exception and not app.dataframe
+    assert any(start_view.NOT_AVAILABLE_TEXT in info.value for info in app.info)
+
+
+def test_every_fixed_member_can_be_priced():
+    assert all(
+        index_members.processable(member.symbol)
+        for rows in index_members.members().values()
+        for member in rows
+    )
+    assert all(len(rows) <= index_members.TOP_N for rows in index_members.members().values())
+
+
+@pytest.mark.parametrize(("ticker", "expected"), [
+    ("SAP.DE", True), ("BRK-B", True), ("0700.HK", True), ("RELIANCE.NS", True),
+    ("M&M.NS", False), ("ABI.BR", False), ("NDA-FI.HE", False), ("XYZ.L", False),
+])
+def test_processable_follows_the_price_engine_rules(ticker, expected):
+    assert index_members.processable(ticker) is expected

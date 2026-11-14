@@ -198,24 +198,28 @@ class IndexMarketData:
     def __init__(self, ticker_factory=_ticker, *, cache_info=False):
         self._ticker = ticker_factory
         # Identity and market cap change at most daily; prices are fetched on every
-        # load. With ``cache_info`` the checked info fields are kept per UTC day.
+        # load. With ``cache_info`` the info fields are kept per UTC day, but only
+        # after they passed the identity, venue and market-cap checks.
         self._infos = {} if cache_info else None
 
-    def _info(self, ticker, symbol: str, day) -> object:
+    def _info(self, ticker, symbol: str, day) -> tuple[object, bool]:
+        """:return: (info, True if it came from the daily cache)."""
         cached = self._infos.get(symbol) if self._infos is not None else None
         if cached is not None and cached[0] == day:
-            return cached[1]
-        info = ticker.get_info()
-        if self._infos is not None and isinstance(info, Mapping):
+            return cached[1], True
+        return ticker.get_info(), False
+
+    def _remember(self, symbol: str, day, info: Mapping) -> None:
+        """Keep only checked, complete answers; throttled partial ones are retried."""
+        if self._infos is not None:
             self._infos[symbol] = (day, {key: info.get(key) for key in INFO_KEYS})
-        return info
 
     def fetch(self, constituent: Constituent, now: datetime, calendars) -> IndexRow:
         if constituent.note or not constituent.symbol:
             return IndexRow(constituent, note=constituent.note)
         try:
             ticker = self._ticker(constituent.symbol)
-            info = self._info(ticker, constituent.symbol, now.date())
+            info, cached = self._info(ticker, constituent.symbol, now.date())
             if not isinstance(info, Mapping) or (
                 info.get("symbol") != constituent.symbol or info.get("quoteType") != "EQUITY"
                 or not isinstance(info.get("currency"), str)
@@ -230,6 +234,8 @@ class IndexMarketData:
                 return replace(row, note="NA · Kursverlauf für diesen Handelsplatz wird noch angebunden")
             if info.get("exchangeTimezoneName") != EXCHANGES[exchange][0]:
                 return IndexRow(constituent, note="NA · Yahoo-Handelsplatz nicht bestätigt")
+            if not cached and cap is not None:
+                self._remember(constituent.symbol, now.date(), info)
             snapshot = parse_watchlist_rows(
                 (*BASIC_HEADERS, "Yahoo-Symbol", "Handelsplatz", "Währung"),
                 [[constituent.name, None, None, None, constituent.symbol, exchange, currency]],
