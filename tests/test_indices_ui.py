@@ -39,7 +39,7 @@ def test_auto_load_periods_selection_refresh_and_other_areas_are_isolated(dashbo
     assert app.selectbox(key="_indices.selected").value == "DAX"
     assert app.segmented_control(key="_indices.period").options == ["Heute", "Woche", "Monat", "Jahr"]
     assert [metric.label for metric in app.metric] == [
-        "Marktkapitalisierung", "Größter Gewinner", "Größter Verlierer", "Aktive Positionen",
+        "Marktkapitalisierung", "Größter Gewinner", "Größter Verlierer", "Unternehmen",
     ]
     assert app.dataframe[0].value.columns[1] == "Kursentwicklung (%)"
     assert len(app.get("plotly_chart")) == 1

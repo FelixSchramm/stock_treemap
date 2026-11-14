@@ -36,12 +36,17 @@ nach Marktkapitalisierung und Liste; **← Zurück zur Übersicht** und die Pfad
 führen zurück, der URL-Parameter `?index=DAX` hält die Ansicht. Die Zusammensetzung
 steht fest in `index_members.csv` (Wikipedia, Stand 14.11.2026); nach
 Indexanpassungen erzeugt `uv run --locked --with lxml python scripts/build_index_members.py`
-die Datei neu, prüft jeden Ticker einmal bei Yahoo und behält je Index die 50 größten.
-So lädt ein Klick höchstens 50 Unternehmen (etwa 200 Yahoo-Anfragen) statt bis zu 500,
-was das Anfragelimit schont, das auch das Depot auf demselben Server träfe. Kennung und
-Marktkapitalisierung werden pro Tag, Kurse 15 Minuten zwischengespeichert. FTSE 100,
+die Datei neu, lässt Ticker weg, die die App nicht bepreisen kann (Börse nicht
+angebunden, z. B. Brüssel und Helsinki, oder Symbolformat wie `M&M.NS`), prüft jeden
+übrigen Ticker einmal bei Yahoo und behält je Index die 50 größten. So lädt ein Klick
+höchstens 50 Unternehmen statt bis zu 500, was das Anfragelimit schont, das auch das
+Depot auf demselben Server träfe. Abgerufen wird erst beim Klick, höchstens sechs
+Anfragen parallel und ein Index zur Zeit. Kennung und Marktkapitalisierung werden
+pro Tag zwischengespeichert, aber nur nach bestandener Prüfung; Kurse während der
+Handelszeit 15 Minuten, bei geschlossener Börse bis zur nächsten Sitzung. FTSE 100,
 STOXX Europe 600, Russell 2000 und KOSPI haben keine Einzelwerte (London nicht
-angebunden bzw. keine freie Liste). Ein Klick auf eine Region zoomt hinein, die Pfadzeile zoomt wieder heraus. Indizes
+angebunden bzw. keine freie Liste). Ein Klick auf eine Region zoomt hinein, die
+Pfadzeile zoomt wieder heraus. Indizes
 und ETFs nutzen dieselben Börsenkalender und dieselbe Kursperioden-Logik wie die
 Watchlist; Werte bleiben in Indexpunkten bzw. Handelswährung. Nach dem Login steht
 derselbe Inhalt als Bereich **Märkte** zur Verfügung (nicht im Demo-Modus, der nur

@@ -168,7 +168,7 @@ def render(factory, *, refresh_clicked=False, demo=False):
 
 def render_bundle(bundle: IndexBundle, period: str) -> None:
     """Four KPIs, treemap and constituent table; shared with the public start page."""
-    gains =[row for row in bundle.rows if row.percent(period) is not None and row.percent(period) > 0]
+    gains = [row for row in bundle.rows if row.percent(period) is not None and row.percent(period) > 0]
     losses = [row for row in bundle.rows if row.percent(period) is not None and row.percent(period) < 0]
     winner = max(gains, key=lambda row: row.percent(period), default=None)
     loser = min(losses, key=lambda row: row.percent(period), default=None)
@@ -186,7 +186,7 @@ def render_bundle(bundle: IndexBundle, period: str) -> None:
         st.metric("Größter Verlierer", _percent(loser.percent(period)) if loser else "NA")
         st.caption(loser.constituent.name if loser else "Keine negative Kursentwicklung verfügbar")
     with columns[3]:
-        st.metric("Aktive Positionen", str(len(bundle.rows)), help="Unternehmen im ausgewählten Index-Blatt; keine Depotpositionen.")
+        st.metric("Unternehmen", str(len(bundle.rows)), help="Unternehmen in der angezeigten Liste; keine Depotpositionen.")
         st.caption(f"{quoted}/{len(bundle.rows)} mit Kursentwicklung ({period})")
 
     st.plotly_chart(build_figure(bundle, period), width="stretch", key="indices.treemap")
@@ -197,7 +197,7 @@ def render_bundle(bundle: IndexBundle, period: str) -> None:
     else:
         st.caption("Gleiche Kachelgrößen: keine vergleichbaren Marktkapitalisierungen verfügbar. "
                    "Verschiedene Währungen werden nicht addiert.")
-    st.subheader("Unternehmen im Index")
+    st.subheader("Unternehmen im Index", anchor=False)
     frame = pd.DataFrame(table_rows(bundle, period))
     numbers = ["Kursentwicklung (%)", "Kurs", "Marktkapitalisierung", "Anteil (%)"]
     styled = frame.style.format({column: "{:,.2f}" for column in numbers},
