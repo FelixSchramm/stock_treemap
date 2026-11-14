@@ -74,15 +74,32 @@ mehrere Grafiken gleichzeitig:
    ermittelt (`exploration/summary.py`) und erben deren Prüfungen. Scheitert eine
    Prüfung, zeigt die Kachel **n. v.**, der Grund steht im Tooltip. Das KGV gilt
    daher wie das Thema „Historisches KGV“ nur für geprüfte US-Handelsplätze.
+   KGV, FCF-Marge und ROIC zeigen immer die **jüngste Periode**: Ist sie dort
+   ungültig (z. B. negatives TTM-EPS, Vorsteuerverlust, fehlender Umsatz), steht
+   **n. v.** mit Grund statt eines älteren Werts. Die Veränderung zur Vorperiode
+   erscheint nur, wenn auch die direkt vorangehende Periode gültig ist. Die
+   Dividendenrendite wird direkt aus Ex-Dividenden und Kurs berechnet und hängt
+   nicht an der Ausschüttungsquote. Meldet Yahoo eine leere Dividendenhistorie,
+   steht **keine**; scheitert der Abruf, steht **n. v.**
+   Bei weniger als einem Jahr Kurshistorie nennt die Kurskachel das tatsächliche
+   Startdatum.
 3. **Steuerleiste:** **Bereich**, **Währung**, **Renditebasis** und **Zeitraum**
-   (1, 3 oder 5 Jahre) sind immer sichtbar und gelten für alle Charts der Seite.
-   Geschäftszahlen bleiben in Berichtswährung; Monatsrenditen zeigen stets zwölf
-   vollständige Monate.
+   (6 Monate, 1, 3 oder 5 Jahre) sind immer sichtbar; ein Segment lässt sich nicht
+   abwählen. Währung, Renditebasis und Zeitraum gelten für Kurs- und
+   Marktvergleiche. Ausnahmen: „Kurs in Euro“ und „Kurs und Quartalsergebnisse“
+   zeigen stets den splitbereinigten, nicht dividendenbereinigten Kurs in EUR (der
+   Zeitraum gilt), „Kerzen und Volumen“ 60 Handelstage in Handelswährung,
+   „Reaktion auf Quartalszahlen“ stets USD-Gesamtrenditen gegen SPY über die volle
+   Historie, „Historisches KGV“ die volle Historie, „Dividende und Deckung“ fünf
+   Jahre, Monatsrenditen die letzten zwölf vollständigen Monate.
+   Geschäftszahlen bleiben in Berichtswährung.
 4. **Themenkarten:** Ein Bereich zeigt alle seine Themen gleichzeitig im
    2-Spalten-Raster (auf schmalen Displays untereinander). Jede Karte enthält den
    Haupt-Chart und eine Zeile Kernaussage, die automatisch aus der Hauptreihe
-   entsteht (letzter Wert mit Datum und Veränderung). Ohne datierte Reihe steht dort
-   der erste Satz der Methodik-Notiz. Weitere Panels, Tabellen, CSV-Download und
+   entsteht (letzter Wert mit Datum und Veränderung; bei Berichtsperioden wird
+   das Vergleichsdatum genannt, damit Lücken sichtbar bleiben). Ohne datierte
+   Reihe, bei „Insider-Transaktionen“ oder bei einem Fehler steht dort der erste
+   Satz der Methodik-Notiz. Weitere Panels, Tabellen, CSV-Download und
    Notiz liegen eingeklappt unter **Details**.
 
 Die Bereiche führen vom groben Überblick zum Deep Dive:

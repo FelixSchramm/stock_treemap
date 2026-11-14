@@ -22,6 +22,10 @@ FX = {
 }
 
 
+# Resources where an empty result is a valid answer rather than a failure.
+EMPTY_IS_ANSWER = {"dividends"}
+
+
 def dates(frame):
     frame = frame.copy()
     frame.index = pd.to_datetime(frame.index).tz_localize(None).normalize()
@@ -135,7 +139,8 @@ def fetch(company: Company, comparisons=()):
     for name, function in calls.items():
         try:
             value = function()
-            if value is None or len(value) == 0:
+            # An empty dividend history is an answer: the company pays none.
+            if value is None or (len(value) == 0 and name not in EMPTY_IS_ANSWER):
                 raise ValueError("Yahoo returned no data")
             bundle[name] = value
         except Exception:  # noqa: BLE001
