@@ -28,7 +28,20 @@ Kacheln für **EUR/USD, Gold, Brent und Bitcoin** (Veränderung zum Vortagesbalk
 Branchen-ETFs dienen als Näherung, weil Yahoo die Sektorindizes nicht verlässlich
 führt. Die Symbolliste steht fest im Code (`market_overview.py`); die Seite liest
 keine Secrets, kein Sheet und keine Depotdaten. Kurse kommen von Yahoo Finance und
-werden für alle Besucher bis zu 15 Minuten gemeinsam zwischengespeichert. Indizes
+werden für alle Besucher bis zu 15 Minuten gemeinsam zwischengespeichert.
+Ein Klick auf eine Indexkachel (DAX, MDAX, Euro Stoxx 50, CAC 40, SMI, S&P 500,
+Nasdaq 100, Dow Jones, Nikkei 225, Hang Seng, Nifty 50) zeigt dessen bis zu **50 größte
+Unternehmen** (nach Marktkapitalisierung am Stand-Datum) mit Kennzahlen, Treemap
+nach Marktkapitalisierung und Liste; **← Zurück zur Übersicht** und die Pfadzeile
+führen zurück, der URL-Parameter `?index=DAX` hält die Ansicht. Die Zusammensetzung
+steht fest in `index_members.csv` (Wikipedia, Stand 14.11.2026); nach
+Indexanpassungen erzeugt `uv run --locked --with lxml python scripts/build_index_members.py`
+die Datei neu, prüft jeden Ticker einmal bei Yahoo und behält je Index die 50 größten.
+So lädt ein Klick höchstens 50 Unternehmen (etwa 200 Yahoo-Anfragen) statt bis zu 500,
+was das Anfragelimit schont, das auch das Depot auf demselben Server träfe. Kennung und
+Marktkapitalisierung werden pro Tag, Kurse 15 Minuten zwischengespeichert. FTSE 100,
+STOXX Europe 600, Russell 2000 und KOSPI haben keine Einzelwerte (London nicht
+angebunden bzw. keine freie Liste). Ein Klick auf eine Region zoomt hinein, die Pfadzeile zoomt wieder heraus. Indizes
 und ETFs nutzen dieselben Börsenkalender und dieselbe Kursperioden-Logik wie die
 Watchlist; Werte bleiben in Indexpunkten bzw. Handelswährung. Nach dem Login steht
 derselbe Inhalt als Bereich **Märkte** zur Verfügung (nicht im Demo-Modus, der nur

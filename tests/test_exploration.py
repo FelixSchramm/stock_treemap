@@ -9,6 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 from portfolio_dashboard.exploration.charts import (
     GROUPS,
+    TITLES,
     AnalysisUnavailable,
     build,
     cash,
@@ -16,7 +17,12 @@ from portfolio_dashboard.exploration.charts import (
 )
 from portfolio_dashboard.exploration.data import prices
 from portfolio_dashboard.exploration.demo import demo_bundle
-from portfolio_dashboard.exploration.view import AREA, GROUP_KEY, TOPIC_KEY
+from portfolio_dashboard.exploration.view import (
+    AREA,
+    CURRENCY_KEY,
+    GROUP_KEY,
+    MONTHS_KEY,
+)
 from portfolio_dashboard.ui import AREA_RADIO_KEY
 
 
@@ -109,6 +115,12 @@ def test_missing_optional_resource_does_not_affect_other_topics(bundle):
         build(19, bundle)
 
 
+def test_groups_cover_every_topic_exactly_once():
+    topics = [topic for group in GROUPS.values() for topic in group]
+    assert sorted(topics) == list(range(1, 30))
+    assert GROUPS["Überblick"] == (2, 10, 9, 13)
+
+
 def test_ui_all_topics_offline_and_return_to_depot(monkeypatch):
     monkeypatch.setenv("PORTFOLIO_MODE", "demo")
 
@@ -117,29 +129,46 @@ def test_ui_all_topics_offline_and_return_to_depot(monkeypatch):
 
     monkeypatch.setattr("portfolio_dashboard.exploration.view.fetch", forbidden)
     app = AppTest.from_file(
-        str(Path(__file__).parents[1] / "app.py"), default_timeout=15
+        str(Path(__file__).parents[1] / "app.py"), default_timeout=30
     ).run()
     app.radio(key=AREA_RADIO_KEY).set_value(AREA).run()
     assert not app.exception
-    assert app.radio(key=GROUP_KEY).value == "Überblick"
-    assert app.selectbox(key=f"{TOPIC_KEY}.Überblick").value == 2
-    assert app.get("plotly_chart")
+    assert app.header[0].value == "Microsoft"
+    assert [m.label for m in app.metric] == [
+        "Kurs in USD · 1 Jahr",
+        "Abstand zum Hoch",
+        "KGV",
+        "FCF-Marge",
+        "ROIC",
+        "Dividendenrendite",
+    ]
+    assert app.segmented_control(key=GROUP_KEY).value == "Überblick"
+    # The control bar stays visible for every area, not only for some topics.
+    for key in (CURRENCY_KEY, MONTHS_KEY):
+        assert app.segmented_control(key=key).value is not None
     for group, topics in GROUPS.items():
-        app.radio(key=GROUP_KEY).set_value(group).run()
+        app.segmented_control(key=GROUP_KEY).set_value(group).run()
+        assert not app.exception, group
+        assert app.segmented_control(key=CURRENCY_KEY).value == "EUR"
+        titles = [m.value for m in app.markdown]
         for topic in topics:
-            app.selectbox(key=f"{TOPIC_KEY}.{group}").set_value(topic).run()
-            assert not app.exception, (group, topic)
-            assert [e.label for e in app.expander][-3:] == [
-                "Glossar – Kennzahlen", "Glossar – Diagramme", "Glossar – Datenquellen"
-            ]
-            if topic == 28:
-                assert app.warning, (group, topic)
-                assert any(
-                    "nicht angebunden" in w.value or "nicht bestätigt" in w.value
-                    for w in app.warning
-                )
-            else:
-                assert not app.warning, (group, topic)
+            assert f"**{TITLES[topic]}**" in titles, (group, topic)
+        details = [e for e in app.expander if e.label == "Details"]
+        expected = len(topics) - (28 in topics)
+        assert len(details) == expected, group
+        assert len(app.get("plotly_chart")) >= expected, group
+        assert [e.label for e in app.expander][-3:] == [
+            "Glossar – Kennzahlen",
+            "Glossar – Diagramme",
+            "Glossar – Datenquellen",
+        ]
+        if 28 in topics:
+            assert len(app.warning) == 1, group
+            assert "nicht angebunden" in app.warning[0].value
+        else:
+            assert not app.warning, group
+    app.segmented_control(key=MONTHS_KEY).set_value(60).run()
+    assert not app.exception
     app.radio(key=AREA_RADIO_KEY).set_value("Depot").run()
     assert not app.exception
     assert app.dataframe[0].value["Instrument"].tolist() == [

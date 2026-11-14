@@ -324,8 +324,8 @@ def test_automatic_defaults_selection_changes_and_cache_do_not_reload_sheet(
     ]
     assert not app.button
     app.run()
-    app.radio(key=view.GROUP_KEY).set_value("Geschäftsmodell").run()
-    app.selectbox(key=f"{view.TOPIC_KEY}.Geschäftsmodell").set_value(9).run()
+    app.segmented_control(key=view.GROUP_KEY).set_value("Geschäftsmodell").run()
+    app.segmented_control(key=view.MONTHS_KEY).set_value(36).run()
     assert not app.exception and app.get("plotly_chart")
     assert len(calls) == 1
     app.selectbox(key=view.COMPANY_KEY).set_value(repr(SECOND.key)).run()

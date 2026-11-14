@@ -163,8 +163,12 @@ def render(factory, *, refresh_clicked=False, demo=False):
         return
     if not demo:
         render_index_level(name, period)
+    render_bundle(bundle, period)
 
-    gains = [row for row in bundle.rows if row.percent(period) is not None and row.percent(period) > 0]
+
+def render_bundle(bundle: IndexBundle, period: str) -> None:
+    """Four KPIs, treemap and constituent table; shared with the public start page."""
+    gains =[row for row in bundle.rows if row.percent(period) is not None and row.percent(period) > 0]
     losses = [row for row in bundle.rows if row.percent(period) is not None and row.percent(period) < 0]
     winner = max(gains, key=lambda row: row.percent(period), default=None)
     loser = min(losses, key=lambda row: row.percent(period), default=None)

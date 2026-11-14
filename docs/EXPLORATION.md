@@ -63,16 +63,36 @@ fehlgeschlagenen Abrufen und nicht verfügbaren Analysen erreichbar.
 
 ## Gestaltung und Navigation
 
-Die Reihenfolge führt vom groben Überblick zum Deep Dive. Beim ersten Öffnen
-startet die Ansicht mit **Kurs und Quartalsergebnisse**: Aktienkurs in EUR
-mit Markierungen der veröffentlichten Quartalszahlen und EPS-Abweichungen:
+Die Seite ist wie die Startseite **Märkte im Überblick** aufgebaut und zeigt
+mehrere Grafiken gleichzeitig:
 
-1. **Überblick:** Kurs und Quartalsergebnisse, reiner Kursverlauf,
-   Vergleich der gewählten Aktien ab 100, Marktvergleich.
-2. **Kurs & Risiko:** Monatsrenditen, Drawdown, Rendite/Risiko, Kerzen/Volumen,
-   Reaktion auf Veröffentlichungen.
-3. **Geschäftsmodell:** Wachstum/Margen, Segmente, Jahres- und Quartalscashflow,
-   Cashflow-Überleitung und Gewinnqualität.
+1. **Kopf:** Unternehmensname als Überschrift, rechts daneben **Unternehmen** und
+   **Vergleichswerte (max. 3)**. Abrufstand und Listenstände stehen in einer Zeile darunter.
+2. **Kennzahlen:** sechs Kacheln mit Kurs (1 Jahr, Sparkline), Abstand zum
+   52-Wochen-Hoch, KGV, FCF-Marge, ROIC und Dividendenrendite. KGV, FCF-Marge, ROIC
+   und Dividendenrendite werden über dieselbe Themenberechnung wie die Charts
+   ermittelt (`exploration/summary.py`) und erben deren Prüfungen. Scheitert eine
+   Prüfung, zeigt die Kachel **n. v.**, der Grund steht im Tooltip. Das KGV gilt
+   daher wie das Thema „Historisches KGV“ nur für geprüfte US-Handelsplätze.
+3. **Steuerleiste:** **Bereich**, **Währung**, **Renditebasis** und **Zeitraum**
+   (1, 3 oder 5 Jahre) sind immer sichtbar und gelten für alle Charts der Seite.
+   Geschäftszahlen bleiben in Berichtswährung; Monatsrenditen zeigen stets zwölf
+   vollständige Monate.
+4. **Themenkarten:** Ein Bereich zeigt alle seine Themen gleichzeitig im
+   2-Spalten-Raster (auf schmalen Displays untereinander). Jede Karte enthält den
+   Haupt-Chart und eine Zeile Kernaussage, die automatisch aus der Hauptreihe
+   entsteht (letzter Wert mit Datum und Veränderung). Ohne datierte Reihe steht dort
+   der erste Satz der Methodik-Notiz. Weitere Panels, Tabellen, CSV-Download und
+   Notiz liegen eingeklappt unter **Details**.
+
+Die Bereiche führen vom groben Überblick zum Deep Dive:
+
+1. **Überblick:** Kurs und Quartalsergebnisse, Wachstum und Margen,
+   Cashflow und Investitionen, Vergleich mit dem Markt.
+2. **Kurs & Risiko:** Kurs in Euro, Vergleich ab 100, Monatsrenditen, Drawdown,
+   Rendite/Risiko, Kerzen/Volumen, Reaktion auf Veröffentlichungen.
+3. **Geschäftsmodell:** Quartalscashflow, Cashflow-Überleitung, Gewinnqualität
+   und Segmente.
 4. **Kapital & Bilanz:** Bilanz/Zinsdeckung, ROIC, Kapitalverwendung,
    Entwicklung je Aktie und Dividende/Deckung.
 5. **Bewertung:** Portal-Multiplikatoren, historisches KGV,
@@ -80,11 +100,13 @@ mit Markierungen der veröffentlichten Quartalszahlen und EPS-Abweichungen:
 6. **Marktumfeld:** Analystenkonsens, Zieländerungen, Institutionen,
    Insider-Transaktionen und Optionen.
 
-Eine Fragestellung zur Zeit hält die Seite schnell und übersichtlich. Mehrere
-Kennzahlen eines Themas stehen in getrennten Panels, niemals auf einer Doppelachse.
-Hover, Zoom und Legendenauswahl funktionieren direkt in Plotly. Tabelle und Download
-machen die Zahlen auch ohne Hover erreichbar. Monatsrenditen zeigen stets zwölf
-vollständige Monate; der deaktivierte Zeitraumfilter erklärt die Ausnahme.
+Jedes der 29 Themen erscheint genau einmal. Der Bereich ist ein Segment-Schalter
+wie auf der Startseite und kein `st.tabs`: so berechnet ein Rerun nur die Themen
+des sichtbaren Bereichs. Mehrere Kennzahlen eines Themas stehen in getrennten
+Panels, niemals auf einer Doppelachse. Die Karten zeigen die Figuren aus
+`charts.py` in einheitlicher Höhe (280 px); die Chartlogik bleibt unverändert.
+Hover, Zoom und Legendenauswahl funktionieren direkt in Plotly. Tabelle und
+Download machen die Zahlen auch ohne Hover erreichbar.
 
 Die CI 1.3 liegt unter `src/portfolio_dashboard/ci.json`. `design.py` verwendet die
 Tokens für Plotly und die Dashboard-Oberfläche. Die Treemap behält ihre fachliche
