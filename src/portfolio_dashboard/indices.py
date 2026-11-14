@@ -46,6 +46,7 @@ INDEX_NAMES = (
 )
 MAX_ROWS = 999  # Header + constituents fit the standard 1,000-row Sheet grid.
 SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9.\-]{0,19}")
+INFO_KEYS = ("symbol", "quoteType", "currency", "exchange", "exchangeTimezoneName", "marketCap")
 
 
 class IndexSourceError(ValueError):
@@ -194,15 +195,27 @@ def _ticker(symbol):
 class IndexMarketData:
     """Bounded per-symbol requests; no country, exchange or currency inference."""
 
-    def __init__(self, ticker_factory=_ticker):
+    def __init__(self, ticker_factory=_ticker, *, cache_info=False):
         self._ticker = ticker_factory
+        # Identity and market cap change at most daily; prices are fetched on every
+        # load. With ``cache_info`` the checked info fields are kept per UTC day.
+        self._infos = {} if cache_info else None
+
+    def _info(self, ticker, symbol: str, day) -> object:
+        cached = self._infos.get(symbol) if self._infos is not None else None
+        if cached is not None and cached[0] == day:
+            return cached[1]
+        info = ticker.get_info()
+        if self._infos is not None and isinstance(info, Mapping):
+            self._infos[symbol] = (day, {key: info.get(key) for key in INFO_KEYS})
+        return info
 
     def fetch(self, constituent: Constituent, now: datetime, calendars) -> IndexRow:
         if constituent.note or not constituent.symbol:
             return IndexRow(constituent, note=constituent.note)
         try:
             ticker = self._ticker(constituent.symbol)
-            info = ticker.get_info()
+            info = self._info(ticker, constituent.symbol, now.date())
             if not isinstance(info, Mapping) or (
                 info.get("symbol") != constituent.symbol or info.get("quoteType") != "EQUITY"
                 or not isinstance(info.get("currency"), str)
@@ -248,10 +261,11 @@ class IndexMarketData:
 class IndicesLoader:
     """One owner's session: cache each selected index, never all index data globally."""
 
-    def __init__(self, reader, market=None, *, clock=lambda: datetime.now(UTC)):
+    def __init__(self, reader, market=None, *, clock=lambda: datetime.now(UTC), workers=4):
         self._reader = reader
         self._market = market if market is not None else IndexMarketData()
         self._clock = clock
+        self._workers = workers
         self._names = None
         self._bundles = {}
 
@@ -274,7 +288,7 @@ class IndicesLoader:
         calendars = venue_calendars(now.date())
         # Yahoo may log private symbols/URLs. Keep its logging disabled throughout
         # this bounded batch; workers do not mutate Streamlit state or log flags.
-        with _quiet_provider_logs(), ThreadPoolExecutor(max_workers=4) as pool:
+        with _quiet_provider_logs(), ThreadPoolExecutor(max_workers=self._workers) as pool:
             rows = tuple(pool.map(lambda member: self._market.fetch(member, now, calendars), members))
         bundle = IndexBundle(name, rows, now)
         self._bundles[name] = bundle

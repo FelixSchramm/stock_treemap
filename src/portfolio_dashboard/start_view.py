@@ -1,5 +1,9 @@
 """Start page before login: Login top right, market clock, breadth, treemap, sparklines, tiles.
 
+A click on a world-index tile opens its companies (fixed members, see
+``index_members``); the URL parameter ``index`` keeps that view, and a back
+button returns to the overview.
+
 Public market data only: nothing here reads secrets, the Sheet or depot loaders.
 Quotes are shared by all visitors for ``CACHE_SECONDS``, so the number of
 provider requests does not grow with the number of visitors.
@@ -13,16 +17,24 @@ from html import escape
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard import market_overview
+from portfolio_dashboard import index_members, indices_view, market_overview
 from portfolio_dashboard.design import DARK, UP, dashboard_css, style_figure
+from portfolio_dashboard.index_members import FixedIndexReader
+from portfolio_dashboard.indices import IndexBundle, IndexMarketData, IndicesLoader
 from portfolio_dashboard.market_overview import MarketQuote, breadth, market_clock
 from portfolio_dashboard.treemap import _german, color_for, color_scale, format_percent
 from portfolio_dashboard.watchlist_quotes import PERIODS
 
 CACHE_SECONDS = 900
+# Index loads wait on Yahoo, not on the CPU; more parallel requests shorten the
+# first load. Kept moderate because all visitors share one host IP.
+INDEX_WORKERS = 12
 ASSETS_GROUP = "Devisen & Rohstoffe"
 GROUP_KEY = "start.group"
 PERIOD_KEY = "start.period"
+TREEMAP_KEY = "start.treemap"
+INDEX_PARAM = "index"
+_INDEX_BY_SYMBOL = {item.symbol: item.name for item in market_overview.WORLD_INDICES}
 NOT_AVAILABLE_TEXT = "Marktdaten sind zurzeit nicht verfügbar. Später erneut versuchen."
 _STATUS_COLORS = {"offen": UP, "Mittagspause": "#D9A441", "geschlossen": DARK["ink_muted"]}
 START_CSS = f"""<style>
@@ -40,6 +52,18 @@ def cached_quotes(group: str) -> tuple[datetime, tuple[MarketQuote, ...]]:
     now = datetime.now(UTC)
     symbols = market_overview.ASSETS if group == ASSETS_GROUP else market_overview.GROUPS[group]
     return now, market_overview.load_quotes(symbols, now)
+
+
+@st.cache_resource
+def index_market() -> IndexMarketData:
+    """One provider for all visitors: identity and market caps cached per UTC day."""
+    return IndexMarketData(cache_info=True)
+
+
+@st.cache_data(ttl=CACHE_SECONDS, show_spinner=False)
+def cached_index(name: str) -> IndexBundle:
+    """Shared for all visitors: fixed members with Yahoo prices and market caps."""
+    return IndicesLoader(FixedIndexReader(), index_market(), workers=INDEX_WORKERS).load(name)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -73,7 +97,8 @@ def build_market_figure(quotes: tuple[MarketQuote, ...], period: str) -> go.Figu
         texttemplate="<b>%{label}</b><br>%{customdata[0]}",
         hovertemplate=f"<b>%{{label}}</b> · %{{customdata[1]}}<br>{period}: %{{customdata[0]}}<extra></extra>",
         textfont=dict(color="white"),
-        pathbar=dict(visible=False),
+        # A click on a region zooms in; the path bar is the way back out.
+        pathbar=dict(visible=grouped),
         tiling=dict(pad=3),
     ))
     style_figure(figure)
@@ -136,6 +161,43 @@ def _render_assets(assets: tuple[MarketQuote, ...]) -> None:
                       help="Veränderung zum vorherigen Tagesbalken bei Yahoo Finance; Kurve: ein Jahr.")
 
 
+def _open_index() -> None:
+    """Treemap click: open a world index with fixed members, else say why not."""
+    points = st.session_state[TREEMAP_KEY].selection.points
+    name = _INDEX_BY_SYMBOL.get(points[0].get("id")) if points else None
+    if name in index_members.members():
+        st.query_params[INDEX_PARAM] = name
+    elif name is not None:
+        st.toast(f"Für {name} sind keine Einzelwerte hinterlegt.")
+
+
+def _close_index() -> None:
+    st.query_params.pop(INDEX_PARAM, None)
+
+
+def _render_index(name: str) -> None:
+    """Companies of one world index: breadcrumb, back button, KPIs, treemap, table."""
+    back, path = st.columns((1, 3), vertical_alignment="center")
+    back.button("← Zurück zur Übersicht", key="start.back", on_click=_close_index)
+    path.caption(f"Märkte im Überblick › Weltindizes › {name}")
+    period = st.segmented_control("Zeitraum", PERIODS, default="Heute", key=PERIOD_KEY) or "Heute"
+    try:
+        with st.spinner(f"{name}: Unternehmen, Kurse und Marktkapitalisierungen werden geladen …"):
+            bundle = cached_index(name)
+    except Exception:
+        st.info(NOT_AVAILABLE_TEXT)
+        return
+    st.subheader(f"{name} · {period}", anchor=False)
+    if not bundle.available or not bundle.rows:
+        st.info(NOT_AVAILABLE_TEXT)
+        return
+    st.caption(f"Die bis zu {index_members.TOP_N} größten Mitglieder nach Marktkapitalisierung "
+               f"(Wikipedia und Yahoo, Stand {index_members.SOURCE_DATE}) · "
+               "Kurse und Marktkapitalisierung: Yahoo Finance · "
+               f"Stand: {bundle.fetched_at:%d.%m.%Y, %H:%M} UTC, bis zu 15 Minuten zwischengespeichert.")
+    indices_view.render_bundle(bundle, period)
+
+
 def render(login_button: Callable[[], None], *, load: Callable | None = None,
            clock: Callable[[], datetime] | None = None) -> None:
     """Render the public start page; ``login_button`` comes from the owner gate."""
@@ -150,6 +212,10 @@ def render(login_button: Callable[[], None], *, load: Callable | None = None,
         login_button()
     st.divider()
     _render_clock(now)
+    selected = st.query_params.get(INDEX_PARAM)
+    if selected in index_members.members():
+        _render_index(selected)
+        return
 
     controls = st.columns((3, 2))
     with controls[0]:
@@ -169,11 +235,12 @@ def render(login_button: Callable[[], None], *, load: Callable | None = None,
         st.info(NOT_AVAILABLE_TEXT)
         return
     _render_breadth(quotes, period, group)
-    st.plotly_chart(build_market_figure(quotes, period), width="stretch", key="start.treemap",
-                    config={"displayModeBar": False})
+    st.plotly_chart(build_market_figure(quotes, period), width="stretch", key=TREEMAP_KEY,
+                    config={"displayModeBar": False}, on_select=_open_index, selection_mode="points")
     st.caption("Grün: Gewinn · Rot: Verlust · Grau: NA · gleiche Kachelgrößen, keine Gewichtung. "
                + ("Branchen über Sektor-ETFs (Select Sector SPDR bzw. iShares STOXX Europe 600) als Näherung."
-                  if group != "Weltindizes" else "Indexstände in Punkten, ohne Währungsumrechnung."))
+                  if group != "Weltindizes" else "Indexstände in Punkten, ohne Währungsumrechnung. "
+                  f"Klick auf {', '.join(index_members.members())} zeigt die einzelnen Unternehmen."))
     st.divider()
     _render_sparklines(world)
     if assets:
