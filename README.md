@@ -223,7 +223,7 @@ erDiagram
 | Google-Sheet-Import, Live-Kurse (yfinance), EUR-Bewertung, Renditen | umgesetzt; nur im privaten Modus mit Login |
 | Login und Besitzerprüfung | umgesetzt |
 | FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Übersicht „Innerer Wert“ und Detail- und Annahmenansicht (Editor, Rechenweg, Sensitivität) umgesetzt; echte Annahmen trägt der Besitzer bei Nutzung ein |
-| Watchlist aus dem Sheet | Kursabruf und Ansicht umgesetzt |
+| Watchlist aus dem Sheet | Kursabruf, Ansicht und Heatmap umgesetzt |
 | Sheet-Datenmodell mit Transaktionsjournal ([ADR 0012](docs/adr/0012-sheet-datenmodell.md)) | umgesetzt: Bestand und FIFO-Einstand aus dem Journal, Kurszuordnung aus `Instrumente` |
 | Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsübersicht und Annahmenerfassung umgesetzt; dauerhafter Speicher für Szenarien im Live-Betrieb offen (Besitzerentscheidung) |
 

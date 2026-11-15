@@ -1,11 +1,12 @@
-"""Watchlist view model: filters, sorting, KPIs, table rows and details (ADR 0011, #85).
+"""Watchlist view model: filters, sorting, KPIs, table rows, details, heatmap (ADR 0011).
 
 Pure and offline; no Streamlit, provider or Sheet access. Everything is derived from
 the entries of one ``WatchlistBundle``, so KPIs, table and detail blocks always agree.
 Percentages are plain price changes in trading currency (Sheet substitute: EUR) and
 are never weighted; a missing period value is always "n. v." and never ``0,00 %``.
 Each period carries its own origin, because one row may mix provider values with a
-Sheet substitute for ``Heute``.
+Sheet substitute for ``Heute``. The heatmap (#86) is built from the filtered and sorted
+rows, so it always agrees with the table.
 """
 
 from collections import Counter
@@ -19,7 +20,11 @@ from portfolio_dashboard.treemap import (
     NO_CATEGORY_LABEL,
     NOT_AVAILABLE,
     FilterCriteria,
+    TreemapModel,
+    TreemapTile,
     _german,
+    color_for,
+    color_scale,
     format_percent,
     performance_direction_label,
 )
@@ -41,6 +46,9 @@ SORT_BY_PERFORMANCE = "Kursentwicklung (%)"
 SORT_BY_NAME = "Name"
 SORT_BY_TICKER = "Ticker"
 SORT_FIELDS = (SORT_BY_PERFORMANCE, SORT_BY_NAME, SORT_BY_TICKER)
+
+# Every Watchlist value gets the same tile area: there is no EUR position value.
+HEATMAP_TILE_WEIGHT = Decimal(1)
 
 _TYPE_LABELS = {
     InstrumentType.STOCK: "Aktie",
@@ -189,6 +197,7 @@ class WatchlistRow:
     period: str
     period_lines: tuple[str, ...]
     notes: tuple[str, ...] = ()
+    origin: WatchlistOrigin | None = None  # Origin of the displayed value; None if n. v.
 
     def to_display_dict(self) -> dict[str, str]:
         """Columns of the sortable table; every cell is plain text."""
@@ -305,6 +314,7 @@ def _row(entry: WatchlistEntry, period: str) -> WatchlistRow:
         period=period,
         period_lines=tuple(_period_line(entry, each) for each in entry.periods),
         notes=tuple(warning.message for warning in entry.warnings),
+        origin=value.origin if value.percent is not None else None,
     )
 
 
@@ -357,6 +367,63 @@ def sort_rows(
     ordered = sorted(rows, key=tie)
     ordered.sort(key=lambda row: row.name.lower(), reverse=descending)
     return tuple(ordered)
+
+
+# Short origin tags inside a tile; fresh provider and demo values need none.
+_HEATMAP_ORIGIN_TAGS = {
+    WatchlistOrigin.SHEET: "Sheet-Wert",
+    WatchlistOrigin.CACHED_PROVIDER: "zwischengespeichert",
+}
+
+
+def _heatmap_tooltip(row: WatchlistRow) -> tuple[str, ...]:
+    header = row.name + (f" ({row.ticker})" if row.ticker else "")
+    return (
+        header,
+        f"Typ: {row.instrument_type}",
+        f"Handelsplatz: {row.venue}",
+        f"Kurs: {row.price_label}",
+        f"Kursentwicklung {row.period}: {row.percent_label}",
+        f"Quelle: {row.source}",
+        f"Referenzdatum: {row.reference_date}",
+        f"Kursstand: {row.quote_time}",
+    )
+
+
+def build_watchlist_treemap(rows: Sequence[WatchlistRow]) -> TreemapModel:
+    """One equally sized tile per row, in the given order.
+
+    The tile order follows ``rows`` (the sorted table). Watchlist values have no EUR
+    position value, so every tile gets ``HEATMAP_TILE_WEIGHT``; a missing value
+    (n. v.) keeps its area, is gray and reads "n. v." (never 0 %). Color scale,
+    capping and colors are those of the Depot treemap, derived from the visible rows;
+    labels and tooltips always show the uncapped number. A Sheet substitute or a
+    cached value is named inside the tile as text, not only by color.
+
+    :param rows: Filtered and sorted rows for one period.
+    :return: Prepared model; ``omitted_count`` is always 0 because nothing is dropped.
+    """
+    scale, capped = color_scale([row.percent for row in rows])
+    tiles = []
+    for row in rows:
+        tag = _HEATMAP_ORIGIN_TAGS.get(row.origin) if row.origin is not None else None
+        tiles.append(
+            TreemapTile(
+                name=row.name,
+                ticker=row.ticker,
+                amount_eur=HEATMAP_TILE_WEIGHT,  # Area weight; not a EUR amount here.
+                percent=row.percent,
+                color=color_for(row.percent, scale),
+                label=(
+                    row.name,
+                    *((row.ticker,) if row.ticker else ()),
+                    row.percent_label,
+                    *((tag,) if tag else ()),
+                ),
+                tooltip=_heatmap_tooltip(row),
+            )
+        )
+    return TreemapModel(tuple(tiles), 0, scale, capped)
 
 
 @dataclass(frozen=True, slots=True)
