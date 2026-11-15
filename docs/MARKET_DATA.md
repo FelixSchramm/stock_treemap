@@ -164,9 +164,10 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
 - Fehler erzeugen ein Backoff je Schlüssel (15 s, verdoppelt, höchstens 300 s;
   Konstruktorparameter). Solange es läuft, erfolgt kein Providerabruf. Ein Erfolg setzt es zurück.
 - `quotes(instruments, replacements=...)` bündelt einen Durchgang: nur fällige
-  Schlüssel werden abgerufen, Positionen mit weniger bisherigen Fehlern zuerst
-  (Fehlerzahl des fehlerärmsten Kandidaten aus Primär- und Ersatzlisting; bei
-  Gleichstand in Eingabereihenfolge). Eine Position zählt höchstens einen
+  Schlüssel werden abgerufen, Positionen ohne Fehlerserie zuerst (in
+  Eingabereihenfolge), danach die mit dem am längsten zurückliegenden Abrufversuch
+  (bester Kandidat aus Primär- und Ersatzlisting; `probe_order_key`). Eine
+  Position zählt höchstens einen
   Providerfehler und nur, wenn auch ihre Ersatzlistings fehlschlagen. Die Rückgabe bleibt in Eingabereihenfolge. Dadurch
   belegen dauerhaft abgelehnte Symbole nicht immer die erste Erholungsprobe.
   Nach `provider_failure_threshold` (3) aufeinanderfolgenden Providerfehlern
@@ -176,6 +177,24 @@ injiziert; `quote`, `fx`, `history` und `holdings` nutzen dieselben Regeln.
   für Kurse, FX und Historie; übrige Abrufe entfallen (`provider_backoff`,
   `MISSING`), auch bei `refresh=True`. Bestände sind davon ausgenommen.
   Die Schwelle ist ein Standardwert, keine Besitzervorgabe.
+  **Probeabruf bei offenem Backoff (#111):** Jedes Backoff-Fenster (höchstens
+  300 s) lässt genau einen Probeabruf zu, den ersten fälligen Schlüssel der
+  Reihenfolge. Die Reihenfolge richtet sich nicht nach der Fehlerzahl: Sonst
+  wartete eine wieder gesunde Position mit langer Fehlerhistorie, bis neuere,
+  dauerhaft fehlerhafte Positionen mehr Fehler gesammelt hätten. Stattdessen
+  zählt der Zeitpunkt des letzten tatsächlichen Abrufversuchs
+  (`QuoteCache.attempts()`, nur Abrufe beim Anbieter, keine Cache-Treffer und
+  keine Backoff-Auslassungen); jede Probe rückt die Position ans Ende der Runde.
+  **Höchstzahl:** Eine Position wird nach höchstens so vielen Backoff-Fenstern
+  erneut geprüft, wie Positionen gerade fehlschlagen (höchstens ihre Anzahl,
+  also bei Refreshes im Fensterabstand höchstens so viele Refreshes). Beispiel
+  mit Refresh alle 10 Minuten, zwei dauerhaft fehlerhaften Nachbarn und Reparatur
+  bei +40 Minuten: erneut geprüft spätestens bei +60 Minuten (vorher nach
+  Fehlerzahl je nach Vorgeschichte 130 bis 490 Minuten). Der Backoff wird nicht
+  aufgeweicht: Bei echtem Ausfall bleibt es bei einem Abruf je Fenster (30
+  Anbieteraufrufe in zwei Stunden bei 60 und 250 Positionen, vor und nach der
+  Änderung gleich); die Probe geht reihum statt immer an dieselbe Position. Ein
+  Erfolg setzt das Backoff weiter für alle zurück.
   Ein Schlüssel, der schon in einer eigenen Fehlerserie steckt (etwa ein
   dauerhaft abgelehntes Symbol), wird nur direkt nach dem Erfolg eines zuvor
   fehlerfreien Schlüssels ohne neuen Zwischenfehler ignoriert. Abgelehnte
