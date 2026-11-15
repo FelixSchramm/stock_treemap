@@ -1,12 +1,13 @@
 """Public start page with synthetic market data; offline AppTest, no secrets."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from portfolio_dashboard import index_members, start_view
+from portfolio_dashboard.economic_calendar import EconomicEvent
 from portfolio_dashboard.indices import DemoIndices
 from portfolio_dashboard.market_overview import ASSETS, GROUPS, MarketQuote
 from portfolio_dashboard.start_view import ASSETS_GROUP, build_market_figure
@@ -31,6 +32,21 @@ def landing():
     view.render(lambda: st.button("Login", key="auth.login", type="primary"))
 
 
+@pytest.fixture(autouse=True)
+def events(monkeypatch):
+    """Synthetic releases around the real clock, since ``render`` uses the current time."""
+    now = datetime.now(UTC)
+    items = (
+        EconomicEvent("us_jobs", now - timedelta(days=2), last=Decimal(165), actual=Decimal(150)),
+        EconomicEvent("de_zew", now + timedelta(days=2), last=Decimal("28.1"), period="Nov"),
+        EconomicEvent("us_cpi", now + timedelta(days=3), last=Decimal("0.3")),
+        EconomicEvent("fed_rate", now + timedelta(days=50), tentative=True),
+        EconomicEvent("ecb_rate", now + timedelta(days=60)),
+    )
+    monkeypatch.setattr(start_view, "cached_events", lambda day: (items, True))
+    return items
+
+
 @pytest.fixture
 def requests(monkeypatch):
     seen = []
@@ -51,10 +67,75 @@ def test_start_page_shows_login_clock_breadth_treemap_and_tiles(requests):
     labels = [metric.label for metric in app.metric]
     assert labels[:3] == ["Im Plus", "Stärkster Wert", "Schwächster Wert"]
     assert app.metric[0].value == "14 von 15"
-    assert "DAX · 1 Jahr" in labels and "S&P 500 · 1 Jahr" in labels
+    assert labels[3:5] == ["DAX", "S&P 500"]
     assert [metric.label for metric in app.metric[-4:]] == [item.name for item in ASSETS]
     assert len(app.get("plotly_chart")) == 1
     assert requests == ["Weltindizes", ASSETS_GROUP]
+
+
+def test_every_trend_tile_shows_the_daily_change_and_one_year_line(requests):
+    app = AppTest.from_function(landing, default_timeout=30).run()
+    tiles = app.metric[3:]
+    assert len(tiles) == 2 + len(ASSETS)
+    # quotes_for gives the first symbol of a group -1.5 % and every other one +1.5 % today.
+    assert [tile.delta for tile in tiles] == ["-1,50 %", "+1,50 %", "-1,50 %", "+1,50 %", "+1,50 %", "+1,50 %"]
+    years = [block.value for block in app.markdown if 'class="start-year"' in block.value]
+    assert len(years) == len(tiles) and all("1 Jahr: +10,00 %" in year for year in years)
+
+
+def test_events_show_below_the_clock_with_next_rate_decisions(requests):
+    app = AppTest.from_function(landing, default_timeout=30).run()
+    assert not app.exception and not app.error
+    assert app.subheader[0].value == "Nächste Termine USA & Europa"
+    text = " ".join(block.value for block in app.markdown)
+    for name in ("US-Inflation (CPI)", "Fed-Zinsentscheid", "EZB-Zinsentscheid", "ZEW-Konjunkturerwartungen"):
+        assert name in text
+    assert "in 2 Tagen" in text and "Vorwert 0,30 % ggü. Vormonat" in text and "Termin vorläufig" in text
+    # The released jobs report sits in the expander with its result.
+    assert "Ergebnis 150 Tsd. neue Stellen" in text
+    assert "Yahoo-Termine" not in " ".join(caption.value for caption in app.caption)
+
+
+def test_events_failure_keeps_the_page_and_shows_a_neutral_notice(requests, monkeypatch):
+    def broken(day):
+        raise RuntimeError("synthetic-calendar-error")
+
+    monkeypatch.setattr(start_view, "cached_events", broken)
+    app = AppTest.from_function(landing, default_timeout=30).run()
+    assert not app.exception and len(app.get("plotly_chart")) == 1
+    assert start_view.EVENTS_NOT_AVAILABLE in [info.value for info in app.info]
+    assert "synthetic-calendar-error" not in str(app)
+
+
+def test_without_yahoo_the_official_list_stays_with_a_hint(requests, monkeypatch, events):
+    monkeypatch.setattr(start_view, "cached_events", lambda day: (events, False))
+    app = AppTest.from_function(landing, default_timeout=30).run()
+    assert not app.exception
+    assert any("Yahoo-Termine und Vorwerte sind zurzeit nicht verfügbar" in caption.value
+               for caption in app.caption)
+
+
+def year_quote(closes, year=None):
+    return MarketQuote(ASSETS[1], {"Heute": None, "Jahr": year}, closes[-1][1], closes[-1][0],
+                       None, tuple(closes))
+
+
+def test_year_change_comes_from_the_price_engine_when_available():
+    closes = ((date(2025, 11, 14), Decimal(80)), (date(2026, 11, 13), Decimal(100)))
+    assert start_view._year_percent(year_quote(closes, Decimal("7.5"))) == Decimal("7.5")
+
+
+def test_year_change_is_derived_from_daily_closes_one_year_back():
+    closes = ((date(2025, 11, 10), Decimal(50)), (date(2025, 11, 14), Decimal(80)),
+              (date(2026, 6, 1), Decimal(90)), (date(2026, 11, 13), Decimal(100)))
+    # 10.11.2025 lies more than 365 days back; the first close inside the year is 80.
+    assert start_view._year_percent(year_quote(closes)) == Decimal(25)
+
+
+def test_year_change_is_na_without_closes_that_span_a_year():
+    closes = ((date(2026, 10, 1), Decimal(80)), (date(2026, 11, 13), Decimal(100)))
+    assert start_view._year_percent(year_quote(closes)) is None
+    assert start_view._year_percent(year_quote(closes[:1])) is None
 
 
 def test_sector_view_and_period_switch_reuse_the_shared_loader(requests):

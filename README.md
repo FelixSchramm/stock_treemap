@@ -19,12 +19,16 @@
 Ohne Anmeldung zeigt die Live-App **Märkte im Überblick**; rechts oben führt
 **Login** zum Google-Login mit Besitzerprüfung. Die Seite enthält eine
 **Börsenuhr** (Tokio, Hongkong, Frankfurt, London, New York mit Status offen,
-Mittagspause oder geschlossen), die **Marktbreite** (Werte im Plus, stärkster und
+Mittagspause oder geschlossen), darunter **Nächste Termine USA & Europa**
+(Zinsentscheide von Fed und EZB, Inflation, Arbeitsmarkt und Konjunktur mit Datum,
+Uhrzeit und Vorwert, siehe [Wirtschaftstermine](docs/ECONOMIC_CALENDAR.md)), die **Marktbreite** (Werte im Plus, stärkster und
 schwächster Wert), eine kleine **Treemap** mit gleich großen Kacheln für
 **Weltindizes** (15 Indizes, gruppiert nach Europa, Amerika und Asien),
 **Branchen USA** (Select Sector SPDR) und **Branchen Europa** (iShares STOXX Europe 600)
-im Zeitraum Heute, Woche, Monat oder Jahr, **Jahreskurven** für DAX und S&P 500 sowie
-Kacheln für **EUR/USD, Gold, Brent und Bitcoin** (Veränderung zum Vortagesbalken).
+im Zeitraum Heute, Woche, Monat oder Jahr sowie Verlaufskacheln für **DAX, S&P 500,
+EUR/USD, Gold, Brent und Bitcoin**. Jede Kachel zeigt den Tagestrend als Pfeil, darunter
+die Entwicklung über ein Jahr und die Jahreskurve; bei Devisen, Rohstoffen und Bitcoin
+wird der Jahreswert aus den Tagesschlusskursen berechnet.
 Branchen-ETFs dienen als Näherung, weil Yahoo die Sektorindizes nicht verlässlich
 führt. Die Symbolliste steht fest im Code (`market_overview.py`); die Seite liest
 keine Secrets, kein Sheet und keine Depotdaten. Kurse kommen von Yahoo Finance und

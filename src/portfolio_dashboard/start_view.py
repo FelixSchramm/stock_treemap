@@ -19,8 +19,14 @@ from zoneinfo import ZoneInfo
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard import index_members, indices_view, market_overview
-from portfolio_dashboard.design import DARK, UP, dashboard_css, style_figure
+from portfolio_dashboard import (
+    economic_calendar,
+    index_members,
+    indices_view,
+    market_overview,
+)
+from portfolio_dashboard.design import DARK, DOWN, UP, dashboard_css, style_figure
+from portfolio_dashboard.economic_calendar import BERLIN, EconomicEvent
 from portfolio_dashboard.index_members import FixedIndexReader
 from portfolio_dashboard.indices import (
     PROVIDER_FAILURE_NOTE,
@@ -62,7 +68,20 @@ START_CSS = f"""<style>
 .start-clock b {{font-size: 15px;}}
 .start-clock span.time {{color: {DARK["ink_secondary"]}; font-size: 13px;}}
 .start-dot {{display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;}}
+.start-year {{font-size: 13px; margin: -0.6rem 0 0.8rem; font-variant-numeric: tabular-nums;}}
+.start-event {{border-left: 3px solid {DARK["border"]}; padding: 2px 0 2px 10px; margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;}}
+.start-event.rate {{border-left-color: #D9A441;}}
+.start-event .when {{color: {DARK["ink_secondary"]}; font-size: 13px;}}
+.start-event .meta {{color: {DARK["ink_muted"]}; font-size: 12px;}}
 </style>"""
+EVENTS_KEY = "start.events"
+EVENTS_NOT_AVAILABLE = "Termine sind zurzeit nicht verfügbar."
+_WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+TILE_HELP = ("Pfeil: Veränderung zum vorherigen Handelstag bzw. Tagesbalken bei Yahoo Finance. "
+             "Zeile darunter und Kurve: Entwicklung über ein Jahr aus Tagesschlusskursen.")
+# Closes must span nearly a year before a one-year change is derived from them.
+YEAR_MIN_SPAN_DAYS = 350
 
 
 @st.cache_data(ttl=CACHE_SECONDS, show_spinner=False)
@@ -197,6 +216,12 @@ def cached_calendars(day: date):
     return market_overview.market_calendars(day)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_events(day: date) -> tuple[tuple[EconomicEvent, ...], bool]:
+    """Shared for all visitors: official dates plus Yahoo values, one hour."""
+    return economic_calendar.load_events(day)
+
+
 def _number(value: Decimal | None, places: int = 2) -> str:
     return "NA" if value is None else _german(value, places)
 
@@ -248,6 +273,69 @@ def _render_clock(now: datetime) -> None:
         )
 
 
+def _event_value(event: EconomicEvent, value: Decimal) -> str:
+    unit = event.kind.unit
+    return f"{_number(value, 0 if unit.startswith('Tsd') else 2)} {unit}"
+
+
+def _event_html(event: EconomicEvent, now: datetime, *, released: bool = False) -> str:
+    """One release as HTML: Berlin time, distance, name, group and value.
+
+    :param event: Release to show.
+    :param now: Current time, timezone-aware.
+    :param released: True shows the actual value, False the prior value.
+    :return: Escaped HTML block.
+    """
+    local = event.when.astimezone(BERLIN)
+    days = (local.date() - now.astimezone(BERLIN).date()).days
+    distance = {0: "heute", 1: "morgen", -1: "gestern"}.get(
+        days, f"in {days} Tagen" if days > 0 else f"vor {-days} Tagen")
+    meta = [event.kind.group]
+    if event.period:
+        meta.append(f"Zeitraum {event.period}")
+    if released and event.actual is not None:
+        meta.append(f"Ergebnis {_event_value(event, event.actual)}")
+    if event.last is not None:
+        meta.append(f"Vorwert {_event_value(event, event.last)}")
+    if event.tentative:
+        meta.append("Termin vorläufig")
+    css = "start-event rate" if event.key in economic_calendar.RATE_KEYS else "start-event"
+    return (f'<div class="{css}"><span class="when">{_WEEKDAYS[local.weekday()]} {local:%d.%m., %H:%M}'
+            f" · {escape(distance)}</span><br><b>{escape(event.kind.name)}</b><br>"
+            f'<span class="meta">{escape(" · ".join(meta))}</span></div>')
+
+
+def _render_events(now: datetime) -> None:
+    """Next releases for the USA and Europe below the market clock."""
+    try:
+        events, yahoo_ok = cached_events(now.date())
+    except Exception:
+        st.info(EVENTS_NOT_AVAILABLE)
+        return
+    st.subheader("Nächste Termine USA & Europa", anchor=False)
+    coming = economic_calendar.upcoming(events, now)
+    released = economic_calendar.last_released(events, now)
+    for column, name in zip(st.columns(len(coming)), coming, strict=True):
+        with column:
+            st.markdown(f"**{name}**")
+            blocks = [_event_html(event, now) for event in coming[name]]
+            st.markdown("".join(blocks) or "Keine Termine in den nächsten vier Wochen.",
+                        unsafe_allow_html=True)
+            if released[name]:
+                with st.expander("Zuletzt veröffentlicht"):
+                    st.markdown("".join(_event_html(event, now, released=True) for event in released[name]),
+                                unsafe_allow_html=True)
+    notes = [f"Termine in Berliner Zeit · Zinsentscheide und US-Daten: Fed, EZB, BLS, BEA "
+             f"(Stand {economic_calendar.SOURCE_DATE}) · weitere Termine und Vorwerte: Yahoo Finance, "
+             "etwa vier Wochen im Voraus, ohne Prognosen."]
+    if not yahoo_ok:
+        notes.append("Yahoo-Termine und Vorwerte sind zurzeit nicht verfügbar; es fehlen Termine außerhalb der Liste.")
+    ends = economic_calendar.list_ends(economic_calendar.load_fixed_events(), now)
+    if ends is not None:
+        notes.append(f"Terminliste nur bis {ends:%d.%m.%Y}.")
+    st.caption(" ".join(notes))
+
+
 def _render_breadth(quotes: tuple[MarketQuote, ...], period: str, group: str) -> None:
     result = breadth(quotes, period)
     first, second, third = st.columns(3)
@@ -260,19 +348,53 @@ def _render_breadth(quotes: tuple[MarketQuote, ...], period: str, group: str) ->
         column.caption(quote.item.name if quote else "Keine Kursentwicklung verfügbar")
 
 
+def _year_percent(quote: MarketQuote) -> Decimal | None:
+    """Return the one-year change in percent.
+
+    Indices carry it from the price engine. Currencies, commodities and crypto
+    only carry the daily change, so it is taken from their daily closes instead.
+
+    :param quote: Market quote with optional ``Jahr`` percent and daily closes.
+    :return: Percent change over one year, or None if the closes span less than that.
+    """
+    year = quote.percent("Jahr")
+    if year is not None or len(quote.closes) < 2:
+        return year
+    (first_day, _), (last_day, last) = quote.closes[0], quote.closes[-1]
+    # A few recent bars must not pass for a one-year change.
+    if last_day - first_day < timedelta(days=YEAR_MIN_SPAN_DAYS):
+        return None
+    start = next(close for day, close in quote.closes if day >= last_day - timedelta(days=365))
+    return (last - start) / start * 100 if start else None
+
+
+def _render_trend_tile(column, label: str, value: str, quote: MarketQuote | None,
+                       chart_type: str) -> None:
+    """Render one tile: value, daily change as delta, one-year line and curve.
+
+    :param column: Streamlit column that holds the tile.
+    :param label: Tile title.
+    :param value: Formatted current value, ``NA`` if missing.
+    :param quote: Market quote, or None if the symbol is missing.
+    :param chart_type: Streamlit metric chart type, ``area`` or ``line``.
+    """
+    day = quote.percent("Heute") if quote else None
+    year = _year_percent(quote) if quote else None
+    column.metric(label, value, format_percent(day) if day is not None else None,
+                  chart_data=_sparkline(quote) if quote else None, chart_type=chart_type,
+                  help=TILE_HELP)
+    color = DARK["ink_muted"] if year is None else (UP if year >= 0 else DOWN)
+    column.markdown(f'<div class="start-year" style="color:{color}">1 Jahr: '
+                    f"{escape(format_percent(year))}</div>", unsafe_allow_html=True)
+
+
 def _render_sparklines(world: tuple[MarketQuote, ...]) -> None:
     quotes = {q.item.name: q for q in world}
     for column, name in zip(st.columns(len(market_overview.SPARKLINES)), market_overview.SPARKLINES,
                             strict=True):
         quote = quotes.get(name)
-        year = quote.percent("Jahr") if quote else None
-        column.metric(
-            f"{name} · 1 Jahr",
-            _number(quote.price) + " Pkt." if quote and quote.price is not None else "NA",
-            format_percent(year) if year is not None else None,
-            chart_data=_sparkline(quote) if quote else None, chart_type="area",
-            help="Aktueller Stand und Entwicklung über ein Jahr; Kurve aus Tagesschlusskursen.",
-        )
+        value = _number(quote.price) + " Pkt." if quote and quote.price is not None else "NA"
+        _render_trend_tile(column, name, value, quote, "area")
 
 
 def _render_assets(assets: tuple[MarketQuote, ...]) -> None:
@@ -280,11 +402,8 @@ def _render_assets(assets: tuple[MarketQuote, ...]) -> None:
     for column, quote in zip(st.columns(len(assets)), assets, strict=True):
         unit = "" if quote.item.symbol == "EURUSD=X" else f" {quote.item.currency}"
         value = _number(quote.price, places.get(quote.item.symbol, 2))
-        change = quote.percent("Heute")
-        column.metric(quote.item.name, value + (unit if quote.price is not None else ""),
-                      format_percent(change) if change is not None else None,
-                      chart_data=_sparkline(quote), chart_type="line",
-                      help="Veränderung zum vorherigen Tagesbalken bei Yahoo Finance; Kurve: ein Jahr.")
+        _render_trend_tile(column, quote.item.name, value + (unit if quote.price is not None else ""),
+                           quote, "line")
 
 
 def _open_index() -> None:
@@ -350,6 +469,7 @@ def render_markets(*, load: Callable | None = None, clock: Callable[[], datetime
     if selected in index_members.members():
         _render_index(selected, now)
         return
+    _render_events(now)
 
     controls = st.columns((3, 2))
     with controls[0]:
