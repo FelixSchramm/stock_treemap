@@ -3,8 +3,10 @@
 Manually started; never run in CI and never imported by the app. Reads the
 Wikipedia member lists, keeps hand-maintained ticker maps where a page has no
 Yahoo ticker, and stops with an error when a page lists a company the map does
-not know (a new index member). Every ticker is confirmed once on Yahoo (symbol,
-quote type EQUITY); only the ``TOP_N`` largest members by market cap are kept,
+not know (a new index member). Tickers the app cannot price (symbol format,
+exchange not connected; ``index_members.processable``) are left out. Every other
+ticker is confirmed once on Yahoo (symbol, quote type EQUITY); only the
+``TOP_N`` largest members by market cap are kept,
 so one click on the start page loads at most ``TOP_N`` companies instead of
 up to 500 (Yahoo rate limit on the shared host IP). Nikkei 225 names come from
 Yahoo because the source lists Japanese names.
@@ -26,6 +28,8 @@ from urllib.parse import quote
 import lxml.html
 import pandas as pd
 import yfinance as yf
+
+from portfolio_dashboard.index_members import processable
 
 OUTPUT = Path(__file__).parents[1] / "src" / "portfolio_dashboard" / "index_members.csv"
 TOP_N = 50
@@ -223,6 +227,11 @@ def main() -> None:
     """Build, confirm and rank all members, then write the CSV."""
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args()
     rows = build()
+    skipped = sorted({ticker for _, _, ticker in rows if not processable(ticker)})
+    if skipped:
+        # Symbol format or exchange not connected: these would stay "NA" in the app.
+        print(f"Left out (not priceable in the app): {', '.join(skipped)}")
+    rows = [row for row in rows if processable(row[2])]
     infos = yahoo_infos({row[2] for row in rows})
     rows = [
         (index, infos[ticker].get("longName") or infos[ticker].get("shortName") or ticker, ticker)

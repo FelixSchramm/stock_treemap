@@ -143,10 +143,27 @@ def test_info_cache_expires_with_the_utc_day():
 
     provider = IndexMarketData(cache_info=True)
     day = CLOSED.date()
-    assert provider._info(Ticker(), "SYN.DE", day) == {"symbol": "SYN.DE", "private": SECRET}
-    assert "private" not in provider._info(Ticker(), "SYN.DE", day)  # only checked fields kept
-    provider._info(Ticker(), "SYN.DE", day + timedelta(days=1))
+    assert provider._info(Ticker(), "SYN.DE", day) == ({"symbol": "SYN.DE", "private": SECRET}, False)
+    provider._remember("SYN.DE", day, {"symbol": "SYN.DE", "private": SECRET})
+    info, cached = provider._info(Ticker(), "SYN.DE", day)
+    assert cached and "private" not in info  # only checked fields kept
+    assert provider._info(Ticker(), "SYN.DE", day + timedelta(days=1))[1] is False
     assert Ticker.calls == 2
+
+
+@pytest.mark.parametrize("partial", [
+    {"symbol": None},                  # throttled answer without identity
+    {"quoteType": None},
+    {"marketCap": None},               # identity fine, but no market cap yet
+    {"exchangeTimezoneName": "Asia/Tokyo"},
+])
+def test_unchecked_or_incomplete_info_is_not_cached_for_the_day(partial):
+    provider, yahoo, calendars = market(info_overrides=partial, cache_info=True)
+    first = provider.fetch(MEMBER, CLOSED, calendars)
+    provider.fetch(MEMBER, CLOSED, calendars)
+    assert first.note is not None and first.note.startswith("NA")
+    assert len(provider._ticker.info_calls) == 2  # retried, not frozen until midnight
+    assert provider._infos == {}
 
 
 @pytest.mark.parametrize("now", [CLOSED, RUNNING])

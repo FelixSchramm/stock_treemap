@@ -2,7 +2,8 @@
 
 ``index_members.csv`` is built by ``scripts/build_index_members.py`` from the
 Wikipedia member lists (Nikkei 225 names from Yahoo); every Yahoo ticker was
-checked once (symbol, quote type EQUITY). Only the ``TOP_N`` largest members by
+checked once (symbol, quote type EQUITY). Tickers the price engine cannot
+handle (``processable``) are left out; only the ``TOP_N`` largest of the rest by
 market cap on ``SOURCE_DATE`` are kept, so one click loads a bounded number of
 companies. Index compositions change: rerun the script after an index review,
 check the diff and update ``SOURCE_DATE``.
@@ -13,10 +14,27 @@ from functools import cache
 from pathlib import Path
 
 from portfolio_dashboard.indices import Constituent
+from portfolio_dashboard.watchlist_sheet import _SYMBOL, EXCHANGES
 
 MEMBERS_FILE = Path(__file__).with_name("index_members.csv")
 SOURCE_DATE = "14.11.2026"
 TOP_N = 50
+
+
+def processable(ticker: str) -> bool:
+    """Whether the start page can price this ticker at all.
+
+    Applies the watchlist rules the price engine uses: the symbol format and a
+    venue suffix of a connected exchange (US tickers have none). Tickers that
+    fail here would show "NA" forever, e.g. ``M&M.NS`` or Brussels/Helsinki.
+
+    :param ticker: Yahoo ticker.
+    :return: True if symbol format and venue suffix are supported.
+    """
+    if not _SYMBOL.fullmatch(ticker):
+        return False
+    suffix = "." + ticker.rsplit(".", 1)[1] if "." in ticker else None
+    return any(venue_suffix == suffix for _, venue_suffix, _ in EXCHANGES.values())
 
 
 @cache

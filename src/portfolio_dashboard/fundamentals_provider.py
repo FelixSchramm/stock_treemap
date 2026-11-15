@@ -21,7 +21,7 @@ from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from threading import RLock
+from threading import Lock
 from typing import Protocol
 
 import pandas as pd
@@ -53,7 +53,10 @@ _TIMEOUT_ERRORS = frozenset(
     {"Timeout", "ReadTimeout", "ConnectTimeout", "TimeoutError", "timeout"}
 )
 _ACCESS_STATUS = frozenset({401, 403, 429})
-_PROVIDER_LOG_LOCK = RLock()
+_PROVIDER_LOG_LOCK = Lock()
+# Reference count of active provider batches and the original state of every
+# logger muted meanwhile; the lock guards only these updates, never a batch.
+_MUTED: dict = {"count": 0, "states": {}}
 
 
 class FundamentalsProvider(Protocol):
@@ -94,23 +97,32 @@ def classify_error(error: BaseException) -> str:
 @contextmanager
 def _quiet_provider_logs():
     # The library can log symbols and URLs; keep that out of any log sink.
-    # Serialize flag changes, including nested fetches, so one fetch cannot
-    # restore another's temporary state or leave the price provider muted.
+    # The first active batch saves and mutes the loggers, the last one restores
+    # them, so overlapping or nested fetches never restore each other's
+    # temporary state. Batches run concurrently: the lock is held only while
+    # the counter and logger flags change.
     with _PROVIDER_LOG_LOCK:
+        # Every entry looks again, so a child logger created during an
+        # overlapping batch is muted too; each original state is saved once.
         loggers = [logging.getLogger("yfinance")] + [
             logger
             for logger in list(logging.Logger.manager.loggerDict.values())
-            if isinstance(logger, logging.Logger)
-            and logger.name.startswith("yfinance.")
+            if isinstance(logger, logging.Logger) and logger.name.startswith("yfinance.")
         ]
-        states = [(logger, logger.disabled) for logger in loggers]
         for logger in loggers:
-            logger.disabled = True
-        try:
-            yield
-        finally:
-            for logger, previous in states:
-                logger.disabled = previous
+            if logger not in _MUTED["states"]:
+                _MUTED["states"][logger] = logger.disabled
+                logger.disabled = True
+        _MUTED["count"] += 1
+    try:
+        yield
+    finally:
+        with _PROVIDER_LOG_LOCK:
+            _MUTED["count"] -= 1
+            if _MUTED["count"] == 0:
+                for logger, previous in _MUTED["states"].items():
+                    logger.disabled = previous
+                _MUTED["states"] = {}
 
 
 def _to_decimal(value: object) -> tuple[Decimal | None, bool]:
