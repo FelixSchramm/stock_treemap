@@ -25,6 +25,7 @@ from portfolio_dashboard.returns import (
     ReturnAggregate,
     portfolio_returns,
 )
+from portfolio_dashboard.technicals import TREND_RANK, TechnicalSignals
 from portfolio_dashboard.valuations import (
     EurValuationStatus,
     PortfolioValuation,
@@ -58,6 +59,25 @@ SORT_BY_NAME = "Name"
 SORT_BY_TYPE = "Typ"
 TABLE_PERIODS = ("Seit Kauf", "Jahr", "Monat", "Woche", "Heute")
 PERIOD_SORT_FIELDS = tuple(f"{period} (%)" for period in TABLE_PERIODS)
+# Technical columns (issue #144), shown directly after "Heute (%)".
+TECH_TREND = "Trend"
+TECH_SUPPORT = "Nächste Unterstützung"
+TECH_SUPPORT_DISTANCE = "Abstand Unterstützung (%)"
+TECH_STRENGTH = "Stärke"
+TECH_RSI = "RSI (14)"
+TECH_HIGH_DISTANCE = "Abstand 52W-Hoch (%)"
+TECHNICAL_FIELDS = (
+    TECH_TREND,
+    TECH_SUPPORT,
+    TECH_SUPPORT_DISTANCE,
+    TECH_STRENGTH,
+    TECH_RSI,
+    TECH_HIGH_DISTANCE,
+)
+TECHNICALS_NOTE = (
+    "Technische Kennzahlen aus Tagesschlusskursen in Handelswährung. "
+    "Keine Anlageempfehlung."
+)
 SORT_FIELDS = (
     SORT_BY_VALUE,
     SORT_BY_WEIGHT,
@@ -65,6 +85,7 @@ SORT_FIELDS = (
     SORT_BY_NAME,
     SORT_BY_TYPE,
     *PERIOD_SORT_FIELDS,
+    *TECHNICAL_FIELDS,
 )
 
 _TYPE_LABELS = {
@@ -233,6 +254,27 @@ class PositionTableRow:
     source_row: int
     quote_mapping: str = "Keine Kurszuordnung"
     period_percents: tuple[tuple[str, Decimal | None], ...] = ()
+    technicals: TechnicalSignals | None = None
+
+    def technical_value(self, field: str) -> Decimal | None:
+        """Numeric sort/display value of a technical column; None means n. v."""
+        signals = self.technicals
+        if signals is None:
+            return None
+        support = signals.next_support
+        if field == TECH_TREND:
+            return Decimal(TREND_RANK[signals.trend]) if signals.trend is not None else None
+        if field == TECH_SUPPORT:
+            return support.price if support is not None else None
+        if field == TECH_SUPPORT_DISTANCE:
+            return signals.support_distance_percent
+        if field == TECH_STRENGTH:
+            return Decimal(support.strength) if support is not None else None
+        if field == TECH_RSI:
+            return signals.rsi
+        if field == TECH_HIGH_DISTANCE:
+            return signals.high_distance_percent
+        raise ValueError(f"unknown technical field: {field}")
 
     def to_display_dict(self) -> dict[str, str | float | None]:
         """Convert row into a dictionary suitable for Streamlit dataframe display.
@@ -269,6 +311,11 @@ class PositionTableRow:
         if not self.period_percents:
             return values
         values.pop("Entwicklung (%)")
+        technical = {}
+        if self.technicals is not None:
+            for field in TECHNICAL_FIELDS:
+                value = self.technical_value(field)
+                technical[field] = float(value) if value is not None else None
         return {
             "Instrument": values.pop("Instrument"),
             "Wert (EUR)": values.pop("Wert (EUR)"),
@@ -276,6 +323,7 @@ class PositionTableRow:
                 f"{period} (%)": float(percent) if percent is not None else None
                 for period, percent in self.period_percents
             },
+            **technical,
             **values,
         }
 
@@ -302,11 +350,90 @@ class PositionTableRow:
             f"Wert: {self.amount_eur_label}",
             f"Anteil am bewerteten Depot: {self.weight_label}",
             *developments,
+            *(technical_detail_lines(self.technicals) if self.technicals is not None else ()),
             f"Datenstand: {self.as_of}",
             f"Referenzdatum: {self.reference_date}",
             f"Kurszuordnung: {self.quote_mapping}",
             f"Status: {self.status}",
         )
+
+
+_TECH_REASON_LABELS = {
+    "insufficient_history": "zu kurze Kurshistorie",
+    "no_support_below": "keine Unterstützung unter dem Kurs",
+    "history_unavailable": "Kurshistorie nicht verfügbar",
+    "inactive": "inaktive Position",
+    "unverified_instrument": "keine verifizierte Kurszuordnung",
+    "quote_unavailable": "kein aktueller Kurs",
+    "unavailable_value": "Wert nicht verfügbar",
+    "sheet_fallback": "Sheet-Ersatzwert ohne Kurshistorie",
+    "calendar_incomplete": "Börsenkalender unvollständig",
+}
+
+
+def _tech_missing(reason: str | None) -> str:
+    label = _TECH_REASON_LABELS.get(reason or "", reason or "unbekannt")
+    return f"{NOT_AVAILABLE} ({label})"
+
+
+def format_price(price: Decimal | None, currency: str | None) -> str:
+    """German price with trading currency, e.g. "147,80 USD", or n. v."""
+    if price is None:
+        return NOT_AVAILABLE
+    return f"{_german(price, 2)} {currency}" if currency else _german(price, 2)
+
+
+def trend_label_for_rank(rank: float | None) -> str:
+    """Display label for the numeric trend rank used in the table."""
+    for trend, value in TREND_RANK.items():
+        if rank == value:
+            return trend.value
+    return NOT_AVAILABLE
+
+
+def format_rsi(rsi: Decimal | None) -> str:
+    """RSI with two decimals and its classification, or n. v."""
+    if rsi is None:
+        return NOT_AVAILABLE
+    label = TechnicalSignals(rsi=rsi).rsi_label
+    return f"{_german(rsi, 2)} ({label})"
+
+
+def technical_detail_lines(signals: TechnicalSignals) -> tuple[str, ...]:
+    """Non-hover lines: trend with its rule, every support zone, RSI and crossing."""
+    currency = signals.currency
+    trend = (
+        f"Trend: {signals.trend.value} (Regel: {signals.trend_rule})"
+        if signals.trend is not None
+        else f"Trend: {_tech_missing(signals.trend_reason)}"
+    )
+    if signals.zones:
+        zones = "Unterstützungszonen: " + " | ".join(
+            f"{format_price(zone.price, currency)} (Stärke {zone.strength}: "
+            + ", ".join(c.label for c in zone.candidates) + ")"
+            for zone in signals.zones
+        )
+    else:
+        zones = f"Unterstützungszonen: {_tech_missing(signals.support_reason)}"
+    support = signals.next_support
+    next_line = (
+        f"Nächste Unterstützung: {format_price(support.price, currency)} "
+        f"({format_percent(signals.support_distance_percent)}, Stärke {support.strength})"
+        if support is not None
+        else f"Nächste Unterstützung: {_tech_missing(signals.support_reason)}"
+    )
+    rsi_line = (
+        f"RSI (14): {format_rsi(signals.rsi)}"
+        if signals.rsi is not None
+        else f"RSI (14): {_tech_missing(signals.rsi_reason)}"
+    )
+    high_line = (
+        f"Abstand 52W-Hoch: {format_percent(signals.high_distance_percent)}"
+        if signals.high_distance_percent is not None
+        else f"Abstand 52W-Hoch: {_tech_missing(signals.high_reason)}"
+    )
+    cross = signals.cross.value if signals.cross is not None else "keines"
+    return (trend, next_line, zones, rsi_line, high_line, f"Kreuzungssignal: {cross}")
 
 
 def performance_from_period(result: "PeriodReturn") -> Performance:
@@ -1137,6 +1264,7 @@ def build_table_rows(
     is_personal_view: bool = False,
     returns: PortfolioReturns | None = None,
     period_reasons: Sequence[str | None] | None = None,
+    technical_signals: Sequence[TechnicalSignals] | None = None,
 ) -> tuple[PositionTableRow, ...]:
     """Build table rows for all matching active instrument groups, including unvalued ones.
 
@@ -1149,6 +1277,7 @@ def build_table_rows(
     :param is_personal_view: Whether the personal since-purchase view is active.
     :param returns: Optional PortfolioReturns for detailed cost-basis status labels.
     :param period_reasons: Optional period reason codes aligned with ``valuation.groups``.
+    :param technical_signals: Optional technical signals aligned with ``valuation.groups``.
     :return: Tuple of PositionTableRow objects in snapshot order.
     :raises ValueError: If ``len(performances)`` does not match ``len(valuation.groups)``.
     """
@@ -1156,6 +1285,13 @@ def build_table_rows(
         raise ValueError("one performance per valuation group is required")
     if period_reasons is not None and len(period_reasons) != len(valuation.groups):
         raise ValueError("one period_reason per valuation group is required")
+    if technical_signals is not None and len(technical_signals) != len(valuation.groups):
+        raise ValueError("one technical signal per valuation group is required")
+    technicals_seq = (
+        tuple(technical_signals)
+        if technical_signals is not None
+        else (None,) * len(valuation.groups)
+    )
     active_criteria = criteria if criteria is not None else FilterCriteria()
     resolved_returns = (
         returns
@@ -1174,8 +1310,8 @@ def build_table_rows(
     )
 
     rows: list[PositionTableRow] = []
-    for group, perf, group_ret, reason in zip(
-        valuation.groups, performances, return_groups, reasons_seq
+    for group, perf, group_ret, reason, technicals in zip(
+        valuation.groups, performances, return_groups, reasons_seq, technicals_seq
     ):
         if not _matches_filter(group, active_criteria):
             continue
@@ -1233,6 +1369,7 @@ def build_table_rows(
                     + f" · {first.instrument.trading_venue}"
                     if first.instrument.provider_mapping is not None else "Keine Kurszuordnung"
                 ),
+                technicals=technicals,
             )
         )
     return tuple(rows)
@@ -1245,6 +1382,7 @@ def build_comparison_table_rows(
     criteria: FilterCriteria | None = None,
     returns: PortfolioReturns | None = None,
     course_reasons: Mapping[str, Sequence[str | None]] | None = None,
+    technical_signals: Sequence[TechnicalSignals] | None = None,
 ) -> tuple[PositionTableRow, ...]:
     """Show all periods from one snapshot, independent of the treemap selection.
 
@@ -1259,6 +1397,7 @@ def build_comparison_table_rows(
             criteria=criteria,
             is_personal_view=True,
             returns=resolved_returns,
+            technical_signals=technical_signals,
         ),
     }
     missing = (Performance(None),) * len(valuation.groups)
@@ -1312,8 +1451,14 @@ def sort_table_rows(
     if sort_by not in SORT_FIELDS:
         raise ValueError(f"unsupported sort_by field: {sort_by}")
 
-    if sort_by in (SORT_BY_VALUE, SORT_BY_WEIGHT, SORT_BY_PERFORMANCE, *PERIOD_SORT_FIELDS):
+    numeric_fields = (
+        SORT_BY_VALUE, SORT_BY_WEIGHT, SORT_BY_PERFORMANCE, *PERIOD_SORT_FIELDS,
+        *TECHNICAL_FIELDS,
+    )
+    if sort_by in numeric_fields:
         def numeric_value(row: PositionTableRow) -> Decimal | None:
+            if sort_by in TECHNICAL_FIELDS:
+                return row.technical_value(sort_by)
             if sort_by == SORT_BY_VALUE:
                 return row.amount_eur
             if sort_by == SORT_BY_WEIGHT:

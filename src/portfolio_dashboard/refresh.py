@@ -35,6 +35,11 @@ from portfolio_dashboard.quote_cache import (
 )
 from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
 from portfolio_dashboard.sheets_adapter import JournalReadResult, SheetsReadResult
+from portfolio_dashboard.technicals import (
+    TechnicalSignals,
+    technical_signals,
+    unavailable_signals,
+)
 from portfolio_dashboard.treemap import (
     SHEET_UNKNOWN_QUOTE_STATUS,
     Performance,
@@ -54,12 +59,32 @@ PERIOD_KEY_TO_ENUM = {
     "Jahr": PricePeriod.YEAR,
 }
 DATA_UNAVAILABLE_TEXT = "Daten nicht verfügbar"
-PeriodResults = tuple[dict[str, Performance], dict[str, str | None]]
+# Period performances, period reasons and the technical signals of one group.
+PeriodResults = tuple[dict[str, Performance], dict[str, str | None], TechnicalSignals]
 
 
 def _missing_periods(reason: str) -> PeriodResults:
     return ({p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: reason for p in PERIOD_KEY_TO_ENUM})
+            {p: reason for p in PERIOD_KEY_TO_ENUM},
+            unavailable_signals(reason))
+
+
+def _listing_technicals(history, today, calendar: SessionCalendar) -> TechnicalSignals:
+    """Technical signals from the already loaded history; no extra provider call.
+
+    The series ends with the price the "Heute" period uses: closes of earlier
+    calendar sessions, then the current price on its session date.
+    """
+    currency = history.unit.currency if history.unit is not None else None
+    if today.current_price is None or today.current_date is None:
+        return unavailable_signals(today.reason or "history_unavailable", currency)
+    closes = [
+        point.close
+        for point in sorted(history.points, key=lambda point: point.session_date)
+        if point.session_date < today.current_date
+        and point.session_date in calendar.sessions
+    ]
+    return technical_signals((*closes, today.current_price), currency)
 
 
 def _listing_period_results(
@@ -82,7 +107,8 @@ def _listing_period_results(
         result = results[period]
         perfs[label] = replace(performance_from_period(result), warnings=history.warnings)
         reasons[label] = result.reason
-    return perfs, reasons
+    technicals = _listing_technicals(history, results[PricePeriod.TODAY], calendar)
+    return perfs, reasons, technicals
 
 
 def format_snapshot_age(attempted_at: datetime, now: datetime) -> str:
@@ -129,6 +155,8 @@ class DashboardBundle:
     last_attempt_at: datetime
     using_cached_stand: bool = False
     status_message: str | None = None
+    # Aligned with ``valuation.groups`` like the course performances.
+    technical_signals: tuple[TechnicalSignals, ...] = ()
 
     def performances_for(self, view: str, period: str) -> tuple[Performance, ...]:
         """Return group-aligned performances for the active view and period.
@@ -215,7 +243,7 @@ def _group_period_results(
     :param cache: QuoteCache used for history lookups.
     :param now: Aware evaluation timestamp.
     :param refresh: Whether to bypass history cache TTL.
-    :return: Tuple of (period->Performance dict, period->reason dict).
+    :return: Tuple of (period->Performance dict, period->reason dict, technical signals).
     """
     active = [
         m
@@ -223,43 +251,28 @@ def _group_period_results(
         if m.position.activity is PositionActivity.ACTIVE
     ]
     if not active:
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "inactive" for p in PERIOD_KEY_TO_ENUM},
-        )
+        return _missing_periods("inactive")
 
     first = active[0].position
     listing = resolve_listing(first.instrument, listings)
     valued = [m for m in active if m.amount_eur is not None]
 
     if listing is None or listing.instrument.provider_mapping is None:
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "unverified_instrument" for p in PERIOD_KEY_TO_ENUM},
-        )
+        return _missing_periods("unverified_instrument")
 
     quote_obs = quote_map.get(listing.instrument)
     if quote_obs is None or quote_obs.valuation.status is not ValueStatus.AVAILABLE:
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "quote_unavailable" for p in PERIOD_KEY_TO_ENUM},
-        )
+        return _missing_periods("quote_unavailable")
 
     if not valued:
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "unavailable_value" for p in PERIOD_KEY_TO_ENUM},
-        )
+        return _missing_periods("unavailable_value")
 
     if any(
         m.position.valuation is None
         or not supports_period_return(m.position.valuation)
         for m in valued
     ):
-        return (
-            {p: Performance(None) for p in PERIOD_KEY_TO_ENUM},
-            {p: "sheet_fallback" for p in PERIOD_KEY_TO_ENUM},
-        )
+        return _missing_periods("sheet_fallback")
 
     if prepared_periods is not None and listing.instrument in prepared_periods:
         return prepared_periods[listing.instrument]
@@ -545,9 +558,10 @@ class PortfolioRefreshCoordinator:
             period_reasons: dict[str, list[str | None]] = {
                 p: [] for p in PERIOD_KEY_TO_ENUM
             }
+            technicals: list[TechnicalSignals] = []
 
             for group in valuation.groups:
-                g_perfs, g_reasons = _group_period_results(
+                g_perfs, g_reasons, g_technicals = _group_period_results(
                     group,
                     tuple(active_listings.values()),
                     quote_map,
@@ -559,6 +573,7 @@ class PortfolioRefreshCoordinator:
                 for label in PERIOD_KEY_TO_ENUM:
                     course_perfs[label].append(g_perfs[label])
                     period_reasons[label].append(g_reasons[label])
+                technicals.append(g_technicals)
 
             status_msg = None
             if refresh:
@@ -580,6 +595,7 @@ class PortfolioRefreshCoordinator:
                 last_attempt_at=now,
                 using_cached_stand=False,
                 status_message=status_msg,
+                technical_signals=tuple(technicals),
             )
         except Exception:
             return self._fallback_or_unavailable(now)

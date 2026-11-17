@@ -17,6 +17,14 @@ from portfolio_dashboard.models import (
 )
 from portfolio_dashboard.returns import portfolio_returns
 from portfolio_dashboard.sheet_parser import NumberLocale
+from portfolio_dashboard.technicals import (
+    CrossSignal,
+    SupportCandidate,
+    SupportMethod,
+    SupportZone,
+    TechnicalSignals,
+    Trend,
+)
 from portfolio_dashboard.treemap import Performance, personal_performances
 from portfolio_dashboard.valuations import PortfolioValuation, value_portfolio
 from portfolio_dashboard.watchlist_quotes import (
@@ -103,6 +111,44 @@ def demo_course_performances(period: str) -> tuple[Performance, ...]:
     return tuple(
         Performance(Decimal(percent), _DEMO_REFERENCE[period])
         for percent in _DEMO_COURSE[period]
+    )
+
+
+def _zone(*candidates: tuple[str, SupportMethod, str]) -> SupportZone:
+    items = tuple(SupportCandidate(Decimal(p), m, label) for p, m, label in candidates)
+    return SupportZone(sum((c.price for c in items), Decimal(0)) / len(items), items)
+
+
+def demo_technical_signals() -> tuple[TechnicalSignals, ...]:
+    """Fixed invented technical values, one per valuation group (no calculation)."""
+    rising = (
+        _zone(
+            ("114.20", SupportMethod.SWING_LOW, "Swing-Tief (2 Berührungen)"),
+            ("113.60", SupportMethod.MOVING_AVERAGE, "SMA50"),
+        ),
+        _zone(("104.80", SupportMethod.MOVING_AVERAGE, "SMA200")),
+    )
+    basing = (
+        _zone(
+            ("191.00", SupportMethod.YEAR_LOW, "52-Wochen-Tief"),
+            ("189.90", SupportMethod.SWING_LOW, "Swing-Tief (3 Berührungen)"),
+        ),
+    )
+    return (
+        TechnicalSignals(
+            current_price=Decimal("120"), currency="EUR", trend=Trend.UP,
+            sma20=Decimal("117.40"), sma50=Decimal("113.60"), sma200=Decimal("104.80"),
+            year_low=Decimal("92.10"), year_high=Decimal("124.00"),
+            zones=rising, next_support=rising[0], rsi=Decimal("61.35"),
+            high_distance_percent=Decimal("-3.23"), cross=None,
+        ),
+        TechnicalSignals(
+            current_price=Decimal("200"), currency="EUR", trend=Trend.BOTTOMING,
+            sma20=Decimal("196.10"), sma50=Decimal("203.40"), sma200=Decimal("221.70"),
+            year_low=Decimal("191.00"), year_high=Decimal("252.00"),
+            zones=basing, next_support=basing[0], rsi=Decimal("27.80"),
+            high_distance_percent=Decimal("-20.63"), cross=CrossSignal.DEATH,
+        ),
     )
 
 
