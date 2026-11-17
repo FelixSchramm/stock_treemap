@@ -8,6 +8,7 @@ import builtins
 import os
 import socket
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ import portfolio_dashboard.auth as auth
 import portfolio_dashboard.demo as demo
 import portfolio_dashboard.fundamentals_loader as fundamentals_loader
 import portfolio_dashboard.local_source as local_source
+import portfolio_dashboard.start_view as start_view
 import portfolio_dashboard.ui as ui
 import portfolio_dashboard.watchlist_refresh as watchlist_refresh
 from portfolio_dashboard.config import LoginConfig
@@ -124,6 +126,8 @@ def protected_app(monkeypatch):
     monkeypatch.setattr(builtins, "open", guard_open)
     monkeypatch.setattr(Path, "open", guard_path_open)
     monkeypatch.setattr(socket, "create_connection", unexpected)
+    # The public start page's market data is synthetic here (and never private).
+    monkeypatch.setattr(start_view, "cached_quotes", lambda group: (datetime(2033, 5, 18, tzinfo=UTC), ()))
     calls = []
     snapshot = demo.demo_snapshot
 
@@ -133,7 +137,7 @@ def protected_app(monkeypatch):
 
         history = fx = latest_quote
 
-    def own_coordinator(config, service_account, listing_entries):
+    def own_coordinator(config, service_account):
         # Synthetic stand-in for the owner's Sheet; real builders stay unreached.
         calls.append("build_production_coordinator")
         return PortfolioRefreshCoordinator(
@@ -189,10 +193,31 @@ def protected_app(monkeypatch):
 
 def assert_closed(app, calls):
     assert not app.exception
-    assert app.error
     assert calls == []
     assert not app.title and not app.dataframe and not app.radio
     assert not app.get("download_button")
+    # Denied accounts see the error; anonymous visitors the public start page with Login.
+    logged_in = st.user.get("is_logged_in") is True
+    assert any(button.key == "auth.login" for button in app.button) is not logged_in
+    if logged_in:
+        assert app.error
+
+
+def test_anonymous_visitor_gets_the_public_start_page_with_login(protected_app):
+    make_app, calls = protected_app
+    app = make_app({}).run()
+    assert_closed(app, calls)
+    assert not app.error and app.header[0].value == "Märkte im Überblick"
+    login = next(button for button in app.button if button.key == "auth.login")
+    assert login.label == "Login"
+    assert any(start_view.NOT_AVAILABLE_TEXT == info.value for info in app.info)
+
+
+def test_foreign_account_gets_the_error_but_no_start_page(protected_app):
+    make_app, calls = protected_app
+    app = make_app(owner_claims() | {"sub": "synthetic-other-subject"}).run()
+    assert_closed(app, calls)
+    assert not app.header and "Kein Besitzerzugriff" in app.error[0].value
 
 
 @pytest.mark.parametrize("changes", BAD_CLAIMS)
@@ -241,9 +266,9 @@ def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_a
     make_app, calls = protected_app
     seen = []
 
-    def record(config, service_account, listing_entries):
-        seen.append((dict(service_account), list(listing_entries)))
-        return own(config, service_account, listing_entries)
+    def record(config, service_account):
+        seen.append(dict(service_account))
+        return own(config, service_account)
 
     own = local_source.build_production_coordinator
     monkeypatch.setattr(local_source, "build_production_coordinator", record)
@@ -258,7 +283,8 @@ def test_owner_session_builds_own_data_once_from_the_secret_sections(protected_a
         "render_dashboard",
         "render_dashboard",
     ]
-    assert seen == [({"type": "service_account", "synthetic": True}, [{"isin": "DE000SYN0001"}])]
+    # [[listing]] secrets are no longer read (ADR 0012); listings come from the Sheet.
+    assert seen == [{"type": "service_account", "synthetic": True}]
 
 
 @pytest.mark.parametrize("section", [None, {"type": "authorized_user", "secret": "synthetic-secret"}])
@@ -279,20 +305,6 @@ def test_missing_or_invalid_sheet_key_secret_shows_only_the_safe_message(protect
         "Service-Account-Schlüssel fehlt oder ist ungültig."
     ]
     assert calls == [] and not app.dataframe and not app.title
-
-
-def test_invalid_listing_secret_shows_only_the_safe_message(protected_app, monkeypatch):
-    make_app, calls = protected_app
-    monkeypatch.setattr(
-        local_source, "build_production_coordinator", real_production_coordinator
-    )
-    app = make_app(owner_claims())
-    app.secrets["listing"] = [{"isin": "DE000SYN0001", "symbol": "SYN.DE"}]
-    app.run()
-    assert not app.exception
-    assert "Eintrag 1" in app.error[0].value
-    assert "SYN" not in app.error[0].value
-    assert calls == [] and not app.dataframe
 
 
 @pytest.mark.parametrize("missing", ["PORTFOLIO_OWNER_SUBJECT", "PORTFOLIO_SHEET_ID", "auth"])
@@ -401,7 +413,9 @@ def test_watchlist_loader_is_built_only_for_the_owner_and_only_when_opened(prote
 def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_app, monkeypatch):
     make_app, calls = protected_app
     app = make_app(owner_claims()).run()
-    assert app.radio(key=ui.AREA_RADIO_KEY).options == ["Depot", "Watchlist", "Innerer Wert"]
+    assert app.radio(key=ui.AREA_RADIO_KEY).options == [
+        "Depot", "Watchlist", "Analyse", "Innerer Wert", "Indizes", "Märkte",
+    ]
     calls.clear()
     app.radio(key=ui.AREA_RADIO_KEY).set_value("Innerer Wert").run()
     assert not app.exception and not app.error
@@ -412,6 +426,21 @@ def test_valuation_area_is_owner_only_and_opens_without_any_loading(protected_ap
     calls.clear()
     app.run()
     assert_closed(app, calls)  # revoked owner: no area, no table, no private figure
+
+
+def test_markets_area_shows_public_data_without_private_loaders(protected_app, monkeypatch):
+    make_app, calls = protected_app
+    app = make_app(owner_claims()).run()
+    calls.clear()
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Märkte").run()
+    assert not app.exception and not app.error and not app.dataframe
+    assert calls == ["render_dashboard"]  # no Sheet, Watchlist or index loader
+    assert [info.value for info in app.info] == [start_view.NOT_AVAILABLE_TEXT]
+    assert not any(button.key == "auth.login" for button in app.button)
+    monkeypatch.setenv("PORTFOLIO_OWNER_SUBJECT", "synthetic-revoked-owner")
+    calls.clear()
+    app.run()
+    assert_closed(app, calls)
 
 
 def test_detail_view_state_opens_nothing_for_a_revoked_owner(protected_app, monkeypatch):
@@ -462,3 +491,63 @@ def test_production_watchlist_uses_the_service_account_secret_after_the_gate(pro
     assert seen[0][0] is not None
     app.run()
     assert len(seen) == 1  # once per session
+
+
+def test_exploration_catalog_is_owner_only_and_revocation_hides_cached_names(protected_app, monkeypatch):
+    from decimal import Decimal
+
+    from portfolio_dashboard.exploration import view
+    from portfolio_dashboard.exploration.selection import Catalog, Company
+    from portfolio_dashboard.instruments import EquityForm
+
+    make_app, calls = protected_app
+    catalog_reads = []
+    market_reads = []
+    company = Company("Synthetic Protected Company", "SYNTHETIC.DE", "GER", "EUR",
+                      ("Depot",), "depot:2", Decimal(1), EquityForm.SHARE)
+    def catalog(*args):
+        catalog_reads.append(True)
+        return Catalog(depot=(company,))
+    monkeypatch.setattr(ui, "load_catalog", catalog)
+    monkeypatch.setattr(view, "fetch", lambda *args: market_reads.append(True))
+    app = make_app(owner_claims()).run()
+    assert not catalog_reads and not market_reads
+    app.radio(key=ui.AREA_RADIO_KEY).set_value(view.AREA).run()
+    assert not app.exception
+    assert catalog_reads == [True] and market_reads == [True]
+    app.selectbox(key=view.COMPANY_KEY).set_value(repr(company.key)).run()
+    assert not app.exception and market_reads == [True, True]
+    assert any("Synthetic Protected Company" in text.value for text in app.header)
+    calls.clear()
+    monkeypatch.setattr(st, "user", owner_claims() | {"sub":"synthetic-revoked"})
+    app.run()
+    assert_closed(app, calls)
+    assert catalog_reads == [True] and market_reads == [True, True]
+    assert not any("Synthetic Protected Company" in text.value
+                   for text in (*app.markdown, *app.header))
+
+
+def test_indices_build_only_after_owner_gate_and_hide_cached_data_on_revocation(protected_app, monkeypatch):
+    from portfolio_dashboard import indices
+    from portfolio_dashboard.indices_view import LOADER_KEY
+
+    make_app, calls = protected_app
+    builds = []
+
+    def build(config, service_account):
+        builds.append(True)
+        return indices.DemoIndices()
+
+    monkeypatch.setattr(indices, "build_production_indices", build)
+    app = make_app(owner_claims()).run()
+    assert not builds
+    app.radio(key=ui.AREA_RADIO_KEY).set_value("Indizes").run()
+    assert not app.exception and builds == [True]
+    assert app.dataframe and LOADER_KEY in app.session_state
+    app.segmented_control(key="_indices.period").set_value("Jahr").run()
+    assert builds == [True]
+    calls.clear()
+    monkeypatch.setattr(st, "user", owner_claims() | {"sub": "synthetic-revoked"})
+    app.run()
+    assert_closed(app, calls)
+    assert builds == [True] and not app.dataframe and not app.get("plotly_chart")

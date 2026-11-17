@@ -7,7 +7,7 @@ The app rechecks the allowlist and token lifetime before any protected work.
 
 import math
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 import streamlit as st
 
@@ -60,8 +60,23 @@ def owner_is_authorized(
     )
 
 
-def require_owner(login: LoginConfig) -> None:
-    """Stop the current run before loaders, renderers, and exports unless allowed."""
+def login_button() -> None:
+    """Prominent login action; SDK errors can contain provider/config details."""
+    if st.button("Login", key="auth.login", type="primary", icon=":material/login:", width="stretch"):
+        try:
+            st.login()
+        except Exception:
+            st.error("Anmeldung nicht verfügbar. Serverkonfiguration prüfen lassen.")
+
+
+def require_owner(
+    login: LoginConfig, landing: Callable[[Callable[[], None]], None] | None = None
+) -> None:
+    """Stop the current run before loaders, renderers, and exports unless allowed.
+
+    Anonymous visitors see ``landing`` (given ``login_button`` to place) or only the
+    button. The landing must not read secrets or start Sheet or depot loaders.
+    """
     user = st.user
     logged_in = user.get("is_logged_in") is True
     allowed = owner_is_authorized(user, login)
@@ -80,11 +95,11 @@ def require_owner(login: LoginConfig) -> None:
         )
     if allowed:
         return
+    if not logged_in:
+        if landing is None:
+            login_button()
+        else:
+            landing(login_button)
+        st.stop()
     st.error("Kein Besitzerzugriff. Anmeldung, Freigabe oder Sitzung fehlt bzw. ist ungültig.")
-    if not logged_in and st.button("Mit Google anmelden", key="auth.login"):
-        # SDK errors can contain provider/config details; never display those.
-        try:
-            st.login()
-        except Exception:
-            st.error("Anmeldung nicht verfügbar. Serverkonfiguration prüfen lassen.")
     st.stop()

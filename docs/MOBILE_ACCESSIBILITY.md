@@ -6,7 +6,7 @@ Dieses Dokument beschreibt die geprüften Bildschirmgrößen, Browser, Bedienabl
 
 | Gerätekategorie / Viewport | Auflösung (CSS-Pixel) | Geprüfte Browser / Engines | Geprüfte Abläufe |
 | --- | --- | --- | --- |
-| **iPhone SE / Mini (Hochformat)** | `375 × 667 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Suche/Filter, Aktualisieren, Positionsdetails ohne Hover; Zeitraumwahl (5 Optionen): offen, siehe unten |
+| **iPhone SE / Mini (Hochformat)** | `375 × 667 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Filter, Aktualisieren, Positionsdetails ohne Hover; Zeitraumwahl (5 Optionen): offen, siehe unten |
 | **iPhone 15 / 16 (Hoch- & Querformat)** | `390 × 844 px` / `393 × 852 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Treemap-Legende mit Umbruch, Sortierung, kleine Positionen (`< 0,1 %`); Kennzahlen-Umbruch: offen, siehe unten |
 | **iPhone Plus / Pro Max** | `430 × 932 px` | iOS Safari (WebKit), Chrome Mobile Emulation | Vollständiger Bedienablauf inkl. Datenstatus-Expander und Positionsübersicht |
 | **Tablet / schmales Fenster** | `768 × 1024 px` | macOS Safari, Google Chrome | Spaltenumbruch der Filterleiste und Kennzahlen |
@@ -16,7 +16,7 @@ Zusätzlich sichern deterministische Offline-Tests in [`tests/test_mobile_access
 
 ## 2. Touch-Ziele, Umbruch und schmale Ansicht
 
-- **Touch-Ziele (`>= 44 px`):** Alle interaktiven Bedienelemente (`Aktualisieren`-Button, Radio-Optionen für `Zeitraum`, `Suche`, `Instrumenttyp`, `Kategorie`, `Sortierung`, `Reihenfolge` sowie die ausklappbaren Bereiche `Positionsdetails ohne Hover` und `Datenstatus & Hinweise`) erhalten über `MOBILE_ACCESSIBILITY_CSS` in [`ui.py`](../src/portfolio_dashboard/ui.py) eine Mindesthöhe von `2.75rem` (`44 px` gemäß Apple iOS Human Interface Guidelines).
+- **Touch-Ziele (`>= 44 px`):** Alle interaktiven Bedienelemente im Depot (`Aktualisieren`-Button, Radio-Optionen für `Zeitraum`, `Instrumenttyp`, `Kategorie`, `Sortierung` sowie die ausklappbaren Bereiche `Positionsdetails ohne Hover` und `Datenstatus & Hinweise`) erhalten über `MOBILE_ACCESSIBILITY_CSS` in [`ui.py`](../src/portfolio_dashboard/ui.py) eine Mindesthöhe von `2.75rem` (`44 px` gemäß Apple iOS Human Interface Guidelines).
 - **Umbruch (`<= 640 px`):** Radio-Gruppen (`div[role="radiogroup"]`), die Farblegende und mehrspaltige Blöcke (`stHorizontalBlock`) umbrechen auf schmalen Bildschirmen automatisch (`flex-wrap: wrap`), sodass kein Steuerknopf abgeschnitten wird.
 
 ## 3. Bedienung ohne Hover und Erreichbarkeit kleiner Positionen
@@ -26,8 +26,8 @@ Auf Touch-Geräten (iPhone) und bei reiner Tastaturnavigation steht kein Maus-Ho
 Daher sind **alle wesentlichen Tooltip-Informationen vollständig ohne Hover** auf zwei komplementären Wegen zugänglich:
 
 1. **Sortier- und filterbare Positionsübersicht (`render_positions_table`):**
-   - Zeigt alle aktiven Positionen (inklusive Kleinstpositionen und unbewertbarer Positionen) mit `Instrument`, `Ticker`, `Typ`, `Kategorie`, `Stückzahl`, `Währung`, `Wert (EUR)`, `Anteil am bewerteten Gesamtdepot (%)`, `Entwicklung (%)`, `Datenstand`, `Referenzdatum` und `Status`.
-   - Durch Sortierung nach `Wert (EUR)` + `Aufsteigend` oder über die Freitextsuche lassen sich selbst kleinste Positionen sofort an die erste Stelle holen.
+   - Zeigt alle aktiven Positionen (inklusive Kleinstpositionen und unbewertbarer Positionen) mit `Instrument`, `Wert (EUR)` und den fünf Entwicklungen von `Seit Kauf (%)` bis `Heute (%)`; weitere Positionsdaten, Datenstand, Referenzdaten und Status folgen dahinter.
+   - Über den Spaltenkopf `Wert (EUR)` lässt sich aufsteigend sortieren, um kleinste Positionen an die erste Stelle zu holen. Die drei Auswahlfelder darüber bieten Instrumenttyp, Kategorie und das Sortierfeld mit absteigender Standardsortierung.
 2. **Umbrechenbare Detailkarten (`Positionsdetails ohne Hover`, `render_position_details`):**
    - Unterhalb der Tabelle stellt ein per Touch und Tastatur (`Tab` + `Enter`/`Space`) bedienbarer Bereich für jede gefilterte Position sämtliche Zeilen des Treemap-Tooltips sowie Kategorie, explizite Richtungsangabe (`Gewinn (+)`, `Verlust (−)`, `Unverändert (0,00 %)`, `Keine Kennzahl (n. v.)`) und Datenstatus als vertikal umbrechenden Text dar – ganz ohne horizontales Tabellen-Scrollen.
 
@@ -46,8 +46,8 @@ Daher sind **alle wesentlichen Tooltip-Informationen vollständig ohne Hover** a
 1. **Einzelkacheln im Plotly-SVG nicht einzeln per `Tab` fokussierbar:**
    - Plotly rendert Treemap-Kacheln als SVG-Pfade ohne eigene HTML-`tabindex`-Knoten. Tastaturnutzer navigieren daher über die nativen Filter-/Sortierfelder, die Positionsübersicht und den Bereich `Positionsdetails ohne Hover`, die identische Daten aus demselben Bewertungs-Snapshot bereitstellen.
 2. **Textausblendung in sehr kleinen Treemap-Kacheln:**
-   - Bei Positionen mit sehr geringem EUR-Anteil reicht die Kachelfläche in der Grafik nicht für mehrzeiligen Text aus. Diese Positionen bleiben über Suche, aufsteigende Wertsortierung, Tabelle und `Positionsdetails ohne Hover` uneingeschränkt erreichbar.
-3. **Horizontales Scrollen der 12-spaltigen Tabelle auf schmalen Bildschirmen (`<= 390 px`):**
+   - Bei Positionen mit sehr geringem EUR-Anteil reicht die Kachelfläche in der Grafik nicht für mehrzeiligen Text aus. Diese Positionen bleiben über Typ-/Kategoriefilter, Sortierung über die Spaltenköpfe, Tabelle und `Positionsdetails ohne Hover` uneingeschränkt erreichbar.
+3. **Horizontales Scrollen der breiten Tabelle auf schmalen Bildschirmen (`<= 390 px`):**
    - Das vollständige Tabellenraster scrollt auf dem iPhone im Hochformat innerhalb seines Containers horizontal. Für eine scrollfreie Einspalten-Lesbarkeit auf schmalen Displays dient der direkt darunterliegende Bereich `Positionsdetails ohne Hover`.
 
 ## 6. Watchlist-Ansicht (#85)

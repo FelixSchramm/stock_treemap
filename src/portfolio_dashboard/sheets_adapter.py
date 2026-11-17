@@ -2,11 +2,13 @@
 
 No environment/credential-file reads, discovery, retries, cache or UI wiring.
 The host must authorize the owner before constructing a session or calling read.
+The depot reads the journal tables of ADR 0012 in one ``values:batchGet``.
 """
 
 import logging
 import math
 import re
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -18,15 +20,19 @@ from urllib.parse import quote
 from requests.exceptions import Timeout
 
 from portfolio_dashboard.config import SourceConfig, SourceKind
+from portfolio_dashboard.instruments import VerifiedListing
 from portfolio_dashboard.models import DataWarning, PortfolioSnapshot, SnapshotStatus
 from portfolio_dashboard.sheet_parser import (
-    SheetMetadata,
     SheetParseResult,
-    parse_sheet_rows,
+)
+from portfolio_dashboard.sheet_tables import (
+    TABLE_RANGES,
+    TableSchemaError,
+    build_portfolio,
+    parse_tables,
 )
 
 SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
-_RANGE = re.compile(r"(?:'(?:[^']|'')+'|[^'!\r\n]+)!A([1-9][0-9]*):([M-X])([1-9][0-9]*)")
 _PRIVATE_READ = ContextVar("private_sheet_read", default=False)
 
 
@@ -144,16 +150,37 @@ def _reject_constant(value: str) -> None:
     raise ValueError("Invalid JSON number.")
 
 
+def _failed_snapshot(attempted_at: datetime, code: str, message: str) -> PortfolioSnapshot:
+    return PortfolioSnapshot(
+        attempted_at, SnapshotStatus.FAILED, warnings=(DataWarning(code, message),)
+    )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class JournalReadResult:
+    """Snapshot plus the owner-verified listings read in the same request."""
+
+    snapshot: PortfolioSnapshot
+    listings: tuple[VerifiedListing, ...] = ()
+
+    def __repr__(self) -> str:
+        return f"JournalReadResult(status={self.snapshot.status.value!r})"
+
+
 @dataclass(frozen=True, slots=True)
-class SheetsAdapter:
+class JournalSheetsReader:
+    """One read-only ``values:batchGet`` for Instrumente, Transaktionen, Kurse_manuell.
+
+    Same transport rules as ``SheetsAdapter``: single GET, no redirects, TLS
+    verification, neutral failures and private transport diagnostics.
+    ``venues`` maps each supported Yahoo venue code to its required currency.
+    """
+
     source: SourceConfig = field(repr=False)
-    metadata: SheetMetadata = field(repr=False)
     session: SheetsSession = field(repr=False)
+    venues: Mapping[str, str] = field(repr=False)
     timeout_seconds: float = 10
     _url: str = field(init=False, repr=False)
-    _header_row: int = field(init=False, repr=False)
-    _row_count: int = field(init=False, repr=False)
-    _column_count: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if (
@@ -162,45 +189,20 @@ class SheetsAdapter:
         ):
             raise SheetsConfigurationError("Explicit Google Sheets source required.")
         source_id = self.source.spreadsheet_id
-        if not isinstance(source_id, str) or not re.fullmatch(
-            r"[A-Za-z0-9_-]+", source_id
-        ):
-            raise SheetsConfigurationError(
-                "Spreadsheet identifier is missing or invalid."
-            )
-        cell_range = self.source.worksheet_range
-        match = _RANGE.fullmatch(cell_range) if isinstance(cell_range, str) else None
-        if match is None:
-            raise SheetsConfigurationError(
-                "Explicit worksheet and bounded A–M..A–X row range required."
-            )
-        try:
-            first, last = int(match.group(1)), int(match.group(3))
-        except ValueError:
-            raise SheetsConfigurationError("Invalid bounded row range.") from None
-        if last < first:
-            raise SheetsConfigurationError("Invalid bounded row range.")
-        if not isinstance(self.metadata, SheetMetadata):
-            raise SheetsConfigurationError("Explicit Sheet metadata required.")
+        if not isinstance(source_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", source_id):
+            raise SheetsConfigurationError("Spreadsheet identifier is missing or invalid.")
         object.__setattr__(self, "timeout_seconds", _timeout(self.timeout_seconds))
-        object.__setattr__(self, "_header_row", first)
-        object.__setattr__(self, "_row_count", last - first + 1)
-        object.__setattr__(self, "_column_count", ord(match.group(2)) - ord("A") + 1)
+        query = "&".join(f"ranges={quote(r, safe='')}" for r in TABLE_RANGES)
         object.__setattr__(
             self,
             "_url",
             "https://sheets.googleapis.com/v4/spreadsheets/"
-            f"{quote(source_id, safe='')}/values/{quote(cell_range, safe='')}",
+            f"{quote(source_id, safe='')}/values:batchGet?{query}",
         )
 
-    def read(self, *, attempted_at: datetime) -> SheetsReadResult:
-        """Fetch once, atomically validate the envelope, then reuse the row parser.
-
-        The supplied aware timestamp describes this attempt/import, never a price
-        observation. Failures contain no holdings and never reuse prior results.
-        """
-        # Validate before any I/O, including for empty or failed responses.
-        PortfolioSnapshot(attempted_at, SnapshotStatus.COMPLETE)
+    def read(self, *, attempted_at: datetime) -> JournalReadResult:
+        """Fetch once, validate the envelope, then parse and build the depot."""
+        PortfolioSnapshot(attempted_at, SnapshotStatus.COMPLETE)  # validates the clock
         try:
             with _private_transport_diagnostics():
                 response = self.session.get(
@@ -209,7 +211,7 @@ class SheetsAdapter:
                         "majorDimension": "ROWS",
                         "valueRenderOption": "UNFORMATTED_VALUE",
                         "dateTimeRenderOption": "SERIAL_NUMBER",
-                        "fields": "majorDimension,values",
+                        "fields": "valueRanges(majorDimension,values)",
                     },
                     timeout=self.timeout_seconds,
                     allow_redirects=False,
@@ -218,61 +220,60 @@ class SheetsAdapter:
                 try:
                     status = response.status_code
                     if type(status) is not int:
-                        return self._invalid_response(attempted_at)
+                        return self._invalid(attempted_at)
                     if status != 200:
-                        return _http_failure(attempted_at, status)
-                    payload = response.json(
-                        parse_float=Decimal, parse_constant=_reject_constant
-                    )
+                        return JournalReadResult(_http_failure(attempted_at, status).snapshot)
+                    payload = response.json(parse_float=Decimal, parse_constant=_reject_constant)
                 finally:
                     response.close()
         except (Timeout, TimeoutError):
-            return _failed(attempted_at, "sheet_timeout", "Sheet read timed out.")
+            return JournalReadResult(
+                _failed_snapshot(attempted_at, "sheet_timeout", "Sheet read timed out.")
+            )
         except ValueError:
-            return self._invalid_response(attempted_at)
+            return self._invalid(attempted_at)
         except Exception:
             # Transport/auth exceptions can contain URLs, response bodies or tokens.
-            return _failed(
-                attempted_at,
-                "sheet_transport_error",
-                "Sheet read could not be completed.",
-            )
+            return JournalReadResult(_failed_snapshot(
+                attempted_at, "sheet_transport_error", "Sheet read could not be completed."
+            ))
 
-        if not isinstance(payload, dict) or payload.get("majorDimension") != "ROWS":
-            return self._invalid_response(attempted_at)
-        rows = payload.get("values", [])
-        if not isinstance(rows, list) or len(rows) > self._row_count:
-            return self._invalid_response(attempted_at)
-        if any(
-            not isinstance(row, list)
-            or len(row) > self._column_count
-            or any(
-                type(cell) not in (str, int, float, Decimal, bool, type(None))
-                for cell in row
-            )
-            for row in rows
-        ):
-            return self._invalid_response(attempted_at)
-        if not rows:
-            return SheetsReadResult(
-                SheetParseResult(
-                    PortfolioSnapshot(attempted_at, SnapshotStatus.COMPLETE)
+        tables = payload.get("valueRanges") if isinstance(payload, dict) else None
+        if not isinstance(tables, list) or len(tables) != len(TABLE_RANGES):
+            return self._invalid(attempted_at)
+        values = []
+        for entry, cell_range in zip(tables, TABLE_RANGES):
+            match = re.search(r"!A1:([A-Z])([0-9]+)$", cell_range)
+            columns, rows_allowed = ord(match.group(1)) - ord("A") + 1, int(match.group(2))
+            rows = entry.get("values", []) if isinstance(entry, dict) else None
+            if (
+                not isinstance(entry, dict)
+                or entry.get("majorDimension", "ROWS") != "ROWS"
+                or not isinstance(rows, list)
+                or len(rows) > rows_allowed
+                or any(
+                    not isinstance(row, list)
+                    or len(row) > columns
+                    or any(
+                        type(cell) not in (str, int, float, Decimal, bool, type(None))
+                        for cell in row
+                    )
+                    for row in rows
                 )
+            ):
+                return self._invalid(attempted_at)
+            values.append(rows)
+        try:
+            parsed = parse_tables(*values)
+        except TableSchemaError as exc:
+            return JournalReadResult(
+                _failed_snapshot(attempted_at, "sheet_schema_error", str(exc))
             )
-        return SheetsReadResult(
-            parse_sheet_rows(
-                rows[0],
-                rows[1:],
-                imported_at=attempted_at,
-                metadata=self.metadata,
-                header_row=self._header_row,
-            )
-        )
+        result = build_portfolio(parsed, imported_at=attempted_at, venues=self.venues)
+        return JournalReadResult(result.snapshot, result.listings)
 
     @staticmethod
-    def _invalid_response(attempted_at: datetime) -> SheetsReadResult:
-        return _failed(
-            attempted_at,
-            "sheet_invalid_response",
-            "Sheet response could not be interpreted.",
-        )
+    def _invalid(attempted_at: datetime) -> JournalReadResult:
+        return JournalReadResult(_failed_snapshot(
+            attempted_at, "sheet_invalid_response", "Sheet response could not be interpreted."
+        ))

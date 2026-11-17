@@ -1,0 +1,114 @@
+Letzter Kurs: 521.91 USD | Börse: NMS
+longName: Microsoft Corporation
+sector: Technology
+industry: Software - Infrastructure
+marketCap: 3875804807168
+trailingPE: 27.239561
+dividendYield: 0.75
+
+=== history 1 Monat, täglich (23 Einträge) ===
+                                 Open        High  ...  Dividends  Stock Splits
+Date                                               ...                         
+2026-09-30 00:00:00-04:00  511.609985  519.830017  ...        0.0           0.0
+2026-10-01 00:00:00-04:00  519.880005  522.849976  ...        0.0           0.0
+2026-10-02 00:00:00-04:00  519.390015  522.500000  ...        0.0           0.0
+
+[3 rows x 7 columns]
+
+=== history 5 Tage, stündlich (35 Einträge) ===
+                                 Open        High  ...  Dividends  Stock Splits
+Datetime                                           ...                         
+2026-10-26 09:30:00-04:00  527.409973  529.059998  ...        0.0           0.0
+2026-10-26 10:30:00-04:00  527.885010  530.770020  ...        0.0           0.0
+2026-10-26 11:30:00-04:00  527.452698  531.099976  ...        0.0           0.0
+
+[3 rows x 7 columns]
+
+=== history max, täglich (10238 Einträge) ===
+                               Open      High  ...  Dividends  Stock Splits
+Date                                           ...                         
+1986-03-13 00:00:00-05:00  0.053745  0.061649  ...        0.0           0.0
+1986-03-14 00:00:00-05:00  0.059014  0.062176  ...        0.0           0.0
+
+[2 rows x 7 columns]
+
+=== dividends (3 Einträge) ===
+Date
+2026-02-19 09:30:00-05:00    0.91
+2026-05-21 09:30:00-04:00    0.91
+2026-08-20 09:30:00-04:00    0.91
+Name: Dividends, dtype: float64
+
+=== splits (3 Einträge) ===
+Date
+1998-02-23 09:30:00-05:00    2.0
+1999-03-29 09:30:00-05:00    2.0
+2003-02-18 09:30:00-05:00    2.0
+Name: Stock Splits, dtype: float64
+
+=== income_stmt (Jahr) (2 Einträge) ===
+                 2026-06-30    2025-06-30    2024-06-30    2023-06-30
+Total Revenue  3.318390e+11  2.817240e+11  2.451220e+11  2.119150e+11
+Net Income     1.337490e+11  1.018320e+11  8.813600e+10  7.236100e+10
+
+=== quarterly_income_stmt (2 Einträge) ===
+                 2026-09-30    2026-06-30  ...    2025-12-31    2025-09-30
+Total Revenue  9.227900e+10  9.000700e+10  ...  8.127300e+10  7.767300e+10
+Net Income     3.662900e+10  3.576600e+10  ...  3.845800e+10  2.774700e+10
+
+[2 rows x 5 columns]
+
+=== balance_sheet (2 Einträge) ===
+                       2026-06-30    2025-06-30  ...    2023-06-30  2022-06-30
+Total Assets         7.583760e+11  6.190030e+11  ...  4.119760e+11         NaN
+Stockholders Equity  4.423870e+11  3.434790e+11  ...  2.062230e+11         NaN
+
+[2 rows x 5 columns]
+
+=== cashflow (2 Einträge) ===
+                       2026-06-30    2025-06-30  ...    2023-06-30  2022-06-30
+Operating Cash Flow  1.829350e+11  1.361620e+11  ...  8.758200e+10         NaN
+Free Cash Flow       6.698700e+10  7.161100e+10  ...  5.947500e+10         NaN
+
+[2 rows x 5 columns]
+
+=== analyst_price_targets (5 Einträge) ===
+{'current': 521.91, 'high': 870.0, 'low': 440.0, 'mean': 629.6884, 'median': 630.0}
+
+=== recommendations (4 Einträge) ===
+  period  strongBuy  buy  hold  sell  strongSell
+0     0m         12   39     5     0           0
+1    -1m         14   39     2     0           0
+2    -2m         14   38     3     0           0
+
+=== earnings_dates (25 Einträge) ===
+                           EPS Estimate  Reported EPS  Surprise(%)
+Earnings Date                                                     
+2027-01-27 15:00:00-05:00          4.86           NaN          NaN
+2026-10-28 16:00:00-04:00          4.72          4.89         3.59
+2026-07-29 16:00:00-04:00          4.24          4.74        11.81
+
+=== major_holders (4 Einträge) ===
+Breakdown                       Value
+insidersPercentHeld           0.00079
+institutionsPercentHeld       0.75798
+institutionsFloatPercentHeld  0.75858
+
+=== download MSFT + SIE.DE (5 Einträge) ===
+Price            Close              ...    Volume        
+Ticker            MSFT      SIE.DE  ...      MSFT  SIE.DE
+Date                                ...                  
+2026-10-26  532.599976  261.399994  ...  19021000  893236
+2026-10-27  531.330017  266.200012  ...  19532300  822072
+2026-10-28  531.010010  270.049988  ...  28594200  648778
+
+[3 rows x 10 columns]
+
+=== Wechselkurs EURUSD=X (5 Einträge) ===
+                               Open      High  ...  Dividends  Stock Splits
+Date                                           ...                         
+2026-10-26 00:00:00+00:00  1.121818  1.122712  ...        0.0           0.0
+2026-10-27 00:00:00+00:00  1.117531  1.117818  ...        0.0           0.0
+2026-10-28 00:00:00+00:00  1.113090  1.114082  ...        0.0           0.0
+
+[3 rows x 7 columns]

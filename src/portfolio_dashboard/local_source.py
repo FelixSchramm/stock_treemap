@@ -1,49 +1,42 @@
 """Refresh coordinator for the owner's own data (local and production mode).
 
-Values, weights and returns since purchase come from the owner's Sheet. Private
-listings assign owner-verified Yahoo EUR listings by the Sheet ISIN; only those
-positions receive provider quotes and course periods. Local mode reads the key
-and listings from files, production from the server-side secrets.
+Holdings and cost basis come from the Sheet journal (ADR 0012); owner-verified
+EUR listings come from the tab Instrumente. Only those positions receive
+provider quotes and course periods. Local mode reads the key from a file,
+production from the server-side secrets.
 """
 
-import tomllib
-from dataclasses import replace
 from datetime import date, time, timedelta
-from decimal import Decimal
+from functools import lru_cache
 
 from dateutil.easter import easter
+from exchange_calendars.exchange_calendar_xams import XAMSExchangeCalendar
+from exchange_calendars.exchange_calendar_xbom import XBOMExchangeCalendar
+from exchange_calendars.exchange_calendar_xhkg import XHKGExchangeCalendar
+from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
+from exchange_calendars.exchange_calendar_xmad import XMADExchangeCalendar
+from exchange_calendars.exchange_calendar_xmil import XMILExchangeCalendar
+from exchange_calendars.exchange_calendar_xpar import XPARExchangeCalendar
+from exchange_calendars.exchange_calendar_xswx import XSWXExchangeCalendar
+from exchange_calendars.exchange_calendar_xtai import XTAIExchangeCalendar
+from exchange_calendars.exchange_calendar_xtks import XTKSExchangeCalendar
 
 from portfolio_dashboard.config import AppConfig
-from portfolio_dashboard.instruments import EquityForm, VerifiedListing, resolve_listing
+from portfolio_dashboard.instruments import VerifiedListing, resolve_listing
 from portfolio_dashboard.market_data import YFinanceProvider
-from portfolio_dashboard.models import (
-    DataWarning,
-    Instrument,
-    InstrumentType,
-    PortfolioSnapshot,
-    ProviderMapping,
-    QuoteUnit,
-    SnapshotStatus,
-)
+from portfolio_dashboard.models import SnapshotStatus
 from portfolio_dashboard.price_periods import SessionCalendar, session_calendar
 from portfolio_dashboard.quote_cache import QuoteCache
 from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
-from portfolio_dashboard.sheet_parser import (
-    NumberLocale,
-    SheetMetadata,
-    SheetParseResult,
-)
-from portfolio_dashboard.sheets_adapter import SheetsAdapter
+from portfolio_dashboard.sheet_parser import NumberLocale
+from portfolio_dashboard.sheets_adapter import JournalSheetsReader
 from portfolio_dashboard.sheets_session import (
     build_readonly_session,
     build_readonly_session_from_info,
 )
 
-# Owner decisions: German Sheet; column I holds the cost of remaining units (#20).
-LOCAL_SHEET_METADATA = SheetMetadata(
-    NumberLocale.GERMAN, cost_basis_verified_remaining=True
-)
-EUR = QuoteUnit("EUR", Decimal("1"))
+# Owner decision: the Sheet uses German number formatting.
+SHEET_NUMBER_LOCALE = NumberLocale.GERMAN
 # Regular hours (Europe/Berlin) per supported Yahoo exchangeName code.
 VENUE_HOURS = {
     "GER": (time(9), time(17, 30)),  # Xetra
@@ -70,10 +63,27 @@ US_SPECIAL_CLOSURES = frozenset(
         date(2025, 1, 9),
     }
 )
-
-
-class ListingsFileError(ValueError):
-    """Safe message naming an entry number, never file content or paths."""
+# Further Watchlist/index exchanges (Yahoo exchangeName): regular hours in the
+# exchange's own time zone and the exchange_calendars class supplying holidays.
+# Midday breaks: LUNCH_BREAKS. Like the US venues they stay out of VENUE_HOURS.
+# NSE (NSI) shares its trading holidays with BSE, the calendar the library provides.
+INTL_VENUES = {
+    "JPX": (time(9), time(15, 30), XTKSExchangeCalendar),
+    "HKG": (time(9, 30), time(16), XHKGExchangeCalendar),
+    "NSI": (time(9, 15), time(15, 30), XBOMExchangeCalendar),
+    "KSC": (time(9), time(15, 30), XKRXExchangeCalendar),
+    "TAI": (time(9), time(13, 30), XTAIExchangeCalendar),
+    "PAR": (time(9), time(17, 30), XPARExchangeCalendar),
+    "AMS": (time(9), time(17, 30), XAMSExchangeCalendar),
+    "MIL": (time(9), time(17, 30), XMILExchangeCalendar),
+    "MCE": (time(9), time(17, 30), XMADExchangeCalendar),
+    "EBS": (time(9), time(17, 30), XSWXExchangeCalendar),
+}
+# Exchange-local midday trading breaks (#133); the other venues trade through.
+LUNCH_BREAKS = {
+    "JPX": (time(11, 30), time(12, 30)),
+    "HKG": (time(12), time(13)),
+}
 
 
 def _holidays(year: int) -> set[date]:
@@ -133,8 +143,9 @@ def us_holidays(year: int) -> set[date]:
 def venue_calendars(today: date) -> dict[str, SessionCalendar]:
     """Calendars spanning more than a year back and a year ahead of ``today``.
 
-    German venues use Europe/Berlin dates and hours, US venues America/New_York;
-    early closes are modelled for neither.
+    German venues use Europe/Berlin dates and hours, US venues America/New_York,
+    ``INTL_VENUES`` their own exchange time zone, with the midday break from
+    ``LUNCH_BREAKS``; early closes are modelled for none.
     """
     first, last = today - timedelta(days=400), today + timedelta(days=366)
     years = range(first.year, last.year + 1)
@@ -147,216 +158,89 @@ def venue_calendars(today: date) -> dict[str, SessionCalendar]:
         sessions = [day for day in days if day.weekday() < 5 and day not in closed]
         for venue, (opens, closes) in hours.items():
             calendars[venue] = session_calendar(sessions, opens, closes, first, last)
+    for venue, (opens, closes, factory) in INTL_VENUES.items():
+        span = _library_sessions(factory, first, last)
+        if span is not None:  # without a span the venue stays unsupported
+            calendars[venue] = session_calendar(
+                span[0], opens, closes, span[1], span[2], *LUNCH_BREAKS.get(venue, ())
+            )
     return calendars
 
 
-def load_listings(path: str) -> tuple[VerifiedListing, ...]:
-    """Read the ``[[listing]]`` entries of a private TOML file."""
-    try:
-        with open(path, "rb") as file:
-            entries = tomllib.load(file).get("listing", [])
-    except (OSError, tomllib.TOMLDecodeError):
-        raise ListingsFileError("Zuordnungsdatei fehlt oder ist ungültig.") from None
-    return parse_listings(entries)
+@lru_cache(maxsize=64)
+def _library_sessions(factory: type, first: date, last: date) -> tuple[frozenset[date], date, date] | None:
+    """Regular sessions of one ``exchange_calendars`` exchange calendar class.
 
+    The span is clipped to the years the library has holidays recorded for, so a
+    calendar never claims sessions it cannot know (price periods outside the span
+    become "calendar_incomplete"). Cached because some calendars are slow to build.
 
-def parse_listings(entries: object) -> tuple[VerifiedListing, ...]:
-    """Validate entries with isin, type, symbol, venue and form/class."""
-    if not isinstance(entries, list):
-        raise ListingsFileError("Zuordnung enthält keine Liste [[listing]].")
-    listings = []
-    for number, entry in enumerate(entries, 1):
-        try:
-            kind = InstrumentType(entry["type"])
-            if kind is InstrumentType.DERIVATIVE or entry["venue"] not in VENUE_HOURS:
-                raise ValueError
-            stock = kind is InstrumentType.STOCK
-            listings.append(
-                VerifiedListing(
-                    Instrument(
-                        kind,
-                        instrument_id=entry["isin"],
-                        trading_venue=entry["venue"],
-                        quote_unit=EUR,
-                        provider_mapping=ProviderMapping("yfinance", entry["symbol"]),
-                    ),
-                    equity_form=EquityForm(entry["equity_form"]) if stock else None,
-                    isin=entry["isin"],
-                    share_class=None if stock else entry.get("share_class"),
-                )
-            )
-        except (KeyError, TypeError, ValueError):
-            raise ListingsFileError(
-                f"Zuordnung: Eintrag {number} ist unvollständig oder ungültig."
-            ) from None
-    isins = [listing.isin for listing in listings]
-    symbols = [listing.instrument.provider_mapping.symbol for listing in listings]
-    if len(set(isins)) < len(isins) or len(set(symbols)) < len(symbols):
-        raise ListingsFileError("Zuordnung: ISIN oder Symbol mehrfach vergeben.")
-    return tuple(listings)
-
-
-def assign_listings(
-    snapshot: PortfolioSnapshot, listings: tuple[VerifiedListing, ...]
-) -> PortfolioSnapshot:
-    """Give Sheet positions the verified identity matching their ISIN and type.
-
-    The owner chose venue and currency in the listings file; column F describes
-    the Sheet's own listing (column E), for example a US home listing in USD.
+    :param factory: exchange_calendars class, e.g. from ``INTL_VENUES``.
+    :param first: First requested exchange-local date.
+    :param last: Last requested exchange-local date.
+    :return: Session dates plus the first and last date the set is complete for, or
+        ``None`` if the library covers no part of the requested span.
     """
-    verified = {
-        (listing.isin, listing.instrument.instrument_type): listing.instrument
-        for listing in listings
-    }
-    positions = []
-    for position in snapshot.positions:
-        source = position.instrument
-        listing = verified.get((source.source_isin, source.instrument_type))
-        if listing is not None:
-            position = replace(
-                position,
-                instrument=replace(
-                    source,
-                    instrument_id=listing.instrument_id,
-                    trading_venue=listing.trading_venue,
-                    quote_unit=listing.quote_unit,
-                ),
-            )
-        positions.append(position)
-    return replace(snapshot, positions=tuple(positions))
+    bound_min, bound_max = factory.bound_min(), factory.bound_max()
+    span_first = max(first, bound_min.date()) if bound_min is not None else first
+    span_last = min(last, bound_max.date()) if bound_max is not None else last
+    if span_last < span_first:
+        return None
+    calendar = factory(start=span_first.isoformat(), end=span_last.isoformat())
+    return frozenset(day.date() for day in calendar.sessions), span_first, span_last
 
 
-def sheet_listing_candidates(
-    parsed: SheetParseResult, primary: tuple[VerifiedListing, ...]
-) -> tuple[PortfolioSnapshot, dict[int, VerifiedListing]]:
-    """Validate complete owner declarations without inferring product identity.
-
-    Bad optional rows are isolated. Alternative symbols at the same venue are
-    allowed, but product form/class and a symbol's product identity must agree.
-    """
-    positions = {p.source_row: p for p in parsed.snapshot.positions}
-    candidates: dict[int, VerifiedListing] = {}
-    invalid: set[int] = set()
-    for entry in parsed.yahoo_listings:
-        position = positions[entry.source_row]
-        source = position.instrument
-        matching = next((item for item in primary if (
-            item.isin == source.source_isin
-            and item.instrument.instrument_type is source.instrument_type
-        )), None)
-        try:
-            if entry.venue not in VENUE_HOURS or source.source_isin is None:
-                raise ValueError
-            if any(item.isin == source.source_isin
-                   and item.instrument.instrument_type is not source.instrument_type
-                   for item in primary):
-                raise ValueError
-            candidate = VerifiedListing(
-                Instrument(
-                    source.instrument_type,
-                    instrument_id=(matching.instrument.instrument_id if matching
-                                   else source.source_isin),
-                    trading_venue=entry.venue,
-                    quote_unit=EUR,
-                    provider_mapping=ProviderMapping("yfinance", entry.symbol),
-                ),
-                equity_form=EquityForm(entry.equity_form) if entry.equity_form else None,
-                isin=source.source_isin,
-                share_class=entry.share_class,
-            )
-            if source.instrument_type is InstrumentType.DERIVATIVE:
-                raise ValueError
-            if matching and (candidate.equity_form != matching.equity_form
-                             or candidate.share_class != matching.share_class):
-                raise ValueError
-            if any(
-                item.instrument.provider_mapping == candidate.instrument.provider_mapping
-                and (item.instrument.instrument_id, item.instrument.trading_venue)
-                != (candidate.instrument.instrument_id, candidate.instrument.trading_venue)
-                for item in primary
-            ):
-                raise ValueError
-            candidates[entry.source_row] = candidate
-        except (TypeError, ValueError):
-            invalid.add(entry.source_row)
-
-    for row, candidate in candidates.items():
-        for other_row, other in candidates.items():
-            same_product = candidate.instrument.instrument_id == other.instrument.instrument_id
-            same_symbol = candidate.instrument.provider_mapping == other.instrument.provider_mapping
-            if (same_product and candidate != other) or (same_symbol and not same_product):
-                invalid.update((row, other_row))
-    notes = tuple(DataWarning(
-        "invalid_yahoo_listing", "Yahoo-Ersatzzuordnung widersprüchlich oder nicht unterstützt; ignoriert.",
-        "yahoo_listing", row,
-    ) for row in sorted(invalid))
-    snapshot = replace(
-        parsed.snapshot,
-        positions=tuple(replace(p, warnings=p.warnings + tuple(
-            note for note in notes if note.source_row == p.source_row
-        )) for p in parsed.snapshot.positions),
-        warnings=parsed.snapshot.warnings + notes,
-    )
-    by_product = {
-        (candidate.isin, candidate.instrument.instrument_type): candidate
-        for row, candidate in candidates.items() if row not in invalid
-    }
-    return snapshot, {
-        p.source_row: by_product[(p.instrument.source_isin, p.instrument.instrument_type)]
-        for p in snapshot.positions
-        if (p.instrument.source_isin, p.instrument.instrument_type) in by_product
-    }
+# Supported depot venues and their required currency: German EUR listings only.
+DEPOT_VENUES = {venue: "EUR" for venue in VENUE_HOURS}
 
 
 def build_local_coordinator(config: AppConfig) -> PortfolioRefreshCoordinator:
-    """Local mode: key and optional listings from the configured files."""
-    listings = (
-        load_listings(config.source.listings_file)
-        if config.source.listings_file
-        else ()
-    )
-    return _coordinator(
-        config, build_readonly_session(config.source.credentials_file), listings
-    )
+    """Local mode: read-only key from the configured credentials file."""
+    return _coordinator(config, build_readonly_session(config.source.credentials_file))
 
 
 def build_production_coordinator(
-    config: AppConfig, service_account: object, listing_entries: object
+    config: AppConfig, service_account: object
 ) -> PortfolioRefreshCoordinator:
-    """Production: [sheets_service_account] and [[listing]] from server secrets."""
-    listings = parse_listings(listing_entries)
-    return _coordinator(
-        config, build_readonly_session_from_info(service_account), listings
-    )
+    """Production: ``[sheets_service_account]`` from the server secrets.
+
+    Listings come from the Sheet tab Instrumente (ADR 0012); ``[[listing]]``
+    secrets are no longer read.
+    """
+    return _coordinator(config, build_readonly_session_from_info(service_account))
 
 
-def _coordinator(
-    config: AppConfig, session, listings: tuple[VerifiedListing, ...]
-) -> PortfolioRefreshCoordinator:
-    """Read the configured Sheet through the read-only service-account session."""
-    adapter = SheetsAdapter(config.source, LOCAL_SHEET_METADATA, session)
-    fallbacks: dict[int, VerifiedListing] = {}
-    provider_listings = listings
+def _coordinator(config: AppConfig, session) -> PortfolioRefreshCoordinator:
+    """Holdings, cost basis and verified listings from one journal read."""
+    reader = JournalSheetsReader(config.source, session, DEPOT_VENUES)
+    state: dict[str, tuple[VerifiedListing, ...]] = {"listings": ()}
 
     def read_holdings(attempted_at):
-        nonlocal fallbacks, provider_listings
-        result = adapter.read(attempted_at=attempted_at)
+        result = reader.read(attempted_at=attempted_at)
+        if result.snapshot.status is not SnapshotStatus.FAILED:
+            # Listings always belong to the holdings they were read with.
+            state["listings"] = result.listings
+        return result.snapshot
+
+    def read_selection(attempted_at):
+        # A catalog read must not replace the registry of the cached holdings.
+        result = reader.read(attempted_at=attempted_at)
         if result.snapshot.status is SnapshotStatus.FAILED:
-            return result.snapshot
-        snapshot, fallbacks = sheet_listing_candidates(result.parsed, listings)
-        provider_listings = tuple(dict.fromkeys((*listings, *fallbacks.values())))
-        return assign_listings(snapshot, listings)
+            return result.snapshot, {}
+        mappings = {}
+        for position in result.snapshot.positions:
+            listing = resolve_listing(position.instrument, result.listings)
+            if listing is not None:
+                mappings[position.source_row] = listing
+        return result.snapshot, mappings
 
     def resolve_provider_listing(instrument):
-        # Candidate symbols for the same ID/venue live separately until selection.
-        candidates = tuple(item for item in provider_listings
-                           if item.instrument.provider_mapping == instrument.provider_mapping)
-        return resolve_listing(instrument, candidates)
+        return resolve_listing(instrument, state["listings"])
 
     return PortfolioRefreshCoordinator(
         read_holdings,
-        QuoteCache(YFinanceProvider(listings, listing_resolver=resolve_provider_listing), config.ttls),
-        listings=listings,
-        fallback_listings=lambda: fallbacks,
+        QuoteCache(YFinanceProvider((), listing_resolver=resolve_provider_listing), config.ttls),
+        listings=lambda: state["listings"],
+        selection_reader=read_selection,
         calendars=venue_calendars(date.today()),
     )

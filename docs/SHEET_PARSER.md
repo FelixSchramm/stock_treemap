@@ -1,5 +1,22 @@
 # Sheet-Zeilen offline parsen
 
+## Journal-Tabellen (ADR 0012)
+
+`portfolio_dashboard.sheet_tables.parse_tables(instruments, transactions, prices)`
+übernimmt die übergebenen Zeilen der drei Tabellen (erste Zeile = Spaltennamen)
+und liefert Instrumente, Transaktionen und Sheet-Kurse samt Zeilenwarnungen.
+`build_portfolio(tables, imported_at=..., venues=...)` rechnet über
+`ledger.build_ledger` den Bestand je ISIN nach FIFO, baut daraus die Positionen
+(`instrument_id` = ISIN, Einstand `VERIFIED_REMAINING`, Sheet-Kurs als
+gekennzeichneter Ersatz) und die geprüften Listings. Beide Module lesen weder
+Sheets noch Dateien, Provider oder die Uhr. Regeln: [Datenquelle](DATA_SOURCE.md#regeln).
+Prüfung: `uv run --locked pytest tests/test_sheet_tables.py tests/test_ledger.py`.
+
+## Früherer A–M-Parser
+
+Der folgende Parser für das frühere Depotblatt ist nicht mehr im Ladepfad der
+App und wird nur noch von Regressionstests verwendet.
+
 `portfolio_dashboard.sheet_parser.parse_sheet_rows` übernimmt ausschließlich
 bereits übergebene Überschriften und Zellen. Es liest weder Sheets noch Dateien,
 Credentials, Provider oder die aktuelle Uhr. Der spätere Adapter muss Zugriff,

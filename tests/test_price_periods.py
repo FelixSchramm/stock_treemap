@@ -173,6 +173,68 @@ def test_exchange_timezone_decides_the_local_session_date():
     assert after[PricePeriod.TODAY].current_date == date(2026, 10, 23)
 
 
+TOKYO = "Asia/Tokyo"
+
+
+def tokyo_sessions():
+    return replace(
+        sessions(),
+        open_time=time(9),
+        close_time=time(15, 30),
+        break_start=time(11, 30),
+        break_end=time(12, 30),
+    )
+
+
+def tokyo(*args):
+    return datetime(*args, tzinfo=ZoneInfo(TOKYO))
+
+
+@pytest.mark.parametrize(
+    ("clock", "market_open"),
+    [
+        (time(11, 29), True),  # morning session
+        (time(11, 30), False),  # break begins
+        (time(12, 29), False),
+        (time(12, 30), True),  # afternoon session
+    ],
+)
+def test_midday_break_pauses_trading_but_keeps_todays_quote(clock, market_open):
+    cal = tokyo_sessions()
+    h = history(cal, tz=TOKYO, overrides={date(2026, 10, 22): 200})
+    q = quote(190, tokyo(2026, 10, 23, 11, 29))
+    now = datetime.combine(date(2026, 10, 23), clock, tzinfo=ZoneInfo(TOKYO))
+    r = price_period_returns(h, q, cal, now)[PricePeriod.TODAY]
+    assert r.market_open is market_open
+    assert (r.current_date, r.reference_date) == (date(2026, 10, 23), date(2026, 10, 22))
+    assert r.percent == Decimal(-5)
+
+
+def test_midday_break_without_quote_keeps_the_session_date():
+    cal = tokyo_sessions()
+    out = price_period_returns(history(cal, tz=TOKYO), None, cal, tokyo(2026, 10, 23, 12))
+    assert {r.reason for r in out.values()} == {"missing_quote"}
+    assert all(
+        r.market_open is False and r.current_date == date(2026, 10, 23)
+        for r in out.values()
+    )
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (time(11, 30), None),
+        (None, time(12, 30)),
+        (time(12, 30), time(11, 30)),
+        (OPEN, time(12)),  # must start after the open
+        (time(12), CLOSE),  # and end before the close
+    ],
+)
+def test_break_must_be_complete_and_inside_regular_hours(start, end):
+    with pytest.raises(ValueError):
+        replace(sessions(), break_start=start, break_end=end)
+
+
 def test_naive_now_is_rejected():
     cal = sessions()
     with pytest.raises(ValueError):

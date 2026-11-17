@@ -5,10 +5,14 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from html import escape
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_dashboard import valuation_view, watchlist_view
+from portfolio_dashboard import indices_view, start_view, valuation_view, watchlist_view
+from portfolio_dashboard.design import dashboard_css, style_figure
+from portfolio_dashboard.exploration import view as exploration_view
+from portfolio_dashboard.exploration.selection import load_catalog
 from portfolio_dashboard.fundamentals_loader import (
     LOADER_STATE_KEY as FUNDAMENTALS_LOADER_KEY,
 )
@@ -26,6 +30,8 @@ from portfolio_dashboard.treemap import (
     ALL_FILTER,
     MISSING_COLOR,
     NOT_AVAILABLE,
+    PERIOD_SORT_FIELDS,
+    SORT_BY_PERFORMANCE,
     SORT_BY_VALUE,
     SORT_FIELDS,
     TILE_TEXT_COLOR,
@@ -36,10 +42,10 @@ from portfolio_dashboard.treemap import (
     PositionTableRow,
     TreemapModel,
     available_categories,
+    build_comparison_table_rows,
     build_kpis,
     build_position_details,
     build_status_notes,
-    build_table_rows,
     build_treemap,
     color_for,
     filter_groups,
@@ -60,6 +66,7 @@ TYPE_FILTER_OPTIONS = (ALL_FILTER, "Aktie", "ETF", "Derivat")
 SORT_DIRECTION_DESC = "Absteigend"
 SORT_DIRECTION_ASC = "Aufsteigend"
 SORT_DIRECTION_OPTIONS = (SORT_DIRECTION_DESC, SORT_DIRECTION_ASC)
+TABLE_SORT_FIELDS = tuple(field for field in SORT_FIELDS if field != SORT_BY_PERFORMANCE)
 
 # Public keys are the retained session state. COURSE_PERIOD_KEY holds the
 # selected Zeitraum (a course period or "Seit Kauf"); the radio keeps its own
@@ -69,11 +76,9 @@ _PERIOD_WIDGET_KEY = "_dashboard.course_period"
 PERIOD_RADIO_KEY = _PERIOD_WIDGET_KEY  # For AppTest lookups; the radio is no longer first.
 HIDE_MISSING_COURSE_KEY = "dashboard.hide_missing_course"
 _HIDE_MISSING_WIDGET_KEY = "_dashboard.hide_missing_course"
-FILTER_QUERY_KEY = "dashboard.filter_query"
 FILTER_TYPE_KEY = "dashboard.filter_type"
 FILTER_CATEGORY_KEY = "dashboard.filter_category"
 SORT_FIELD_KEY = "dashboard.sort_field"
-SORT_ORDER_KEY = "dashboard.sort_order"
 REFRESH_BUTTON_KEY = "dashboard.refresh"
 BUNDLE_STATE_KEY = "dashboard.bundle"
 
@@ -95,11 +100,9 @@ WATCHLIST_SORT_ORDER_KEY = "watchlist.sort_order"
 # Streamlit drops the state of widgets that are not rendered in a run; the area
 # that is hidden keeps its filter and sort choices by re-assigning them.
 _DEPOT_WIDGET_KEYS = (
-    FILTER_QUERY_KEY,
     FILTER_TYPE_KEY,
     FILTER_CATEGORY_KEY,
     SORT_FIELD_KEY,
-    SORT_ORDER_KEY,
 )
 _WATCHLIST_WIDGET_KEYS = (
     WATCHLIST_FILTER_QUERY_KEY,
@@ -136,12 +139,14 @@ MOBILE_ACCESSIBILITY_CSS = """
 /* Touch targets >= 44px (2.75rem) for iPhone/mobile usability */
 div.stButton > button,
 div[role="radiogroup"] label,
+div[data-testid="stButtonGroup"] button,
 div[data-baseweb="select"] > div,
 div.stTextInput input,
 details > summary {
     min-height: 2.75rem;
 }
-div[role="radiogroup"] {
+div[role="radiogroup"],
+div[data-testid="stButtonGroup"] > div {
     flex-wrap: wrap;
     row-gap: 0.4rem;
 }
@@ -152,6 +157,7 @@ div[data-testid="stTable"] {
 }
 /* Keyboard focus ring visibility */
 div.stButton > button:focus-visible,
+div[data-testid="stButtonGroup"] button:focus-visible,
 div[role="radiogroup"] input:focus-visible + div,
 div.stTextInput input:focus-visible,
 details > summary:focus-visible {
@@ -185,8 +191,9 @@ def render_accessibility_styles() -> None:
 
 
 def _remember_course_period() -> None:
-    """Persist the selected Zeitraum in the public session key."""
-    st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
+    """Persist the selected Zeitraum; deselecting the active segment keeps it."""
+    if st.session_state[_PERIOD_WIDGET_KEY] is not None:
+        st.session_state[COURSE_PERIOD_KEY] = st.session_state[_PERIOD_WIDGET_KEY]
 
 
 def _remember_area() -> None:
@@ -221,7 +228,7 @@ def render_area_control(areas: Sequence[str] = AREAS) -> str:
 
 
 def render_view_controls(*, watchlist: bool = False) -> tuple[str, str]:
-    """Render the Zeitraum radio and derive the view from the selection.
+    """Render the Zeitraum segments and derive the view from the selection.
 
     The remembered Zeitraum is shared by Depot and Watchlist. The Watchlist offers
     only the four course periods: a remembered ``"Seit Kauf"`` is shown as ``"Heute"``
@@ -234,16 +241,14 @@ def render_view_controls(*, watchlist: bool = False) -> tuple[str, str]:
     options = COURSE_PERIODS if watchlist else (*COURSE_PERIODS, SINCE_PURCHASE)
     st.session_state.setdefault(COURSE_PERIOD_KEY, COURSE_PERIODS[0])
     remembered = st.session_state[COURSE_PERIOD_KEY]
-    st.session_state[_PERIOD_WIDGET_KEY] = (
-        remembered if remembered in options else COURSE_PERIODS[0]
-    )
-    period = st.radio(
+    shown = remembered if remembered in options else COURSE_PERIODS[0]
+    st.session_state[_PERIOD_WIDGET_KEY] = shown
+    period = st.segmented_control(
         "Zeitraum",
         options,
         key=_PERIOD_WIDGET_KEY,
         on_change=_remember_course_period,
-        horizontal=True,
-    )
+    ) or shown
     view = PERSONAL_VIEW if period == SINCE_PURCHASE else COURSE_VIEW
     return view, period
 
@@ -338,60 +343,46 @@ def render_kpis(
 
 def render_filter_controls(
     valuation: PortfolioValuation,
-) -> tuple[FilterCriteria, str, bool]:
-    """Render shared search, type/category filters and table sort controls.
+) -> tuple[FilterCriteria, str]:
+    """Render type/category filters and the table sort field for the Depot.
 
     :param valuation: Portfolio valuation snapshot to derive category options.
-    :return: Tuple of (FilterCriteria, sort_by column name, descending flag).
+    :return: Tuple of (FilterCriteria, sort_by column name); sorting is descending.
     """
-    st.session_state.setdefault(FILTER_QUERY_KEY, "")
     st.session_state.setdefault(FILTER_TYPE_KEY, ALL_FILTER)
     st.session_state.setdefault(FILTER_CATEGORY_KEY, ALL_FILTER)
     st.session_state.setdefault(SORT_FIELD_KEY, SORT_BY_VALUE)
-    st.session_state.setdefault(SORT_ORDER_KEY, SORT_DIRECTION_DESC)
+    if st.session_state[SORT_FIELD_KEY] not in TABLE_SORT_FIELDS:
+        st.session_state[SORT_FIELD_KEY] = SORT_BY_VALUE
 
     categories = available_categories(valuation)
     if st.session_state.get(FILTER_CATEGORY_KEY) not in categories:
         st.session_state[FILTER_CATEGORY_KEY] = ALL_FILTER
 
-    fcols = st.columns((2, 1, 1, 1, 1))
+    fcols = st.columns(3)
     with fcols[0]:
-        query = st.text_input(
-            "Suche (Name, Ticker, Kennung, Kategorie)",
-            key=FILTER_QUERY_KEY,
-        )
-    with fcols[1]:
         instrument_type = st.selectbox(
             "Instrumenttyp",
             TYPE_FILTER_OPTIONS,
             key=FILTER_TYPE_KEY,
         )
-    with fcols[2]:
+    with fcols[1]:
         category = st.selectbox(
             "Kategorie",
             categories,
             key=FILTER_CATEGORY_KEY,
         )
-    with fcols[3]:
+    with fcols[2]:
         sort_by = st.selectbox(
             "Sortierung",
-            SORT_FIELDS,
+            TABLE_SORT_FIELDS,
             key=SORT_FIELD_KEY,
         )
-    with fcols[4]:
-        sort_order = st.selectbox(
-            "Reihenfolge",
-            SORT_DIRECTION_OPTIONS,
-            key=SORT_ORDER_KEY,
-        )
-
     criteria = FilterCriteria(
-        query=query,
         instrument_type=instrument_type,
         category=category,
     )
-    descending = sort_order == SORT_DIRECTION_DESC
-    return criteria, sort_by, descending
+    return criteria, sort_by
 
 
 def treemap_figure(
@@ -423,7 +414,8 @@ def treemap_figure(
     figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0}, height=height)
     if min_text_size is not None:
         figure.update_layout(uniformtext={"minsize": min_text_size, "mode": "hide"})
-    return figure
+    style_figure(figure)
+    return figure.update_layout(margin={"t": 0, "l": 0, "r": 0, "b": 0})
 
 
 def render_color_legend(
@@ -478,7 +470,7 @@ def render_treemap(model: TreemapModel) -> None:
     if not model.tiles:
         st.info("Keine Position für die Treemap sichtbar.")
     else:
-        st.plotly_chart(treemap_figure(model), width="stretch")
+        st.plotly_chart(treemap_figure(model), width="stretch", theme=None)
         render_color_legend(model)
     if model.omitted_count:
         st.caption(
@@ -496,7 +488,7 @@ def render_positions_table(
 
     :param rows: Sorted sequence of PositionTableRow items.
     :param total_active_count: Total count of active instrument groups before filtering.
-    :param filtered: Whether any search, type, or category filter is currently active.
+    :param filtered: Whether any type or category filter is currently active.
     """
     st.subheader("Positionsübersicht")
     weight_note = (
@@ -511,8 +503,29 @@ def render_positions_table(
         st.caption(
             f"Alle {len(rows)} aktiven Positionen inkl. Datenlücken · {weight_note}"
         )
-    display_dicts = [row.to_display_dict() for row in rows]
-    st.dataframe(display_dicts, hide_index=True, width="stretch")
+    st.caption(
+        "Alle Zeiträume nebeneinander, unabhängig von der Zeitraum-Auswahl. "
+        "Seit Kauf: Rendite in EUR; Jahr bis Heute: Kursentwicklung in Handelswährung."
+    )
+    display = (
+        pd.DataFrame([row.to_display_dict() for row in rows])
+        if rows else pd.DataFrame(columns=["Instrument", SORT_BY_VALUE, *PERIOD_SORT_FIELDS])
+    )
+    # Keep percentages numeric for column-header sorting; format only the display.
+    formatted = display.style.format(
+        {
+            SORT_BY_VALUE: "{:,.2f}",
+            WEIGHT_COLUMN_LABEL: "{:,.2f}",
+        },
+        na_rep=NOT_AVAILABLE,
+        decimal=",",
+        thousands=".",
+    ).format(
+        lambda value: format_percent(Decimal(str(value))),
+        subset=[column for column in PERIOD_SORT_FIELDS if column in display],
+        na_rep=NOT_AVAILABLE,
+    )
+    st.dataframe(formatted, hide_index=True, width="stretch")
     render_position_details(rows)
 
 
@@ -914,7 +927,7 @@ def render_valuation_area(
             age = format_snapshot_age(bundle.last_attempt_at, datetime.now(UTC))
             stamps.append(f"Kurse Watchlist: {stamp} (Alter: {age})")
 
-    subjects = collect_subjects(portfolio, entries, source.listings)
+    subjects = collect_subjects(portfolio, entries, source.registry())
     state, loaded = valuation_view.current_state(
         source, loader, subjects, explicit=explicit, auto=demo
     )
@@ -947,6 +960,7 @@ def render_dashboard(
     demo: bool = True,
     watchlist: Callable[[], WatchlistLoader | None] | None = None,
     overview: OverviewSource | None = None,
+    indices: Callable | None = None,
 ) -> None:
     """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
 
@@ -974,14 +988,45 @@ def render_dashboard(
     """
     _ = rows
     render_accessibility_styles()
+    st.markdown(dashboard_css(), unsafe_allow_html=True)
     header_cols = st.columns((4, 1))
     with header_cols[0]:
         st.title("Depot-Dashboard – Demo" if demo else "Depot-Dashboard")
     with header_cols[1]:
         refresh_clicked = st.button("Aktualisieren", key=REFRESH_BUTTON_KEY)
 
-    areas = AREAS if overview is None else (*AREAS, VALUATION_AREA)
+    areas = (*AREAS, exploration_view.AREA)
+    if overview is not None:
+        areas = (*areas, VALUATION_AREA)
+    areas = (*areas, indices_view.AREA)
+    if not demo:  # live public market data; the demo stays fully synthetic
+        areas = (*areas, start_view.AREA)
+    if st.session_state.get(AREA_KEY) == "Unternehmensanalyse":
+        st.session_state[AREA_KEY] = exploration_view.AREA
     selected = render_area_control(areas)
+    if selected == start_view.AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
+        st.divider()
+        start_view.render_markets()
+        return
+    if selected == indices_view.AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
+        indices_view.render(indices, refresh_clicked=refresh_clicked, demo=demo)
+        return
+    if selected == exploration_view.AREA:
+        _keep_state(_DEPOT_WIDGET_KEYS + _WATCHLIST_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
+        def read_companies(previous):
+            loader = None
+            if watchlist is not None:
+                try:
+                    loader, _ = session_loader(st.session_state, watchlist, _today())
+                except (SheetsConfigurationError, SheetsCredentialError):
+                    st.warning("Watchlist-Konfiguration nicht verfügbar; die Depot-Auswahl bleibt nutzbar.")
+            return load_catalog(coordinator, loader, previous)
+
+        exploration_view.render(demo=demo, refresh_clicked=refresh_clicked,
+                                load_companies=read_companies)
+        return
     if selected == WATCHLIST_AREA:
         _keep_state(_DEPOT_WIDGET_KEYS + valuation_view.WIDGET_KEYS)
         render_watchlist(watchlist, refresh_clicked=refresh_clicked, demo=demo)
@@ -1055,7 +1100,7 @@ def render_dashboard(
     resolved_returns = (
         returns
         if returns is not None
-        else (portfolio_returns(valuation) if is_personal else None)
+        else portfolio_returns(valuation)
     )
 
     st.subheader(f"{view} · {period}")
@@ -1084,7 +1129,7 @@ def render_dashboard(
         missing_course_eur=sum((g.amount_eur for g in missing_course_groups), Decimal(0)),
     )
 
-    criteria, sort_by, descending = render_filter_controls(valuation)
+    criteria, sort_by = render_filter_controls(valuation)
     filtered_groups, filtered_performances = filter_groups(
         valuation, current_performances, criteria
     )
@@ -1097,18 +1142,19 @@ def render_dashboard(
         )
     )
 
-    table_rows = build_table_rows(
+    table_rows = build_comparison_table_rows(
         valuation,
-        current_performances,
+        {period: tuple(performances(COURSE_VIEW, period)) for period in COURSE_PERIODS},
         criteria=criteria,
-        is_personal_view=is_personal,
         returns=resolved_returns,
-        period_reasons=current_reasons,
+        course_reasons=(
+            {period: tuple(period_reasons(COURSE_VIEW, period)) for period in COURSE_PERIODS}
+            if period_reasons is not None else None
+        ),
     )
-    sorted_rows = sort_table_rows(table_rows, sort_by=sort_by, descending=descending)
+    sorted_rows = sort_table_rows(table_rows, sort_by=sort_by)
     is_filtered = bool(
-        criteria.query.strip()
-        or criteria.instrument_type != ALL_FILTER
+        criteria.instrument_type != ALL_FILTER
         or criteria.category != ALL_FILTER
     )
     render_positions_table(

@@ -448,8 +448,12 @@ def parse_sheet_rows(
             symbol, yahoo_venue, equity_form, share_class = (
                 _text(extra.get(field)) for field in yahoo_fields
             )
+            # A blank ISIN cell lets a stock be identified by its explicit symbol;
+            # a malformed ISIN never does. ETFs keep requiring the ISIN.
+            isin_blank = _missing(extra.get("source_isin"))
             valid = (
-                isin is not None and symbol is not None and yahoo_venue is not None
+                (isin is not None or isin_blank and instrument_type is InstrumentType.STOCK)
+                and symbol is not None and yahoo_venue is not None
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.^=_-]{0,63}", symbol)
                 and (
                     instrument_type is InstrumentType.STOCK

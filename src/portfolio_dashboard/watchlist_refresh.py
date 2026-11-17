@@ -33,7 +33,7 @@ from portfolio_dashboard.config import (
     parse_watchlist_range,
 )
 from portfolio_dashboard.instruments import EquityForm, VerifiedListing
-from portfolio_dashboard.local_source import LOCAL_SHEET_METADATA, venue_calendars
+from portfolio_dashboard.local_source import SHEET_NUMBER_LOCALE, venue_calendars
 from portfolio_dashboard.market_data import (
     FxObservation,
     MarketDataProvider,
@@ -118,7 +118,11 @@ _CACHED_SNAPSHOT_CODE = "cached_holdings_snapshot"
 
 
 def session_running(calendar: SessionCalendar, timezone: str, now: datetime) -> bool:
-    """Regular session open at ``now`` (aware), judged in the exchange's own time."""
+    """Regular session open at ``now`` (aware), judged in the exchange's own time.
+
+    A midday break counts as part of the session: the morning's last quote is
+    still today's current price, so it is fetched as during trading.
+    """
     local = now.astimezone(ZoneInfo(timezone))
     return (
         local.date() in calendar.sessions
@@ -497,6 +501,11 @@ class WatchlistRefreshCoordinator:
                 ),
             )
 
+    def read_selection(self) -> WatchlistSnapshot:
+        """Read the Watchlist's declarations without requesting any market data."""
+        with self._lock:
+            return self._fetch(self._clock())
+
     def _fallback(
         self, now: datetime, failed: WatchlistSnapshot | None = None
     ) -> WatchlistBundle:
@@ -703,7 +712,7 @@ def _coordinator(config: AppConfig, session) -> WatchlistRefreshCoordinator | No
     if config.source.watchlist_range is None:
         return None
     reader = WatchlistSheetsReader(
-        config.source, session, LOCAL_SHEET_METADATA.number_locale
+        config.source, session, SHEET_NUMBER_LOCALE
     )
     return WatchlistRefreshCoordinator(
         reader.read,

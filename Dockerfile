@@ -25,6 +25,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
 COPY app.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
+COPY static/Questrial-Regular.ttf static/OFL-Questrial.txt ./static/
 USER app
 EXPOSE 8501
 # Liveness only: Streamlit's built-in endpoint returns "ok" and no portfolio data.

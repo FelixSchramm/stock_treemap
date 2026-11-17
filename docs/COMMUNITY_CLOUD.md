@@ -20,7 +20,7 @@ In der Google Cloud Console:
 
 ## 3. Secrets eintragen
 
-App → **Settings → Secrets**, Aufbau wie [`secrets.example.toml`](../.streamlit/secrets.example.toml): oben die `PORTFOLIO_*`-Werte, darunter `[auth]`, `[sheets_service_account]` und optional `[[listing]]`.
+App → **Settings → Secrets**, Aufbau wie [`secrets.example.toml`](../.streamlit/secrets.example.toml): oben die `PORTFOLIO_*`-Werte, darunter `[auth]` und `[sheets_service_account]`. Kurszuordnungen stehen im Sheet-Tab `Instrumente` ([ADR 0012](adr/0012-sheet-datenmodell.md)); ein früherer `[[listing]]`-Abschnitt wird ignoriert und kann entfernt werden, ebenso `PORTFOLIO_SHEET_RANGE`.
 
 Den Service-Account-Schlüssel als Abschnitt in die Zwischenablage übernehmen, ohne ihn im Terminal auszugeben:
 
@@ -28,13 +28,13 @@ Den Service-Account-Schlüssel als Abschnitt in die Zwischenablage übernehmen, 
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("[sheets_service_account]"); [print(k, "=", json.dumps(v)) for k, v in d.items()]' "$HOME/<Pfad außerhalb des Repos>/service-account.json" | pbcopy
 ```
 
-Für Live-Kurse anschließend die eigene Zuordnungsdatei anhängen (`pbcopy < "$HOME/<Pfad>/listings.toml"`); Format siehe README. Ohne `[[listing]]` zeigt die App nur Sheet-Werte und für Kursperioden „n. v.“.
 
 ## 4. Prüfen
 
 - Anonymes Fenster: Streamlit verlangt die eingeladene Anmeldung; ohne sie kein Zugang.
-- Eigenes Konto, **Mit Google anmelden**: eigenes Depot mit Datenstand, Live-Kurse für zugeordnete Positionen.
-- **Von dieser App abmelden**, neu laden: wieder gesperrt.
+- Vor dem App-Login: Startseite **Märkte im Überblick** mit öffentlichen Marktdaten, keine Depotdaten.
+- Eigenes Konto, **Login** rechts oben: eigenes Depot mit Datenstand, Live-Kurse für zugeordnete Positionen.
+- **Von dieser App abmelden**, neu laden: wieder nur die Startseite.
 - Fehlender oder ungültiger Schlüssel: nur „Service-Account-Schlüssel fehlt oder ist ungültig.“, keine Daten.
 
 Der Neustart nach dem Ruhezustand beginnt ohne Cache; die App lädt dann neu oder zeigt „Daten nicht verfügbar“ (ADR 0009). Die weitere Live-Abnahme folgt in #35–#38.

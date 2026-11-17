@@ -50,19 +50,30 @@ OPTIONAL_HEADERS = ("Ticker", "Typ", "Yahoo-Symbol", "Handelsplatz", "Währung",
 _OPTIONAL_FIELDS = ("ticker", "instrument_type", "symbol", "exchange", "currency", "category")
 _LAST_COLUMN = 20  # T; cells further right are ignored.
 
-# Yahoo exchangeName -> (exchange timezone, required Yahoo symbol suffix or None).
-EXCHANGES: dict[str, tuple[str, str | None]] = {
-    "GER": ("Europe/Berlin", ".DE"),
-    "FRA": ("Europe/Berlin", ".F"),
-    "STU": ("Europe/Berlin", ".SG"),
-    "MUN": ("Europe/Berlin", ".MU"),
-    "DUS": ("Europe/Berlin", ".DU"),
-    "NMS": ("America/New_York", None),
-    "NGM": ("America/New_York", None),
-    "NCM": ("America/New_York", None),
-    "NYQ": ("America/New_York", None),
-    "ASE": ("America/New_York", None),
-    "PCX": ("America/New_York", None),
+# Yahoo exchangeName -> (exchange timezone, required Yahoo symbol suffix or None for
+# US notation without suffix, required trading currency or None if not checked).
+EXCHANGES: dict[str, tuple[str, str | None, str | None]] = {
+    "GER": ("Europe/Berlin", ".DE", None),
+    "FRA": ("Europe/Berlin", ".F", None),
+    "STU": ("Europe/Berlin", ".SG", None),
+    "MUN": ("Europe/Berlin", ".MU", None),
+    "DUS": ("Europe/Berlin", ".DU", None),
+    "NMS": ("America/New_York", None, "USD"),
+    "NGM": ("America/New_York", None, "USD"),
+    "NCM": ("America/New_York", None, "USD"),
+    "NYQ": ("America/New_York", None, "USD"),
+    "ASE": ("America/New_York", None, "USD"),
+    "PCX": ("America/New_York", None, "USD"),
+    "JPX": ("Asia/Tokyo", ".T", "JPY"),
+    "HKG": ("Asia/Hong_Kong", ".HK", "HKD"),
+    "NSI": ("Asia/Kolkata", ".NS", "INR"),
+    "KSC": ("Asia/Seoul", ".KS", "KRW"),
+    "TAI": ("Asia/Taipei", ".TW", "TWD"),
+    "PAR": ("Europe/Paris", ".PA", "EUR"),
+    "AMS": ("Europe/Amsterdam", ".AS", "EUR"),
+    "MIL": ("Europe/Rome", ".MI", "EUR"),
+    "MCE": ("Europe/Madrid", ".MC", "EUR"),
+    "EBS": ("Europe/Zurich", ".SW", "CHF"),
 }
 _TYPES = {
     "aktie": InstrumentType.STOCK,
@@ -282,7 +293,7 @@ def _mapping(
     if exchange not in EXCHANGES:
         problem(
             "unknown_exchange",
-            "Handelsplatz ist kein unterstützter Yahoo-exchangeName (GER, FRA, STU, MUN, DUS, NMS, NGM, NCM, NYQ, ASE, PCX).",
+            f"Handelsplatz ist kein unterstützter Yahoo-exchangeName ({', '.join(EXCHANGES)}).",
             "exchange",
         )
     if not _CURRENCY.fullmatch(currency):
@@ -294,18 +305,17 @@ def _mapping(
     if warnings:
         return None, WatchlistRowStatus.FALLBACK, warnings
 
-    suffix = EXCHANGES[exchange][1]
-    german = suffix is not None
-    if (german and not symbol.endswith(suffix)) or (not german and "." in symbol):
+    _, suffix, venue_currency = EXCHANGES[exchange]
+    if (suffix is not None and not symbol.endswith(suffix)) or (suffix is None and "." in symbol):
         problem(
             "symbol_exchange_conflict",
             "Yahoo-Symbol und Handelsplatz widersprechen sich (Symbolendung bzw. US-Schreibweise).",
             "symbol",
         )
-    if not german and currency != "USD":
+    if venue_currency is not None and currency != venue_currency:
         problem(
             "currency_exchange_conflict",
-            "US-Handelsplätze notieren in USD; Währung widerspricht dem Handelsplatz.",
+            f"Handelsplatz {exchange} notiert in {venue_currency}; Währung widerspricht dem Handelsplatz.",
             "currency",
         )
     if warnings:

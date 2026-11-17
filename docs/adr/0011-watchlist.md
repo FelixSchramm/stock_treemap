@@ -1,7 +1,7 @@
 # ADR 0011: Watchlist aus eigenem Sheet-Blatt mit reiner Kursentwicklung
 
 - **Datum:** 2026-10-28
-- **Status:** Angenommen; Kursabruf umgesetzt (#84, [Watchlist-Kursabruf](../WATCHLIST_QUOTES.md)), Ansicht umgesetzt (#85, [Watchlist-Ansicht](../WATCHLIST_VIEW.md)), Heatmap folgt (#86)
+- **Status:** Angenommen; Kursabruf umgesetzt (#84, [Watchlist-Kursabruf](../WATCHLIST_QUOTES.md)), Ansicht umgesetzt (#85, [Watchlist-Ansicht](../WATCHLIST_VIEW.md)), Heatmap folgt (#86); Zuordnung im Blatt teilweise ersetzt durch [ADR 0012](0012-sheet-datenmodell.md)
 - **Herkunft:** Nutzerentscheidungen vom 25.10.2026 (Epic #82, Issue #83); Parser- und Prüfregeln technisch.
 
 ## Kontext
@@ -18,6 +18,8 @@ Neben dem Depot soll eine Watchlist mit 200 und mehr Einträgen verfolgt werden.
 2. *Optionale Zusatzspalten ab E*, erkannt über die Überschrift: `Ticker`, `Typ` (`Aktie`, `ETF`), `Yahoo-Symbol`, `Handelsplatz`, `Währung`, `Kategorie`. Eine vollständige und widerspruchsfreie Zuordnung (`Yahoo-Symbol` + `Handelsplatz` + `Währung`) schaltet pro Zeile den Abruf aller vier Perioden über yfinance frei (folgende Aufgabe #84).
 
 **Handelsplätze** sind der exakte Yahoo-`exchangeName`: Deutschland `GER`, `FRA`, `STU`, `MUN`, `DUS` (Zeitzone `Europe/Berlin`) sowie USA `NMS`, `NGM`, `NCM`, `NYQ`, `ASE`, `PCX` (`America/New_York`). Andere Werte sind eine Zeilenwarnung, kein stiller Abruf.
+
+*Ergänzung (#134):* Zusätzlich gelten `JPX`, `HKG`, `NSI`, `KSC`, `TAI`, `PAR`, `AMS`, `MIL`, `MCE` und `EBS`, jeweils mit fester Symbolendung, Zeitzone und Handelswährung (`watchlist_sheet.EXCHANGES`). Ihre Feiertage stammen aus der Bibliothek `exchange_calendars`; deutsche und US-Kalender bleiben selbst gepflegt.
 
 **Bewusste Ausnahme zu [0005](0005-instrumente-und-kursdaten.md).** `Yahoo-Symbol`, `Handelsplatz` und `Währung` werden für die Watchlist direkt im Blatt gepflegt statt in `listings.toml`, weil an der Watchlist keine Geldbeträge oder Depotgewichte hängen. Die Angaben sind ein **Kandidat**, keine geprüfte Instrumentidentität: Der Parser vergibt keine `instrument_id` und kein `ProviderMapping`. Der strikte Laufzeitabgleich gegen die Yahoo-Metadaten (`symbol`, `exchangeName`, `currency`) bleibt verpflichtend und ist Teil von #84; ohne Treffer gilt der Sheet-Wert. Für das Depot gilt 0005 unverändert. Ob eine Watchlist-Zeile *allein* als geprüfte Identität für die Bewertung nach [0010](0010-innerer-wert-fcff.md) gilt, ist nicht entschieden (offene Besitzerfrage zu #95). Bis dahin (umgesetzt in #95, [PRIVATE_WATCHLIST.md](../PRIVATE_WATCHLIST.md)) erhält eine Zeile nur dann einen Bewertungsschlüssel, wenn ihr vollständiger Kandidat genau einem bereits geprüften Registryeintrag entspricht; die SQLite-Watchlist aus #75 ist entfernt.
 

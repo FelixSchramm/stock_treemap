@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import streamlit as st
 
+from portfolio_dashboard import start_view
 from portfolio_dashboard.auth import require_owner
 from portfolio_dashboard.config import (
     LOOPBACK_ADDRESSES,
@@ -32,8 +33,12 @@ from portfolio_dashboard.fundamentals_loader import (
     build_local_fundamentals_loader,
     build_production_fundamentals_loader,
 )
+from portfolio_dashboard.indices import (
+    DemoIndices,
+    build_local_indices,
+    build_production_indices,
+)
 from portfolio_dashboard.local_source import (
-    ListingsFileError,
     build_local_coordinator,
     build_production_coordinator,
 )
@@ -75,7 +80,7 @@ except ConfigurationError as exc:
     st.stop()
 
 
-def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals) -> None:
+def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals, build_indices) -> None:
     """Build the owner's coordinator once per session, then render and stop.
 
     ``build_watchlist`` is only called by the Watchlist view (once per session and
@@ -87,7 +92,7 @@ def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals)
     if OWN_COORDINATOR_KEY not in st.session_state:
         try:
             st.session_state[OWN_COORDINATOR_KEY] = build_coordinator()
-        except (ListingsFileError, SheetsConfigurationError, SheetsCredentialError) as exc:
+        except (SheetsConfigurationError, SheetsCredentialError) as exc:
             st.error(str(exc))
             st.stop()
     if FUNDAMENTALS_LOADER_KEY not in st.session_state:
@@ -106,8 +111,10 @@ def render_own_portfolio(build_coordinator, build_watchlist, build_fundamentals)
         coordinator=st.session_state[OWN_COORDINATOR_KEY],
         demo=False,
         watchlist=build_watchlist,
+        indices=build_indices,
+        # Listings come with each holdings read (ADR 0012), so resolve them lazily.
         overview=private_source(
-            getattr(st.session_state[OWN_COORDINATOR_KEY], "listings", ())
+            lambda: getattr(st.session_state[OWN_COORDINATOR_KEY], "listings", ())
         ),
     )
     st.stop()
@@ -123,17 +130,17 @@ if config.mode is Mode.LOCAL:
         lambda: build_local_coordinator(config),
         lambda: build_local_watchlist_coordinator(config),
         lambda: build_local_fundamentals_loader(config),
+        lambda: build_local_indices(config),
     )
 
 if config.mode is Mode.PRODUCTION:
     # Every run passes the owner gate before secrets, loaders and output.
-    # Never cache an authorization decision.
-    require_owner(config.login)
+    # Never cache an authorization decision. Anonymous visitors only get the
+    # public start page: fixed market symbols, no secrets, no Sheet access.
+    require_owner(config.login, landing=start_view.render)
     render_own_portfolio(
         lambda: build_production_coordinator(
-            config,
-            st.secrets.get("sheets_service_account"),
-            st.secrets.get("listing", []),
+            config, st.secrets.get("sheets_service_account")
         ),
         lambda: build_production_watchlist_coordinator(
             config, st.secrets.get("sheets_service_account")
@@ -141,6 +148,7 @@ if config.mode is Mode.PRODUCTION:
         lambda: build_production_fundamentals_loader(
             config, st.secrets.get("fundamental", [])
         ),
+        lambda: build_production_indices(config, st.secrets.get("sheets_service_account")),
     )
 
 # Only demo reaches this point: synthetic data without secrets or login. The demo
@@ -160,4 +168,5 @@ render_dashboard(
     ),
     watchlist=DemoWatchlist,
     overview=demo_valuation_source(),
+    indices=DemoIndices,
 )

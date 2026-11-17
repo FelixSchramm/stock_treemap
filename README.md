@@ -14,6 +14,99 @@
 - **Technische Umsetzung:** Python 3.12, Streamlit und Plotly. Die Fachlogik liegt in reinen, UI-unabhängigen Modulen und ist durch über 1.100 automatisierte Tests mit synthetischen Daten abgesichert.
 - **Datenschutz:** Echte Depotdaten werden erst nach Google-Login und serverseitiger Besitzerprüfung geladen. Repository, Tests und Demo enthalten keine realen Daten.
 
+## Startseite vor dem Login
+
+Ohne Anmeldung zeigt die Live-App **Märkte im Überblick**; rechts oben führt
+**Login** zum Google-Login mit Besitzerprüfung. Die Seite enthält eine
+**Börsenuhr** (Tokio, Hongkong, Frankfurt, London, New York mit Status offen,
+Mittagspause oder geschlossen), darunter **Nächste Termine USA & Europa**
+(Zinsentscheide von Fed und EZB, Inflation, Arbeitsmarkt und Konjunktur mit Datum,
+Uhrzeit und Vorwert, siehe [Wirtschaftstermine](docs/ECONOMIC_CALENDAR.md)), die **Marktbreite** (Werte im Plus, stärkster und
+schwächster Wert), eine kleine **Treemap** mit gleich großen Kacheln für
+**Weltindizes** (15 Indizes, gruppiert nach Europa, Amerika und Asien),
+**Branchen USA** (Select Sector SPDR) und **Branchen Europa** (iShares STOXX Europe 600)
+im Zeitraum Heute, Woche, Monat oder Jahr sowie Verlaufskacheln für **DAX, S&P 500,
+EUR/USD, Gold, Brent und Bitcoin**. Jede Kachel zeigt den Tagestrend als Pfeil, darunter
+die Entwicklung über ein Jahr und die Jahreskurve; bei Devisen, Rohstoffen und Bitcoin
+wird der Jahreswert aus den Tagesschlusskursen berechnet.
+Branchen-ETFs dienen als Näherung, weil Yahoo die Sektorindizes nicht verlässlich
+führt. Die Symbolliste steht fest im Code (`market_overview.py`); die Seite liest
+keine Secrets, kein Sheet und keine Depotdaten. Kurse kommen von Yahoo Finance und
+werden für alle Besucher bis zu 15 Minuten gemeinsam zwischengespeichert.
+Ein Klick auf eine Indexkachel (DAX, MDAX, Euro Stoxx 50, CAC 40, SMI, S&P 500,
+Nasdaq 100, Dow Jones, Nikkei 225, Hang Seng, Nifty 50) zeigt dessen bis zu **50 größte
+Unternehmen** (nach Marktkapitalisierung am Stand-Datum) mit Kennzahlen, Treemap
+nach Marktkapitalisierung und Liste; **← Zurück zur Übersicht** und die Pfadzeile
+führen zurück, der URL-Parameter `?index=DAX` hält die Ansicht. Die Zusammensetzung
+steht fest in `index_members.csv` (Wikipedia, Stand 14.11.2026); nach
+Indexanpassungen erzeugt `uv run --locked --with lxml python scripts/build_index_members.py`
+die Datei neu, lässt Ticker weg, die die App nicht bepreisen kann (Börse nicht
+angebunden, z. B. Brüssel und Helsinki, oder Symbolformat wie `M&M.NS`), prüft jeden
+übrigen Ticker einmal bei Yahoo und behält je Index die 50 größten. So lädt ein Klick
+höchstens 50 Unternehmen statt bis zu 500, was das Anfragelimit schont, das auch das
+Depot auf demselben Server träfe. Abgerufen wird erst beim Klick, höchstens sechs
+Anfragen parallel und ein Index zur Zeit. Kennung und Marktkapitalisierung werden
+pro Tag zwischengespeichert, aber nur nach bestandener Prüfung; Kurse während der
+Handelszeit 15 Minuten, bei geschlossener Börse bis zur nächsten Sitzung. FTSE 100,
+STOXX Europe 600, Russell 2000 und KOSPI haben keine Einzelwerte (London nicht
+angebunden bzw. keine freie Liste). Ein Klick auf eine Region zoomt hinein, die
+Pfadzeile zoomt wieder heraus. Indizes
+und ETFs nutzen dieselben Börsenkalender und dieselbe Kursperioden-Logik wie die
+Watchlist; Werte bleiben in Indexpunkten bzw. Handelswährung. Nach dem Login steht
+derselbe Inhalt als Bereich **Märkte** zur Verfügung (nicht im Demo-Modus, der nur
+synthetische Daten zeigt).
+
+## Interaktive Analyse
+
+Die Ansicht **Analyse** direkt hinter **Watchlist** überträgt die 29 Themen der Financial-Pipeline-V4
+in Streamlit/Plotly: Geschäftszahlen, Kapitalqualität, Bewertung, Kursrisiko und
+Marktumfeld. Hover, Zoom, Tabellen und CSV-Downloads ergänzen die Originalanalyse.
+Beim Öffnen lädt **Microsoft** automatisch mit **Oracle, Alibaba und SAP** als
+Vergleich. Unternehmen aus **Depot und Watchlist im Google Sheet** ergänzen die
+Auswahl automatisch; Unternehmen und bis zu drei Vergleichsaktien lassen sich
+darunter ändern. Nicht verfügbare Daten zeigen **n. v.**
+oder **Noch nicht angebunden**. Der Einstieg zeigt den Aktienkurs mit Quartalszahlen;
+die Themen führen
+vom Überblick zum Deep Dive. Drei getrennte Glossare für Kennzahlen, Diagramme und
+Datenquellen stehen am Seitenende.
+Die gemeinsame dunkle CI gilt auch für die Treemap.
+[Bedienung, Herkunft und Datenregeln](docs/EXPLORATION.md) · [Glossar](docs/glossary.md).
+
+## Indizes
+
+**Indizes** ergänzt Depot, Watchlist, Analyse und Innerer Wert. Die Auswahl erkennt
+die Blätter **DAX, MDAX, Euro Stoxx 50, STOXX Europe 600, S&P 500, Nasdaq 100,
+Dow Jones, Hang Seng und Nikkei 225** im bereits konfigurierten Google Sheet. DAX ist die Standardauswahl.
+In A/B stehen die Überschriften **Unternehmen** und **Yahoo-Finance-Ticker**;
+gelesen werden maximal 999 Unternehmen. Es sind keine zusätzlichen Secrets nötig.
+Beim Öffnen lädt nur der gewählte Index. Zeitraumwechsel verwenden denselben
+Datenstand; **Aktualisieren** lädt den aktuellen Index erneut. Die Daten bleiben
+pro Sitzung und Index getrennt; am nächsten UTC-Tag wird automatisch neu geladen.
+
+Die Seite zeigt den Indexstand mit Veränderung im gewählten Zeitraum und Jahreskurve
+(aus dem gemeinsamen Markt-Cache der Startseite), Marktkapitalisierung, größten
+Gewinner und Verlierer, aktive Positionen sowie eine Treemap mit Hover und darunter
+die vollständige Liste. Der Zeitraum wird in Depot, Watchlist und Indizes über eine
+Umschalter-Leiste gewählt.
+**Heute, Woche, Monat und Jahr** folgen der bestehenden Kursperioden-Logik.
+Kachelflächen entsprechen den verfügbaren Unternehmens-Marktkapitalisierungen,
+die Farben der Kursentwicklung. Das sind **keine offiziellen Indexgewichte**.
+Kapitalisierungen werden nur bei gleicher Währung summiert. Bei gemischten
+Währungen oder komplett fehlenden Kapitalisierungen erscheinen gleich große
+Kacheln mit entsprechendem Hinweis. Fehlende Werte bleiben **NA**, keine Nullen.
+Nicht unterstützte Handelsplätze zeigen „wird noch angebunden“. Kurskalender
+stehen für die deutschen und US-Handelsplätze sowie für Tokio (`JPX`), Hongkong
+(`HKG`), Indien NSE (`NSI`), Korea (`KSC`), Taiwan (`TAI`), Paris (`PAR`),
+Amsterdam (`AMS`), Mailand (`MIL`), Madrid (`MCE`) und Zürich (`EBS`) bereit; deren
+Feiertage liefert die Bibliothek `exchange_calendars`. Reicht ihre Feiertagsliste
+nicht bis heute (Indien wird jährlich nachgetragen), zeigen die Kursperioden NA, bis
+die Bibliothek aktualisiert ist (`uv lock --upgrade-package exchange-calendars`).
+Tokio (11:30–12:30) und Hongkong (12:00–13:00) haben eine Mittagspause: Dann gilt
+die Börse nicht als geöffnet, „Heute“ zeigt aber weiter den letzten Kurs des Vormittags.
+Kursentwicklungen gelten in Handelswährung, ohne Umrechnung nach EUR; Hang Seng
+notiert in HKD, Nikkei 225 in JPY.
+Die Indexzusammensetzung wird im Sheet gepflegt, nicht automatisch ausgetauscht.
+
 ## Methodik
 
 ### 1. Bewertung in EUR
@@ -62,7 +155,7 @@ Jede Position trägt einen Status, etwa *Kurs fehlt*, *FX-Kurs fehlt*, *Instrume
 
 ```mermaid
 flowchart LR
-    S[Google Sheet: Bestand und Einstand] --> P[Parser und Validierung]
+    S[Google Sheet: Instrumente, Transaktionen, Kurse] --> P[Parser, Journal und FIFO]
     Q[Kursanbieter: Kurse, Historie, FX] --> C[Cache mit Zeitstempeln]
     P --> V[Bewertung und Renditen]
     C --> V
@@ -73,8 +166,63 @@ flowchart LR
 - **Trennung von Fachlogik und Oberfläche:** Die Module unter `src/portfolio_dashboard` importieren weder Streamlit noch Datenanbieter. Ein Test prüft das in einem frischen Prozess mit gesperrtem Netzwerk.
 - **Tests:** über 1.100 Pytest-Fälle, darunter Regressionstests mit festen Abnahmewerten. Netzwerkzugriffe sind in der Testumgebung gesperrt.
 - **CI:** GitHub Actions führt bei jedem Pull Request gesperrte Installation (`uv.lock`), Ruff und Pytest aus.
-- **Nachvollziehbare Entscheidungen:** elf [Architecture Decision Records](docs/adr/README.md) dokumentieren Produktumfang, Datenquellen, Rechenregeln, Zugriff und Betrieb.
+- **Nachvollziehbare Entscheidungen:** zwölf [Architecture Decision Records](docs/adr/README.md) dokumentieren Produktumfang, Datenquellen, Rechenregeln, Zugriff und Betrieb.
 - **Sicherheit:** OIDC-Login über Streamlit/Authlib. Vor jedem Datenzugriff prüft der Server erneut Issuer, Subject, Audience und Tokenlaufzeit. Secrets liegen ausschließlich in der Secret-Verwaltung des Hosts.
+
+## Datenmodell im Google Sheet
+
+Das Sheet wird wie eine kleine Datenbank geführt: ein Blatt pro Tabelle, Spaltennamen in Zeile 1, keine Formeln oder Summen in Eingabeblättern. Beschlossen und umgesetzt in [ADR 0012](docs/adr/0012-sheet-datenmodell.md): Die App liest `Instrumente`, `Transaktionen` und `Kurse_manuell` in einem Abruf.
+
+```mermaid
+erDiagram
+    Instrumente ||--o{ Transaktionen : "isin"
+    Instrumente ||--o{ Kurse_manuell : "isin"
+    Instrumente ||--o| Watchlist : "isin"
+    Transaktionen |o--o| Transaktionen : "bezug_txn_id (Umtausch)"
+
+    Instrumente {
+        text isin PK
+        text name
+        text typ "Aktie, ETF, Derivat"
+        text aktienform "share oder adr"
+        text anteilsklasse "nur ETF"
+        text basiswert_isin "nur Derivat"
+        text kategorie
+        text google_symbol "nur Sheet-Formeln"
+        text yahoo_symbol
+        text yahoo_handelsplatz
+        text waehrung
+        date geprueft "setzt nur der Besitzer"
+    }
+    Transaktionen {
+        text txn_id PK "T00001, fortlaufend"
+        date datum
+        text isin FK
+        text art "Kauf, Sparplan, Verkauf, Einbuchung, Ausbuchung"
+        decimal stueck "immer positiv"
+        decimal kurs_eur
+        decimal gebuehr_eur
+        decimal steuern_eur
+        decimal betrag_eur
+        text bezug_txn_id FK
+        text broker_ref UK "Auftragsnummer des Brokers"
+        text notiz
+    }
+    Kurse_manuell {
+        text isin PK, FK
+        date datum PK
+        decimal kurs_eur
+    }
+    Watchlist {
+        text isin PK, FK
+        text notiz
+    }
+```
+
+- **Schlüssel:** Die ISIN identifiziert das Wertpapier, die `txn_id` die Transaktion. Positionen haben keine eigene ID, sie sind die Summe der Transaktionen je ISIN.
+- **Abgeleitet statt gepflegt:** Stückzahl und Einstand der verbleibenden Stücke (FIFO) berechnet die App aus dem Journal; den realisierten Gewinn/Verlust rechnet das Journal mit, angezeigt wird er noch nicht. Ein Umtausch ist eine Ausbuchung plus eine verknüpfte Einbuchung, die den Einstand übernimmt.
+- **Geprüfte Kurszuordnung:** Live-Kurse gibt es nur für Instrumente, bei denen der Besitzer `geprueft` gesetzt hat. Der Abgleich gegen die Antwort des Kursanbieters bleibt bestehen.
+- **Ansichten:** Das bisherige Depotblatt bleibt als Formelansicht für den Menschen und wird von der App nicht gelesen. `Kurse_manuell` darf GOOGLEFINANCE-Formeln als Ersatzkurs enthalten. Die Agenten-Blätter hängen ebenfalls über die ISIN an `Instrumente`.
 
 ## Stand und Grenzen
 
@@ -85,6 +233,7 @@ flowchart LR
 | Login und Besitzerprüfung | umgesetzt |
 | FCFF-DCF, Szenarien, Sensitivität, Kursvergleich | Rechenkern umgesetzt und getestet; Übersicht „Innerer Wert“ und Detail- und Annahmenansicht (Editor, Rechenweg, Sensitivität) umgesetzt; echte Annahmen trägt der Besitzer bei Nutzung ein |
 | Watchlist aus dem Sheet | Kursabruf, Ansicht und Heatmap umgesetzt |
+| Sheet-Datenmodell mit Transaktionsjournal ([ADR 0012](docs/adr/0012-sheet-datenmodell.md)) | umgesetzt: Bestand und FIFO-Einstand aus dem Journal, Kurszuordnung aus `Instrumente` |
 | Fundamentaldaten (yfinance) | Abdeckung geprüft, Abruf, Normalisierung und geschützter Cache umgesetzt; Bewertungsübersicht und Annahmenerfassung umgesetzt; dauerhafter Speicher für Szenarien im Live-Betrieb offen (Besitzerentscheidung) |
 
 Kursdaten stammen aus `yfinance`, einer inoffiziellen Schnittstelle; Kurse können verzögert sein. Das Dashboard ist ein privates Analysewerkzeug und keine Anlageberatung.

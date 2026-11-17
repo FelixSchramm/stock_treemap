@@ -1,4 +1,4 @@
-"""Local mode: loopback-only entry point and Sheet-only coordinator, synthetic only."""
+"""Local mode: loopback-only entry point and journal coordinator, synthetic only."""
 
 import json
 import os
@@ -19,31 +19,27 @@ from portfolio_dashboard.config import (
 from portfolio_dashboard.demo import demo_snapshot
 from portfolio_dashboard.quote_cache import QuoteCache
 from portfolio_dashboard.refresh import PortfolioRefreshCoordinator
-from portfolio_dashboard.sheet_parser import SHEET_HEADERS
+from portfolio_dashboard.sheet_tables import (
+    INSTRUMENT_COLUMNS,
+    PRICE_COLUMNS,
+    TRANSACTION_COLUMNS,
+)
 from portfolio_dashboard.sheets_session import SheetsCredentialError
 
 APP_PATH = Path(__file__).parents[1] / "app.py"
 LOCAL = {
     "PORTFOLIO_MODE": "local",
     "PORTFOLIO_SHEET_ID": "synthetic-source-id",
-    "PORTFOLIO_SHEET_RANGE": "'Synthetic tab'!A1:M10",
     "PORTFOLIO_SHEETS_CREDENTIALS_FILE": "/nonexistent/synthetic-credential.json",
 }
-# Two shares at 50 EUR, 80 EUR remaining cost basis: 100 EUR value, +25 %.
-ROW = [
-    "Synthetische Aktie",
-    "SYN",
-    "Aktie",
-    "2",
-    "SYNX:SYN",
-    "EUR",
-    "50,00",
-    "100,00",
-    "80,00",
-    "25",
-    "20,00",
-    "Synthetisch",
-    "100",
+# Two shares bought for 80 EUR, Sheet price 50 EUR: 100 EUR value, +25 %.
+ISIN = "XX0000000001"
+TABLES = [
+    [list(INSTRUMENT_COLUMNS),
+     [ISIN, "Synthetische Aktie", "Aktie", "share", "", "", "Synthetisch", "SYNX:SYN",
+      "", "", "", ""]],
+    [list(TRANSACTION_COLUMNS), ["T00001", 46000, ISIN, "Kauf", 2, 40, 0, "", 80, "", "", ""]],
+    [list(PRICE_COLUMNS), [ISIN, "", "50,00"]],
 ]
 
 
@@ -62,8 +58,10 @@ class ForbiddenProvider:
 class SyntheticResponse:
     status_code = 200
 
-    def __init__(self, rows):
-        self.body = json.dumps({"majorDimension": "ROWS", "values": rows})
+    def __init__(self, tables):
+        self.body = json.dumps(
+            {"valueRanges": [{"majorDimension": "ROWS", "values": t} for t in tables]}
+        )
 
     def json(self, **kwargs):
         return json.loads(self.body, **kwargs)
@@ -78,7 +76,7 @@ class SyntheticSession:
 
     def get(self, url, **kwargs):
         self.calls.append(url)
-        return SyntheticResponse([list(SHEET_HEADERS), ROW])
+        return SyntheticResponse(TABLES)
 
 
 def test_local_config_reads_source_without_login_or_auth_secrets():
@@ -93,7 +91,6 @@ def test_local_config_reads_source_without_login_or_auth_secrets():
     "field",
     [
         "PORTFOLIO_SHEET_ID",
-        "PORTFOLIO_SHEET_RANGE",
         "PORTFOLIO_SHEETS_CREDENTIALS_FILE",
     ],
 )

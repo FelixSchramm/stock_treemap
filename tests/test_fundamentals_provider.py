@@ -589,3 +589,54 @@ def test_constructor_and_argument_validation():
         YFinanceFundamentalsProvider(info_attempts=0)
     with pytest.raises(TypeError):
         adapter().fetch("SYN.XX")
+
+
+def test_overlapping_batches_do_not_wait_for_each_other():
+    from portfolio_dashboard.fundamentals_provider import _quiet_provider_logs
+
+    logger = logging.getLogger("yfinance")
+    original = logger.disabled
+    inside, release = Event(), Event()
+
+    def long_batch():
+        with _quiet_provider_logs():
+            inside.set()
+            assert release.wait(5)
+
+    logger.disabled = False
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first = pool.submit(long_batch)
+            assert inside.wait(5)
+            entered = Event()
+
+            def second_batch():
+                with _quiet_provider_logs():
+                    entered.set()
+                    assert logger.disabled is True
+
+            second = ThreadPoolExecutor(max_workers=1).submit(second_batch)
+            # The second batch enters while the first one is still running.
+            assert entered.wait(2)
+            second.result(timeout=5)
+            assert logger.disabled is True  # first batch still active
+            release.set()
+            first.result(timeout=5)
+        assert logger.disabled is False
+    finally:
+        release.set()
+        logger.disabled = original
+
+
+def test_child_logger_created_during_an_overlapping_batch_is_muted_and_restored():
+    from portfolio_dashboard.fundamentals_provider import _quiet_provider_logs
+
+    name = "yfinance.synthetic.late"
+    logging.Logger.manager.loggerDict.pop(name, None)
+    with _quiet_provider_logs():
+        late = logging.getLogger(name)
+        late.disabled = False
+        with _quiet_provider_logs():
+            assert late.disabled is True
+        assert late.disabled is True
+    assert late.disabled is False

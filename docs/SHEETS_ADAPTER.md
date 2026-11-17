@@ -1,30 +1,27 @@
 # Sheets ausschließlich lesend abrufen
 
-`portfolio_dashboard.sheets_adapter.SheetsAdapter` liest pro `read`-Aufruf genau
-einen konfigurierten Bereich über den offiziellen Sheets-REST-Endpunkt
-`spreadsheets.values.get`. Es gibt keine Suche über Drive, keine Schreibmethode,
-keine Änderung von Formeln oder Formaten, keine automatischen Wiederholungen und
-keine Datenhaltung zwischen Versuchen. Werte werden als `UNFORMATTED_VALUE`
-abgerufen; Formeln liefern ihre berechneten Werte. JSON-Dezimalzahlen gehen als
-`Decimal` an den bestehenden [Zeilenparser](SHEET_PARSER.md).
+`portfolio_dashboard.sheets_adapter.JournalSheetsReader` liest pro `read`-Aufruf
+die drei Tabellen `Instrumente`, `Transaktionen` und `Kurse_manuell`
+([ADR 0012](adr/0012-sheet-datenmodell.md)) in **einem** Aufruf des offiziellen
+Sheets-REST-Endpunkts `spreadsheets.values.batchGet`. Es gibt keine Suche über
+Drive, keine Schreibmethode, keine Änderung von Formeln oder Formaten, keine
+automatischen Wiederholungen und keine Datenhaltung zwischen Versuchen. Werte
+werden als `UNFORMATTED_VALUE` abgerufen, Daten als Seriennummer; Formeln liefern
+ihre berechneten Werte. JSON-Dezimalzahlen gehen als `Decimal` an die
+[Tabellen-Parser](SHEET_PARSER.md).
 
 ## Expliziter Aufrufvertrag
 
-Der Host übergibt `SourceConfig` mit `kind=SourceKind.GOOGLE_SHEETS`, privater
-Spreadsheet-ID und endlichem A1-Bereich, beispielsweise dem **synthetischen**
-`'Synthetic tab'!A7:M1000`. Der Bereich muss ein ausdrücklich benanntes Blatt,
-Spalten A bis zu einer Endspalte zwischen M und X und beide Zeilengrenzen enthalten (Endspalte T liest die bisherigen Hinweisspalten, X zusätzlich die optionalen Yahoo-Ersatzangaben). Die erste Bereichszeile enthält die
-dreizehn Pflichtüberschriften; die tatsächlichen Quellenzeilen bleiben erhalten. Die
-Anzahl zurückgegebener Zeilen und Spalten darf den Bereich nicht überschreiten.
-Nicht unterstützte Bereiche werden vor einem Abruf mit neutraler Meldung
-abgelehnt. `SheetMetadata` legt Zahlenformat und gegebenenfalls unabhängig
-verifizierte Quellenfakten fest; es gibt keine automatische Locale-Erkennung.
+Der Host übergibt `SourceConfig` mit `kind=SourceKind.GOOGLE_SHEETS` und privater
+Spreadsheet-ID sowie die unterstützten Yahoo-Handelsplätze des Depots mit ihrer
+Währung (`local_source.DEPOT_VENUES`). Die Bereiche sind fest und begrenzt
+(`'Instrumente'!A1:L2000`, `'Transaktionen'!A1:L10000`, `'Kurse_manuell'!A1:C2000`);
+mehr Zeilen oder Spalten als angefordert gelten als ungültige Antwort.
 
 `read(attempted_at=...)` benötigt einen expliziten Zeitzonen-Zeitstempel für den
-Abruf/Import. Er ersetzt niemals den tatsächlichen Kurszeitpunkt. Dieser bleibt
-ohne explizites `sheet_price_observed_at` unbekannt. Auch die Bedeutung des
-Einstands verbleibender Stücke wird durch einen erfolgreichen Abruf nicht
-bestätigt.
+Abruf/Import. Er ersetzt niemals den tatsächlichen Kurszeitpunkt. Das Ergebnis
+`JournalReadResult` enthält den Snapshot und die im selben Abruf gelesenen
+geprüften Listings; ein Fehler liefert einen `FAILED`-Snapshot ohne Listings.
 
 Die injizierte Session stellt für den Adapter ausschließlich `get` bereit und
 folgt dem Vertrag einer `requests.Session`. Der **autorisierte Host** muss sie
@@ -47,18 +44,16 @@ Der Adapter liest weder ADC noch Umgebungsvariablen oder Credential-Dateien,
 auch nicht `SourceConfig.credentials_file`. Credential-Erzeugung, sichere Ablage
 und Erneuerung gehören zu #14 und zur späteren autorisierten Host-Integration.
 Ein verwalteter Proxy-Platzhalter ist kein lokal verwendbarer Signaturschlüssel.
-Dieses Modul hat keinen Aufruf aus der App. Jede spätere echte Session-Erzeugung
-und jeder echte Abruf müssen hinter die serverseitige Besitzerfreigabe aus #32.
+Echte Session-Erzeugung und jeder echte Abruf liegen hinter der serverseitigen
+Besitzerfreigabe aus #32.
 Konfiguration allein stellt keine Freigabe dar.
 
 ## Ergebnisse, Fehler und Aktualisierung
 
-`SheetsReadResult.parsed` enthält den unveränderten Parser-Vertrag einschließlich
-Referenzwerten und ausgeschlossenen Zeilen. `result.snapshot` ist der zugehörige
-Snapshot. Ein leerer API-Wertebereich oder reine Überschriften ergibt
-`COMPLETE` ohne Positionen; ein nichtleerer Bereich mit ungültigen Überschriften
-ergibt `FAILED`. Ungültige Positionszeilen ergeben weiterhin `PARTIAL` mit nur
-den akzeptierten Positionen, ohne daraus einen vollständigen Bestand zu machen.
+Fehlende oder doppelte Spaltennamen ergeben `FAILED` mit dem Code
+`sheet_schema_error` (Meldung nennt nur Tabelle und Spalte). Fehler in einzelnen
+Zeilen machen nur die betroffene ISIN „n. v.“ und ergeben `PARTIAL`; die übrigen
+Positionen bleiben erhalten ([Regeln](DATA_SOURCE.md#regeln)).
 
 Timeout, Identitätsfehler, fehlende Berechtigung, nicht erreichbare Quelle,
 Abruflimit, Dienstfehler, sonstiger Transportfehler und ungültige Antwort erhalten
@@ -76,8 +71,8 @@ Jeder Refresh liefert einen eigenen Stand mit dem neuen Zeitstempel. Ein Fehler
 kennt keinen letzten guten Stand. Cache und gegebenenfalls separat angezeigte
 ältere Daten gehören zu #19; nach Neustart ohne Zugriff bleiben Daten unbekannt.
 
-Prüfung mit synthetischen Sessions und gesperrten IP-Sockets:
-`uv run --locked pytest tests/test_sheets_adapter.py`.
+Prüfung mit synthetischen Sessions:
+`uv run --locked pytest tests/test_sheet_tables.py tests/test_ledger.py`.
 Diese Tests belegen **keinen echten Laufzeitzugang**. Service-Account, gezielte
 Freigabe und echter Abruf bleiben für #14 beziehungsweise den späteren
 geschützten Hosting-Abgleich ungeprüft.

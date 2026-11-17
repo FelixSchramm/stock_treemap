@@ -7,8 +7,8 @@ Colors may be capped for display; every printed number stays unlimited.
 """
 
 from collections import Counter
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import TYPE_CHECKING
@@ -56,12 +56,15 @@ SORT_BY_WEIGHT = WEIGHT_COLUMN_LABEL
 SORT_BY_PERFORMANCE = "Entwicklung (%)"
 SORT_BY_NAME = "Name"
 SORT_BY_TYPE = "Typ"
+TABLE_PERIODS = ("Seit Kauf", "Jahr", "Monat", "Woche", "Heute")
+PERIOD_SORT_FIELDS = tuple(f"{period} (%)" for period in TABLE_PERIODS)
 SORT_FIELDS = (
     SORT_BY_VALUE,
     SORT_BY_WEIGHT,
     SORT_BY_PERFORMANCE,
     SORT_BY_NAME,
     SORT_BY_TYPE,
+    *PERIOD_SORT_FIELDS,
 )
 
 _TYPE_LABELS = {
@@ -229,13 +232,14 @@ class PositionTableRow:
     status: str
     source_row: int
     quote_mapping: str = "Keine Kurszuordnung"
+    period_percents: tuple[tuple[str, Decimal | None], ...] = ()
 
     def to_display_dict(self) -> dict[str, str | float | None]:
         """Convert row into a dictionary suitable for Streamlit dataframe display.
 
         :return: Mapping of German column headers to display values.
         """
-        return {
+        values = {
             "Instrument": self.name,
             "Ticker": self.ticker or "—",
             "Typ": self.instrument_type,
@@ -262,6 +266,18 @@ class PositionTableRow:
             "Kurszuordnung": self.quote_mapping,
             "Status": self.status,
         }
+        if not self.period_percents:
+            return values
+        values.pop("Entwicklung (%)")
+        return {
+            "Instrument": values.pop("Instrument"),
+            "Wert (EUR)": values.pop("Wert (EUR)"),
+            **{
+                f"{period} (%)": float(percent) if percent is not None else None
+                for period, percent in self.period_percents
+            },
+            **values,
+        }
 
     def detail_lines(self) -> tuple[str, ...]:
         """Build complete non-hover detail lines covering all tooltip and table fields.
@@ -269,6 +285,14 @@ class PositionTableRow:
         :return: Tuple of human-readable German lines for touch and keyboard access.
         """
         header = self.name + (f" ({self.ticker})" if self.ticker else "")
+        developments = (
+            tuple(
+                f"{period}: {format_percent(percent)} ({performance_direction_label(percent)})"
+                for period, percent in self.period_percents
+            )
+            if self.period_percents
+            else (f"Entwicklung: {self.percent_label} ({performance_direction_label(self.percent)})",)
+        )
         return (
             header,
             f"Typ: {self.instrument_type}",
@@ -277,7 +301,7 @@ class PositionTableRow:
             f"Stückzahl: {self.quantity_label}",
             f"Wert: {self.amount_eur_label}",
             f"Anteil am bewerteten Depot: {self.weight_label}",
-            f"Entwicklung: {self.percent_label} ({performance_direction_label(self.percent)})",
+            *developments,
             f"Datenstand: {self.as_of}",
             f"Referenzdatum: {self.reference_date}",
             f"Kurszuordnung: {self.quote_mapping}",
@@ -1214,6 +1238,61 @@ def build_table_rows(
     return tuple(rows)
 
 
+def build_comparison_table_rows(
+    valuation: PortfolioValuation,
+    course_performances: Mapping[str, Sequence[Performance]],
+    *,
+    criteria: FilterCriteria | None = None,
+    returns: PortfolioReturns | None = None,
+    course_reasons: Mapping[str, Sequence[str | None]] | None = None,
+) -> tuple[PositionTableRow, ...]:
+    """Show all periods from one snapshot, independent of the treemap selection.
+
+    Each period uses the same group order and filters before rows are combined.
+    Preserve per-period reference dates and gap reasons in the table and details.
+    """
+    resolved_returns = returns if returns is not None else portfolio_returns(valuation)
+    rows_by_period = {
+        "Seit Kauf": build_table_rows(
+            valuation,
+            personal_performances(resolved_returns),
+            criteria=criteria,
+            is_personal_view=True,
+            returns=resolved_returns,
+        ),
+    }
+    missing = (Performance(None),) * len(valuation.groups)
+    for period in TABLE_PERIODS[1:]:
+        rows_by_period[period] = build_table_rows(
+            valuation,
+            course_performances.get(period, missing),
+            criteria=criteria,
+            period_reasons=(course_reasons or {}).get(period),
+        )
+
+    result = []
+    for aligned_rows in zip(*rows_by_period.values(), strict=True):
+        statuses: dict[str, list[str]] = {}
+        for period, row in zip(TABLE_PERIODS, aligned_rows, strict=True):
+            if row.status != "OK":
+                statuses.setdefault(row.status, []).append(period)
+        result.append(replace(
+            aligned_rows[0],
+            period_percents=tuple(
+                (period, row.percent)
+                for period, row in zip(TABLE_PERIODS, aligned_rows, strict=True)
+            ),
+            reference_date=" · ".join(
+                f"{period}: {row.reference_date}"
+                for period, row in zip(TABLE_PERIODS[1:], aligned_rows[1:], strict=True)
+            ),
+            status="; ".join(
+                f"{' / '.join(periods)}: {status}" for status, periods in statuses.items()
+            ) or "OK",
+        ))
+    return tuple(result)
+
+
 def sort_table_rows(
     rows: Sequence[PositionTableRow],
     sort_by: str = SORT_BY_VALUE,
@@ -1233,12 +1312,14 @@ def sort_table_rows(
     if sort_by not in SORT_FIELDS:
         raise ValueError(f"unsupported sort_by field: {sort_by}")
 
-    if sort_by in (SORT_BY_VALUE, SORT_BY_WEIGHT, SORT_BY_PERFORMANCE):
+    if sort_by in (SORT_BY_VALUE, SORT_BY_WEIGHT, SORT_BY_PERFORMANCE, *PERIOD_SORT_FIELDS):
         def numeric_value(row: PositionTableRow) -> Decimal | None:
             if sort_by == SORT_BY_VALUE:
                 return row.amount_eur
             if sort_by == SORT_BY_WEIGHT:
                 return row.weight_percent
+            if sort_by in PERIOD_SORT_FIELDS:
+                return dict(row.period_percents).get(sort_by.removesuffix(" (%)"))
             return row.percent
 
         present = [r for r in rows if numeric_value(r) is not None]
