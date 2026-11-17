@@ -574,7 +574,7 @@ def test_demo_watchlist_heatmap_legend_and_notes(offline_demo):
 
 def test_heatmap_follows_period_search_type_category_and_sorting(offline_demo):
     app = area(new_app().run(), "Watchlist")
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Woche").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Woche").run()
     assert app.subheader[1].value == "Watchlist-Heatmap · Woche"
     texts = dict(zip(tile_names(app), heatmap(app)["text"], strict=True))
     assert texts["Demo-Aktie US"].endswith("+4,05 %")
@@ -603,7 +603,7 @@ def test_heatmap_follows_period_search_type_category_and_sorting(offline_demo):
 
 def test_heatmap_scale_changes_with_the_filter_and_legend_names_it(offline_demo):
     app = area(new_app().run(), "Watchlist")
-    app.radio(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
+    app.segmented_control(key=PERIOD_RADIO_KEY).set_value("Jahr").run()
     legend = next(m.value for m in app.markdown if "Farblegende der Watchlist" in m.value)
     assert "-18,90 %" in legend and "+18,90 %" in legend
     app.text_input(key=WATCHLIST_FILTER_QUERY_KEY).set_value("ETF").run()
