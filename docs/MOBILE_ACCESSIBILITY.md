@@ -26,7 +26,8 @@ Auf Touch-Geräten (iPhone) und bei reiner Tastaturnavigation steht kein Maus-Ho
 Daher sind **alle wesentlichen Tooltip-Informationen vollständig ohne Hover** auf zwei komplementären Wegen zugänglich:
 
 1. **Sortier- und filterbare Positionsübersicht (`render_positions_table`):**
-   - Zeigt alle aktiven Positionen (inklusive Kleinstpositionen und unbewertbarer Positionen) mit `Instrument`, `Wert (EUR)` und den fünf Entwicklungen von `Seit Kauf (%)` bis `Heute (%)`; weitere Positionsdaten, Datenstand, Referenzdaten und Status folgen dahinter.
+   - Zeigt alle aktiven Positionen (inklusive Kleinstpositionen und unbewertbarer Positionen) mit `Instrument`, `Wert (EUR)` und den fünf Entwicklungen von `Seit Kauf (%)` bis `Heute (%)`; danach folgen die sechs technischen Kennzahlen ([TECHNICALS.md](TECHNICALS.md)), weitere Positionsdaten, Datenstand, Referenzdaten und Status.
+   - Die technischen Kennzahlen stehen samt Trendregel, allen Unterstützungszonen, Kreuzungssignal und Gründen für „n. v.“ auch in den `Positionsdetails ohne Hover`, sodass die breitere Tabelle auf dem iPhone nicht horizontal gescrollt werden muss.
    - Über den Spaltenkopf `Wert (EUR)` lässt sich aufsteigend sortieren, um kleinste Positionen an die erste Stelle zu holen. Die drei Auswahlfelder darüber bieten Instrumenttyp, Kategorie und das Sortierfeld mit absteigender Standardsortierung.
 2. **Umbrechenbare Detailkarten (`Positionsdetails ohne Hover`, `render_position_details`):**
    - Unterhalb der Tabelle stellt ein per Touch und Tastatur (`Tab` + `Enter`/`Space`) bedienbarer Bereich für jede gefilterte Position sämtliche Zeilen des Treemap-Tooltips sowie Kategorie, explizite Richtungsangabe (`Gewinn (+)`, `Verlust (−)`, `Unverändert (0,00 %)`, `Keine Kennzahl (n. v.)`) und Datenstatus als vertikal umbrechenden Text dar – ganz ohne horizontales Tabellen-Scrollen.

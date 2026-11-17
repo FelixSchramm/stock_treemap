@@ -126,6 +126,8 @@ Kursentwicklung (%) = (aktueller Kurs / Referenzschlusskurs − 1) × 100
 
 Gerechnet wird in Handelswährung auf splitbereinigten Schlusskursen, ohne Dividenden und ohne Währungseffekte. Der Referenztag folgt dem Handelskalender des jeweiligen Börsenplatzes und berücksichtigt Zeitzonen, Feiertage und Kalendergrenzen. Details: [Kursperioden](docs/PRICE_PERIODS.md), [ADR 0006](docs/adr/0006-kursentwicklung.md).
 
+Aus derselben Tageshistorie zeigt die Positionsübersicht technische Kennzahlen je Position: Trend, nächste Unterstützung mit Stärke (Konfluenz aus Swing-Tiefs, gleitenden Durchschnitten, Fibonacci und 52-Wochen-Tief), RSI (14) und Abstand zum 52-Wochen-Hoch. Es fallen keine zusätzlichen Kursabfragen an; die Werte sind keine Anlageempfehlung. Details: [Technische Kennzahlen](docs/TECHNICALS.md).
+
 ### 3. Persönliche Rendite seit Kauf
 
 ```text
@@ -255,6 +257,6 @@ uv run --locked pytest
 - [Umsetzungsplan](PROJECT_PLAN.md) und [Backlog](docs/backlog/README.md)
 - [Architekturentscheidungen](docs/adr/README.md)
 - Datenvertrag: [Importschema](docs/DATA_SOURCE.md), [Fachmodelle](docs/DOMAIN_MODELS.md), [Sheet-Parser](docs/SHEET_PARSER.md), [Sheets-Adapter](docs/SHEETS_ADAPTER.md), [Instrumentzuordnung](docs/INSTRUMENT_MAPPING.md)
-- Marktdaten und Rechenregeln: [Marktdaten](docs/MARKET_DATA.md), [EUR-Bewertung](docs/EUR_VALUATION.md), [Kursperioden](docs/PRICE_PERIODS.md), [Persönliche Rendite](docs/PERSONAL_RETURNS.md), [Regressionen](docs/DOMAIN_REGRESSIONS.md)
+- Marktdaten und Rechenregeln: [Marktdaten](docs/MARKET_DATA.md), [EUR-Bewertung](docs/EUR_VALUATION.md), [Kursperioden](docs/PRICE_PERIODS.md), [Technische Kennzahlen](docs/TECHNICALS.md), [Persönliche Rendite](docs/PERSONAL_RETURNS.md), [Regressionen](docs/DOMAIN_REGRESSIONS.md)
 - Innerer Wert: [Fundamentaldaten](docs/FUNDAMENTAL_MODELS.md), [Feldvertrag](docs/INTRINSIC_VALUE.md), [Abdeckung](docs/FUNDAMENTALS_COVERAGE.md), [Adapter und Normalisierung](docs/FUNDAMENTALS_PROVIDER.md), [Cache und Ladepfad](docs/FUNDAMENTALS_CACHE.md), [DCF-Rechner](docs/DCF_CALCULATION.md), [Kursvergleich](docs/PRICE_COMPARISON.md), [private Szenarien](docs/PRIVATE_SCENARIOS.md)
 - Oberfläche und Betrieb: [Treemap](docs/TREEMAP.md), [Watchlist-Ansicht](docs/WATCHLIST_VIEW.md), [Bewertungsübersicht „Innerer Wert“](docs/VALUATION_OVERVIEW.md), [Detail- und Annahmenansicht](docs/VALUATION_DETAIL.md), [Watchlist-Kurse](docs/WATCHLIST_QUOTES.md), [Mobile Bedienung](docs/MOBILE_ACCESSIBILITY.md), [Container](docs/CONTAINER.md), [Streamlit Community Cloud](docs/COMMUNITY_CLOUD.md)

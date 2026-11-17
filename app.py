@@ -22,6 +22,7 @@ from portfolio_dashboard.demo import (
     demo_personal_performances,
     demo_rows,
     demo_snapshot,
+    demo_technical_signals,
     demo_valuation,
 )
 from portfolio_dashboard.fundamentals_config import FundamentalsConfigError
@@ -169,4 +170,5 @@ render_dashboard(
     watchlist=DemoWatchlist,
     overview=demo_valuation_source(),
     indices=DemoIndices,
+    technical_signals=demo_technical_signals(),
 )

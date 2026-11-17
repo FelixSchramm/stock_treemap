@@ -26,6 +26,7 @@ from portfolio_dashboard.refresh import (
 from portfolio_dashboard.returns import PortfolioReturns, portfolio_returns
 from portfolio_dashboard.sheets_adapter import SheetsConfigurationError
 from portfolio_dashboard.sheets_session import SheetsCredentialError
+from portfolio_dashboard.technicals import TechnicalSignals
 from portfolio_dashboard.treemap import (
     ALL_FILTER,
     MISSING_COLOR,
@@ -34,6 +35,13 @@ from portfolio_dashboard.treemap import (
     SORT_BY_PERFORMANCE,
     SORT_BY_VALUE,
     SORT_FIELDS,
+    TECH_HIGH_DISTANCE,
+    TECH_RSI,
+    TECH_STRENGTH,
+    TECH_SUPPORT,
+    TECH_SUPPORT_DISTANCE,
+    TECH_TREND,
+    TECHNICALS_NOTE,
     TILE_TEXT_COLOR,
     WEIGHT_COLUMN_LABEL,
     FilterCriteria,
@@ -51,7 +59,10 @@ from portfolio_dashboard.treemap import (
     filter_groups,
     format_eur,
     format_percent,
+    format_price,
+    format_rsi,
     sort_table_rows,
+    trend_label_for_rank,
 )
 from portfolio_dashboard.valuation_overview import OverviewSource, collect_subjects
 from portfolio_dashboard.valuations import PortfolioValuation
@@ -525,8 +536,37 @@ def render_positions_table(
         subset=[column for column in PERIOD_SORT_FIELDS if column in display],
         na_rep=NOT_AVAILABLE,
     )
+    formatted = _format_technical_columns(formatted, display, rows)
     st.dataframe(formatted, hide_index=True, width="stretch")
+    if TECH_TREND in display:
+        st.caption(TECHNICALS_NOTE)
     render_position_details(rows)
+
+
+def _format_technical_columns(formatted, display: pd.DataFrame, rows: Sequence[PositionTableRow]):
+    """German display of the numeric technical columns; sorting stays numeric."""
+    if TECH_TREND not in display:
+        return formatted
+    formatted = formatted.format(
+        lambda value: format_percent(Decimal(str(value))),
+        subset=[TECH_SUPPORT_DISTANCE, TECH_HIGH_DISTANCE],
+        na_rep=NOT_AVAILABLE,
+    ).format(
+        trend_label_for_rank, subset=[TECH_TREND], na_rep=NOT_AVAILABLE
+    ).format(
+        "{:.0f}", subset=[TECH_STRENGTH], na_rep=NOT_AVAILABLE
+    ).format(
+        lambda value: format_rsi(Decimal(str(value))), subset=[TECH_RSI], na_rep=NOT_AVAILABLE
+    )
+    # The price carries the row's trading currency, so it is formatted per row.
+    for index, row in zip(display.index, rows, strict=True):
+        currency = row.technicals.currency if row.technicals is not None else None
+        formatted = formatted.format(
+            lambda value, currency=currency: format_price(Decimal(str(value)), currency),
+            subset=pd.IndexSlice[[index], [TECH_SUPPORT]],
+            na_rep=NOT_AVAILABLE,
+        )
+    return formatted
 
 
 def render_position_details(rows: Sequence[PositionTableRow]) -> None:
@@ -961,6 +1001,7 @@ def render_dashboard(
     watchlist: Callable[[], WatchlistLoader | None] | None = None,
     overview: OverviewSource | None = None,
     indices: Callable | None = None,
+    technical_signals: Sequence[TechnicalSignals] | None = None,
 ) -> None:
     """Render the shell, refresh action, KPIs, filters, treemap, table and data status.
 
@@ -985,6 +1026,8 @@ def render_dashboard(
         a factory returning ``None`` shows the "PORTFOLIO_WATCHLIST_RANGE" notice.
     :param overview: Wiring of the «Innerer Wert» area (registry, scenario reader,
         clock); ``None`` offers only Depot and Watchlist.
+    :param technical_signals: Technical signals aligned with ``valuation.groups`` when no
+        ``coordinator`` supplies them (demo); ``None`` hides the technical columns.
     """
     _ = rows
     render_accessibility_styles()
@@ -1057,6 +1100,7 @@ def render_dashboard(
         returns = active_bundle.returns
         performances = active_bundle.performances_for
         period_reasons = active_bundle.reasons_for
+        technical_signals = active_bundle.technical_signals or None
 
     if demo:
         st.caption(f"Demo-Depot · {len(snapshot.positions)} Beispielpositionen")
@@ -1151,6 +1195,7 @@ def render_dashboard(
             {period: tuple(period_reasons(COURSE_VIEW, period)) for period in COURSE_PERIODS}
             if period_reasons is not None else None
         ),
+        technical_signals=technical_signals,
     )
     sorted_rows = sort_table_rows(table_rows, sort_by=sort_by)
     is_filtered = bool(
